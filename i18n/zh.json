@@ -1,0 +1,10 @@
+{
+  "welcome": "欢迎使用 QuantumCoin 区块浏览器",
+  "wallet_menu": "1）创建钱包\n2）查看地址\n3）退出",
+  "new_wallet_created": "新钱包已创建，地址：",
+  "enter_pubkey": "请输入您的公钥（十六进制）：",
+  "wallet_address_is": "钱包地址是：",
+  "exit": "正在退出...",
+  "invalid_option": "选择无效的选项。",
+  "invalid_pubkey_format": "公钥格式无效"
+}

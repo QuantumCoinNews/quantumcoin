@@ -1,0 +1,10 @@
+{
+  "welcome": "Bienvenido al Explorador de QuantumCoin",
+  "wallet_menu": "1) Crear Monedero\n2) Ver Dirección\n3) Salir",
+  "new_wallet_created": "Nuevo monedero creado. Dirección:",
+  "enter_pubkey": "Introduce tu clave pública (hex): ",
+  "wallet_address_is": "La dirección del monedero es:",
+  "exit": "Saliendo...",
+  "invalid_option": "Opción no válida seleccionada.",
+  "invalid_pubkey_format": "Formato de clave pública no válido"
+}

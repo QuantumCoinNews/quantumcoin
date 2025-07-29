@@ -1,0 +1,10 @@
+{
+  "welcome": "QuantumCoin Kaşifine Hoş Geldiniz",
+  "wallet_menu": "1) Cüzdan Oluştur\n2) Adresi Görüntüle\n3) Çıkış",
+  "new_wallet_created": "Yeni cüzdan oluşturuldu. Adres:",
+  "enter_pubkey": "Genel anahtarınızı girin (hex): ",
+  "wallet_address_is": "Cüzdan adresi:",
+  "exit": "Çıkılıyor...",
+  "invalid_option": "Geçersiz seçenek seçildi.",
+  "invalid_pubkey_format": "Geçersiz genel anahtar formatı"
+}
