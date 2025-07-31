@@ -2,7 +2,7 @@ import os
 from datetime import datetime, timedelta
 
 # Telegram Bot Token (güvenlik için çevresel değişkenlerden alınması önerilir)
-BOT_TOKEN = "***REMOVED***"
+BOT_TOKEN = "777"
 
 # Blockchain API bağlantı noktası (Go node ile konuşur)
 BLOCKCHAIN_API_URL = "http://localhost:8081/api"  # Gerekirse değiştir
