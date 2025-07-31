@@ -1,8 +1,5 @@
-# quantumcoin/telegram_game/utils/stats.py
-
 from database.redis_store import r
 
-# Kullanıcının genel istatistiklerini döner
 def get_user_stats(user_id: str) -> dict:
     key = f"user:{user_id}"
     if not r.exists(key):
@@ -22,7 +19,6 @@ def get_user_stats(user_id: str) -> dict:
         "last_active": last_active
     }
 
-# Tüm sistem için özet istatistik
 def get_global_stats() -> dict:
     users = r.smembers("users")
     total_mining = 0

@@ -9,45 +9,63 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-var currentLang = "en"
-var currentTheme = "dark"
+var CurrentLang = "tr"
+var CurrentTheme = "dark"
 
 func ShowSettingsWindow(a fyne.App) {
-	win := a.NewWindow("⚙️ " + i18n.T(currentLang, "settings_title"))
+	win := a.NewWindow(i18n.T(CurrentLang, "settings_title"))
 
-	themeLabel := widget.NewLabel(i18n.T(currentLang, "settings_theme_label"))
-	themeOptions := []string{i18n.T(currentLang, "settings_theme_dark"), i18n.T(currentLang, "settings_theme_light")}
+	// Tema seçimi
+	themeLabel := widget.NewLabel(i18n.T(CurrentLang, "settings_theme_label"))
+	themeOptions := []string{
+		i18n.T(CurrentLang, "settings_theme_dark"),
+		i18n.T(CurrentLang, "settings_theme_light"),
+	}
 	themeSelect := widget.NewSelect(themeOptions, func(value string) {
-		if value == i18n.T(currentLang, "settings_theme_dark") {
+		if value == i18n.T(CurrentLang, "settings_theme_dark") {
 			a.Settings().SetTheme(theme.DarkTheme())
-			currentTheme = "dark"
+			CurrentTheme = "dark"
 		} else {
 			a.Settings().SetTheme(theme.LightTheme())
-			currentTheme = "light"
+			CurrentTheme = "light"
 		}
 	})
-	if currentTheme == "dark" {
+	if CurrentTheme == "dark" {
 		themeSelect.SetSelected(themeOptions[0])
 	} else {
 		themeSelect.SetSelected(themeOptions[1])
 	}
 
-	langLabel := widget.NewLabel(i18n.T(currentLang, "settings_lang_label"))
-	langOptions := []string{"en", "tr", "es", "zh"}
-	langSelect := widget.NewSelect(langOptions, func(value string) {
-		currentLang = value
-		// Burada, aktif pencereleri yeniden çizmek gerekebilir
-	})
-	langSelect.SetSelected(currentLang)
+	// Dil seçimi
+	langLabel := widget.NewLabel(i18n.T(CurrentLang, "settings_lang_label"))
+	langs := []struct {
+		Code, Name, Emoji string
+	}{
+		{"en", "English", "🇬🇧"},
+		{"tr", "Türkçe", "🇹🇷"},
+		{"es", "Español", "🇪🇸"},
+		{"zh", "中文", "🇨🇳"},
+	}
+	langBtns := container.NewHBox()
+	for _, lang := range langs {
+		langCode := lang.Code
+		btn := widget.NewButton(lang.Emoji+" "+lang.Name, func() {
+			// Dil değiştiğinde pencereyi kapatıp tekrar aç!
+			CurrentLang = langCode
+			win.Close()
+			ShowSettingsWindow(a)
+		})
+		langBtns.Add(btn)
+	}
 
-	saveBtn := widget.NewButton(i18n.T(currentLang, "settings_save_button"), func() {
+	saveBtn := widget.NewButton(i18n.T(CurrentLang, "settings_save_button"), func() {
 		win.Close()
 	})
 
 	form := container.NewVBox(
-		widget.NewLabelWithStyle(i18n.T(currentLang, "settings_title"), fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
+		widget.NewLabelWithStyle(i18n.T(CurrentLang, "settings_title"), fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
 		themeLabel, themeSelect,
-		langLabel, langSelect,
+		langLabel, langBtns,
 		saveBtn,
 	)
 

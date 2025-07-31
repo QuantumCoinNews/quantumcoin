@@ -1,13 +1,11 @@
-# quantumcoin/telegram_game/config.py
-
 import os
 from datetime import datetime, timedelta
 
 # Telegram Bot Token (güvenlik için çevresel değişkenlerden alınması önerilir)
-BOT_TOKEN = os.getenv("QUANTUM_BOT_TOKEN", "BURAYA_BOT_TOKEN_YAZ")
+BOT_TOKEN = "8296685349:AAFrkM_Fq5O1Clg6a4gp2Y1DLJs-s3ARYYg"
 
 # Blockchain API bağlantı noktası (Go node ile konuşur)
-BLOCKCHAIN_API_URL = "http://localhost:8080/api"  # Gerekirse değiştir
+BLOCKCHAIN_API_URL = "http://localhost:8081/api"  # Gerekirse değiştir
 
 # Redis bağlantısı
 REDIS_HOST = "localhost"
@@ -16,7 +14,10 @@ REDIS_DB = 0
 
 # Uzay temalı metinler
 THEME_NAME = "🚀 Quantum Mining in Space"
-START_MESSAGE = "👨‍🚀 <b>Uzay Madenciliğine Hoş Geldin!</b>\nHazırsan Quantum Miner’ını başlat ve galaksinin derinliklerinden QC kazanmaya başla!"
+START_MESSAGE = (
+    "👨‍🚀 <b>Uzay Madenciliğine Hoş Geldin!</b>\n"
+    "Hazırsan Quantum Miner’ını başlat ve galaksinin derinliklerinden QC kazanmaya başla!"
+)
 
 # Oyun süresi (1 yıl)
 GAME_START_DATE = datetime(2025, 7, 27)
