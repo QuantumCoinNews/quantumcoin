@@ -7,14 +7,47 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"quantumcoin/wallet"
 )
+
+// ---- Blockchain veri yapısı ----
 
 type Blockchain struct {
 	Blocks []*Block
 	UTXO   map[string][]TransactionOutput
 }
+
+// ---- Sabitler: Halving ve Mining parametreleri ----
+
+const (
+	GenesisTime     = 1725158400              // Mainnet başlangıcı (ör: 2024-09-01 00:00:00 UTC)
+	HalvingInterval = 2 * 365 * 24 * 60 * 60  // 2 yıl = saniye
+	MiningPeriod    = 10 * 365 * 24 * 60 * 60 // 10 yıl = saniye
+	InitialReward   = 50
+)
+
+// ---- Halving’e göre blok ödülü hesapla ----
+
+func GetCurrentReward() int {
+	now := time.Now().Unix()
+	elapsed := now - GenesisTime
+	if elapsed < 0 {
+		elapsed = 0
+	}
+	halvings := int(elapsed / HalvingInterval)
+	reward := InitialReward >> halvings // 50 → 25 → 12 → 6 → 3 → ...
+	if reward < 1 {
+		reward = 1
+	}
+	if elapsed > MiningPeriod {
+		reward = 0
+	}
+	return reward
+}
+
+// ---- Blockchain oluşturma ----
 
 func NewBlockchain(initialReward int, totalSupply int) *Blockchain {
 	genesis := CreateGenesisBlock(initialReward)
@@ -26,6 +59,8 @@ func NewBlockchain(initialReward int, totalSupply int) *Blockchain {
 	return bc
 }
 
+// ---- Blok ekleme ----
+
 func (bc *Blockchain) AddBlock(transactions []*Transaction, miner string, difficulty int) *Block {
 	prevBlock := bc.Blocks[len(bc.Blocks)-1]
 	newBlock := NewBlock(prevBlock.Index+1, transactions, prevBlock.Hash, miner, difficulty)
@@ -33,6 +68,8 @@ func (bc *Blockchain) AddBlock(transactions []*Transaction, miner string, diffic
 	bc.UpdateUTXOSet()
 	return newBlock
 }
+
+// ---- UTXO & TX yönetimi ----
 
 func (bc *Blockchain) FindSpendableOutputs(pubKeyHash []byte, amount int) (map[string][]int, int) {
 	accumulated := 0
@@ -85,12 +122,23 @@ func (bc *Blockchain) AddTransaction(tx *Transaction) error {
 	return nil
 }
 
+// ---- Madencilik (YENİ SÜRÜM: HALVING destekli) ----
+
 func (bc *Blockchain) MineBlock(miner string, difficulty int) (*Block, error) {
-	rewardTx := CreateRewardTx(miner, 50)
+	reward := GetCurrentReward()
+	if reward == 0 {
+		return nil, fmt.Errorf("Madencilik dönemi sona erdi!")
+	}
+	rewardTx := CreateRewardTx(miner, reward)
 	pendingTxs := []*Transaction{rewardTx}
-	block := bc.AddBlock(pendingTxs, miner, difficulty)
-	return block, nil
+	prevBlock := bc.Blocks[len(bc.Blocks)-1]
+	newBlock := NewBlock(prevBlock.Index+1, pendingTxs, prevBlock.Hash, miner, difficulty)
+	bc.Blocks = append(bc.Blocks, newBlock)
+	bc.UpdateUTXOSet()
+	return newBlock, nil
 }
+
+// ---- Ödül transferi ----
 
 func CreateRewardTx(miner string, amount int) *Transaction {
 	output := TransactionOutput{
@@ -105,6 +153,8 @@ func CreateRewardTx(miner string, amount int) *Transaction {
 	tx.ID = tx.Hash()
 	return tx
 }
+
+// ---- Serialization / Deserialization ----
 
 func SerializeBlockchain(bc *Blockchain) []byte {
 	var buffer bytes.Buffer
@@ -140,6 +190,8 @@ func LoadBlockchainFromFile(filename string) (*Blockchain, error) {
 	return bc, nil
 }
 
+// ---- Ekstra fonksiyonlar ----
+
 func (bc *Blockchain) GetBestHeight() int {
 	return bc.Blocks[len(bc.Blocks)-1].Index
 }
@@ -159,4 +211,44 @@ func (bc *Blockchain) GetBalance(address string) int {
 
 func (bc *Blockchain) GetAllBlocks() []*Block {
 	return bc.Blocks
+}
+
+// GetBlockByIndex: Belirli bir index’teki bloku döndürür
+func (bc *Blockchain) GetBlockByIndex(index int) *Block {
+	for _, block := range bc.Blocks {
+		if block.Index == index {
+			return block
+		}
+	}
+	return nil
+}
+
+// GetBlockByHash: Belirli bir hash’e sahip bloku döndürür
+func (bc *Blockchain) GetBlockByHash(hash []byte) *Block {
+	for _, block := range bc.Blocks {
+		if bytes.Equal(block.Hash, hash) {
+			return block
+		}
+	}
+	return nil
+}
+
+// GetLastBlock: Son bloku döndürür
+func (bc *Blockchain) GetLastBlock() *Block {
+	if len(bc.Blocks) == 0 {
+		return nil
+	}
+	return bc.Blocks[len(bc.Blocks)-1]
+}
+
+// FindTransaction: Belirli TxID ile işlemi bulur
+func (bc *Blockchain) FindTransaction(ID []byte) (*Transaction, error) {
+	for _, block := range bc.Blocks {
+		for _, tx := range block.Transactions {
+			if bytes.Equal(tx.ID, ID) {
+				return tx, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("Transaction not found")
 }

@@ -13,7 +13,7 @@ import (
 const blockchainFile = "chain_data.dat"
 
 func main() {
-	myApp := app.New()
+	myApp := app.NewWithID("quantumcoin.app")
 	mainWindow := myApp.NewWindow("QuantumCoin")
 
 	// Cüzdanı yükle veya oluştur

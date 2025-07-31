@@ -37,9 +37,12 @@ func LaunchMainUI(a fyne.App, w fyne.Window, wlt *wallet.Wallet, bc *blockchain.
 		ShowExplorerWindow(a, expWin, bc)
 	}))
 
+	// Ayarlar sekmesi: Buraya "Ayarları Aç" butonu ekle!
 	settingsTab := container.NewVBox(
 		widget.NewLabelWithStyle("⚙️ Ayarlar", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
-		widget.NewLabel("(Henüz uygulanmadı)"),
+		widget.NewButton("Ayarları Aç", func() {
+			ShowSettingsWindow(a)
+		}),
 	)
 
 	tabs := container.NewAppTabs(

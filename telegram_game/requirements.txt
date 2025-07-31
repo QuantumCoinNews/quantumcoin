@@ -1,0 +1,3 @@
+pip install aiogram==3.4.1
+pip install redis==5.0.1
+pip install requests==2.31.0

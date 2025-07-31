@@ -1,5 +1,3 @@
-# quantumcoin/telegram_game/utils/nft_utils.py
-
 import os
 import random
 
