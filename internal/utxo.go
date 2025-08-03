@@ -26,7 +26,7 @@ func (set *UTXOSet) Reindex(chain *blockchain.Blockchain) {
 				set.UTXOs[txID] = append(set.UTXOs[txID], out)
 			}
 			// Eğer coinbase değilse girişlere göre harcananları sil
-			if len(tx.Inputs) > 0 {
+			if !tx.IsCoinbase() {
 				for _, in := range tx.Inputs {
 					inTxID := hex.EncodeToString(in.TxID)
 					index := in.OutIndex

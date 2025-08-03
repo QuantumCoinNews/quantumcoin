@@ -1,88 +1,72 @@
-# 💠 QuantumCoin (QC) Whitepaper
+# 💠 QuantumCoin (QC) — Whitepaper
 
-## 📌 Amaç ve Vizyon
+## 📌 Vision & Mission
 
-QuantumCoin, merkeziyetsizlik, güvenlik ve genişletilebilirlik temelinde inşa edilmiş, hem madencilik (PoW) hem de staking (PoS) destekli **hibrit** bir blockchain altyapısıdır. Amacımız, Bitcoin’in sınırlamalarını gidermek, Ethereum’un işlevselliğini yakalamak ve kullanıcı dostu bir deneyimle zincirler arası yenilikleri birleştirmektir.
-
-> "Yapılmayanı yapmak." — QuantumCoin Manifestosu
-
----
-
-## 🔧 Temel Özellikler
-
-| Özellik                  | Açıklama |
-|--------------------------|---------|
-| Toplam Arz               | 25.500.000 QC (sabit) |
-| Dağıtım                  | %70 Madencilik, %10 Staking, %10 Geliştirici, %5 Yakım, %5 Topluluk |
-| Blok Süresi              | ~30 saniye |
-| Halving Sistemi          | Her 2 yılda 1 kez |
-| Madencilik Yöntemi       | Gelişmiş PoW + GUI destekli |
-| Stake Mekanizması        | Cüzdan süresi & bakiyesi temelli |
-| NFT Desteği              | QC721 standardı |
-| Token Standardı          | QC20 (ERC20 uyumlu) |
-| Explorer/API             | Yerleşik HTTP sunucu |
-| Çok Dilli Yapı           | EN, TR, ES, ZH |
-| Mobil Kazım Desteği      | CPU dostu, platformlar arası kazım |
-| Yakım (Burn) Mekanizması | Transferlerde ve blok ödüllerinde aktif |
+QuantumCoin is a next-generation hybrid blockchain platform, built on the foundations of decentralization, security, and extensibility. Our aim is to go beyond Bitcoin’s limitations, rival Ethereum’s flexibility, and combine user-friendly innovations in a truly unique network.  
+**“Do what hasn’t been done.” — QuantumCoin Manifesto**
 
 ---
 
-## 🔒 Güvenlik & Doğrulama
+## 🚀 Key Features
 
-- SHA256 & MerkleTree ile blok bütünlüğü
-- Transaction signature doğrulama (ECDSA)
-- UTXO modeli ile çift harcama engeli
-- P2P ağ katmanı: blok & işlem yayını
-
----
-
-## ⛏️ Madencilik Modeli
-
-- GUI üzerinden başlat/durdur destekli
-- Arka planda `miner/worker.go` işleyicisi çalışır
-- Performans izleme: `metrics.go`
-- Zorluk yönetimi: `difficulty.go`
-- Zamanlayıcı destekli kazım: `scheduler.go`
-- Bonus/NFT ödülleri: `rewarder.go`, `nft_miner.go`
-
----
-
-## 💰 Token Ekonomisi
-
-- QC20 standardında token üretimi
-- QuantumSwap entegrasyonu (gelecek sürüm)
-- Stake havuzu ayrı fon ile yönetilir
-- Geliştirici ve topluluk fonları şeffaf biçimde zincirde tutulur
+| Feature                   | Description  |
+|---------------------------|--------------|
+| **Max Supply**            | 25,500,000 QC (fixed) |
+| **Distribution**          | 70% Mining, 10% Staking, 10% Dev, 5% Burn, 5% Community/DAO |
+| **Block Time**            | ~30 seconds |
+| **Halving System**        | Every 2 years |
+| **Mining**                | Advanced PoW + GUI desktop/miner |
+| **Staking**               | Based on wallet duration & balance |
+| **NFT Standard**          | QC721 |
+| **Token Standard**        | QC20 (ERC20-like, easy creation) |
+| **Explorer/API**          | Built-in HTTP server |
+| **Multi-language**        | EN, TR, ES, ZH |
+| **Mobile Mining**         | CPU-friendly, cross-platform |
+| **Burn Mechanism**        | Active in transfers and block rewards |
 
 ---
 
-## 🎮 Entegrasyonlar ve Gelecek Planı
+## 🔒 Security & Validation
 
-| Aşama | Hedef |
-|-------|-------|
-| Q3 2025 | Masaüstü GUI, Mining, Cüzdan, Explorer |
-| Q4 2025 | Mobil Kazım, Web Swap, NFT Ödülleri |
-| Q1 2026 | Mainnet Yayını, Oyun Entegrasyonu |
-| Q2 2026 | DAO Yönetişimi, QuantumBridge, zkSync |
-
----
-
-## 📚 Teknik Mimariler
-
-**Klasör Yapısı:**
+- **SHA256** & MerkleTree for block integrity
+- **ECDSA** for transaction signatures
+- **UTXO model** for double-spending protection
+- **Peer-to-Peer (P2P)**: decentralized transaction/block propagation
+- **Self-defending network:** AI-detected attacks, auto-freeze, user/exchange notification
 
 ---
 
-## 👥 Topluluk ve Katkı
+## ⛏️ Mining Model
 
-- Açık kaynak lisansı: MIT
-- Katkıda bulunmak için `CONTRIBUTING.md` dosyasına göz atın (yakında)
-- Discord, Telegram ve GitHub üzerinden destek alın
+- GUI-based, one-click mining (desktop & mobile)
+- Background worker process (`miner/worker.go`)
+- Performance monitoring (`metrics.go`)
+- Dynamic difficulty management (`difficulty.go`)
+- Scheduled mining (`scheduler.go`)
+- Bonus/NFT rewards (`rewarder.go`, `nft_miner.go`)
 
 ---
 
-## ✨ Son Söz
+## 💰 Tokenomics
 
-QuantumCoin, teknolojik sınırları zorlayan ve gerçek kullanıcılar için erişilebilir çözümler sunan bir ekosistemdir. Sade değil, güçlü ve genişletilebilir bir sistem kuruyoruz.
+- **QC20**: Anyone can create and issue tokens
+- QuantumSwap integration (future)
+- Stake pool and dev/community funds on-chain, transparent
+- All fees, burns, and bonus distributions visible
 
-> Gelecek zincir üstünde yazılıyor. QuantumCoin ile yazan sen ol.
+---
+
+## 🎮 Integrations & Roadmap
+
+| Stage      | Target Features                                   |
+|------------|---------------------------------------------------|
+| **Q3 2025**| Desktop GUI, Mining, Wallet, Explorer             |
+| **Q4 2025**| Mobile Mining, Web Swap, NFT Drops                |
+| **Q1 2026**| Mainnet, Game Integration, Bonus Upgrades         |
+| **Q2 2026**| DAO Governance, QuantumBridge, zkSync/Layer2      |
+
+---
+
+## 📚 Technical Architecture
+
+**Directory Structure (Sample):**

@@ -7,12 +7,15 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strconv"
-	"strings"
-
+	"quantumcoin/ai"
 	"quantumcoin/blockchain"
+	"quantumcoin/game"
+	"quantumcoin/internal"
 	"quantumcoin/p2p"
 	"quantumcoin/wallet"
+	"strconv"
+	"strings"
+	"time"
 )
 
 const blockchainFile = "chain_data.dat"
@@ -29,7 +32,10 @@ type MineRequest struct {
 }
 
 // --- GLOBAL ---
-var bc *blockchain.Blockchain
+var (
+	bc        *blockchain.Blockchain
+	gameState = game.NewGameState() // Oyun state
+)
 
 func printUsage() {
 	fmt.Println("Usage:")
@@ -39,10 +45,9 @@ func printUsage() {
 	fmt.Println("  mine [miner]             - Mine a new block")
 	fmt.Println("  print                    - Print blockchain")
 	fmt.Println("  newaddr                  - Generate a new wallet address")
-	fmt.Println("  api                      - Start HTTP API (default: 8080)")
+	fmt.Println("  api                      - Start HTTP API (default: 8081)")
 }
 
-// --- ANA FONKSİYON ---
 func main() {
 	var err error
 
@@ -69,7 +74,7 @@ func main() {
 			return
 		}
 		port := os.Args[2]
-		go startHTTPAPI() // Node ile birlikte API aç
+		go startHTTPAPI()
 		p2p.RunNode(port, bc)
 	case "api":
 		startHTTPAPI()
@@ -117,6 +122,7 @@ func main() {
 		} else {
 			fmt.Printf("✅ New block mined by %s with hash %x\n", miner, block.Hash)
 		}
+		processAIBonus()
 	case "print":
 		for _, block := range bc.Blocks {
 			fmt.Printf("📦 Block #%d\n", block.Index)
@@ -140,7 +146,7 @@ func main() {
 		printUsage()
 	}
 
-	// İşlem sonunda blockchain dosyaya kaydedilir
+	// Zinciri kaydet
 	err = bc.SaveToFile(blockchainFile)
 	if err != nil {
 		log.Fatalf("Blockchain kaydedilemedi: %v", err)
@@ -148,16 +154,18 @@ func main() {
 }
 
 // --- HTTP API ---
-
 func startHTTPAPI() {
 	http.HandleFunc("/api/wallet/new", handleNewWallet)
 	http.HandleFunc("/api/wallet/balance/", handleBalance)
 	http.HandleFunc("/api/mine", handleMineBlock)
+	http.HandleFunc("/api/ai/bonus", handleAIBonus)
+	http.HandleFunc("/api/ai/analysis", handleAIAnalysis)
+	http.HandleFunc("/api/game/score", handleGameScore)
+	http.HandleFunc("/api/game/leaderboard", handleLeaderboard)
 	fmt.Println("HTTP API started at http://localhost:8081")
 	log.Fatal(http.ListenAndServe(":8081", nil))
 }
 
-// POST /api/wallet/new  veya GET /api/wallet/new
 func handleNewWallet(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" && r.Method != "GET" {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -169,7 +177,6 @@ func handleNewWallet(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(res)
 }
 
-// GET /api/wallet/balance/{address}
 func handleBalance(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(r.URL.Path, "/")
 	if len(parts) != 5 {
@@ -183,7 +190,6 @@ func handleBalance(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(res)
 }
 
-// POST /api/mine   { "address": "...." }
 func handleMineBlock(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -205,9 +211,69 @@ func handleMineBlock(w http.ResponseWriter, r *http.Request) {
 	}
 	res := map[string]interface{}{
 		"success":    true,
-		"reward":     50, // Burada gerçek ödül miktarını döndürebilirsin
+		"reward":     50,
 		"block_hash": fmt.Sprintf("%x", block.Hash),
 	}
+	processAIBonus()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(res)
+}
+
+// --- YENİ: AI/Bonus Otomasyonunu Tetikleyen Fonksiyon ---
+func processAIBonus() {
+	fmt.Println("🔍 [AI] Bonus/Analiz sistemi başlatıldı...")
+	var recentTxs []*blockchain.Transaction
+	now := time.Now()
+	for _, block := range bc.Blocks {
+		for _, tx := range block.Transactions {
+			// 24 saatlik işlemler
+			if tx.Timestamp.After(now.Add(-24 * time.Hour)) {
+				recentTxs = append(recentTxs, tx)
+			}
+		}
+	}
+	internal.DistributeAIBonuses(recentTxs)
+}
+
+func handleAIBonus(w http.ResponseWriter, r *http.Request) {
+	address := r.URL.Query().Get("address")
+	bonuses := internal.ListBonuses(address)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(bonuses)
+}
+
+func handleAIAnalysis(w http.ResponseWriter, r *http.Request) {
+	address := r.URL.Query().Get("address")
+	var userTxs []*blockchain.Transaction
+	for _, block := range bc.Blocks {
+		for _, tx := range block.Transactions {
+			if tx.Sender == address {
+				userTxs = append(userTxs, tx)
+			}
+		}
+	}
+	anomalies := ai.AnalyzeTransactions(userTxs, 5, 24)
+	recs := ai.GenerateRecommendations(userTxs, 14, 10)
+	suggestions := ai.OptimizeRewards(userTxs, 10, 1)
+	result := map[string]interface{}{
+		"anomaly_report":     anomalies,
+		"recommendations":    recs,
+		"reward_suggestions": suggestions,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// --- GAME API (opsiyonel, entegre edilmiş hali) ---
+func handleGameScore(w http.ResponseWriter, r *http.Request) {
+	player := r.URL.Query().Get("player")
+	score, _ := strconv.Atoi(r.URL.Query().Get("score"))
+	game.HandleTelegramScore(gameState, player, score)
+	w.Write([]byte(`{"success":true}`))
+}
+
+func handleLeaderboard(w http.ResponseWriter, r *http.Request) {
+	top := game.GetTopPlayers(gameState, 10)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(top)
 }

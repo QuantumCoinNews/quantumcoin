@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"time"
 
 	"quantumcoin/wallet"
 )
@@ -27,9 +28,12 @@ type TransactionOutput struct {
 
 // Transaction: Ana işlem tipi
 type Transaction struct {
-	ID      []byte
-	Inputs  []TransactionInput
-	Outputs []TransactionOutput
+	ID        []byte
+	Inputs    []TransactionInput
+	Outputs   []TransactionOutput
+	Timestamp time.Time // ⏰ İşlem zamanı
+	Sender    string    // 👤 Gönderen cüzdan adresi
+	Amount    float64   // 💸 Toplam gönderim miktarı (kullanım kolaylığı için)
 }
 
 // NewTransaction: Yeni transfer işlemi oluşturur
@@ -75,9 +79,12 @@ func NewTransaction(from string, to string, amount int, bc *Blockchain) (*Transa
 	}
 
 	tx := &Transaction{
-		ID:      nil,
-		Inputs:  inputs,
-		Outputs: outputs,
+		ID:        nil,
+		Inputs:    inputs,
+		Outputs:   outputs,
+		Timestamp: time.Now(),      // 🟢 ŞİMDİ ZAMANI
+		Sender:    from,            // 🟢 Gönderen cüzdan
+		Amount:    float64(amount), // 🟢 İşlem tutarı
 	}
 	tx.ID = tx.Hash()
 	return tx, nil
