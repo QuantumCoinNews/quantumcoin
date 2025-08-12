@@ -39,19 +39,18 @@ func ShowSettingsWindow(a fyne.App) {
 	// Dil seçimi
 	langLabel := widget.NewLabel(i18n.T(CurrentLang, "settings_lang_label"))
 	langs := []struct {
-		Code, Name, Emoji string
+		Code, Title string
 	}{
-		{"en", "English", "🇬🇧"},
-		{"tr", "Türkçe", "🇹🇷"},
-		{"es", "Español", "🇪🇸"},
-		{"zh", "中文", "🇨🇳"},
+		{"en", "English"},
+		{"tr", "Türkçe"},
+		{"es", "Español"},
+		{"zh", "中文"},
 	}
 	langBtns := container.NewHBox()
-	for _, lang := range langs {
-		langCode := lang.Code
-		btn := widget.NewButton(lang.Emoji+" "+lang.Name, func() {
-			// Dil değiştiğinde pencereyi kapatıp tekrar aç!
-			CurrentLang = langCode
+	for _, l := range langs {
+		code := l.Code
+		btn := widget.NewButton(l.Title, func() {
+			CurrentLang = code
 			win.Close()
 			ShowSettingsWindow(a)
 		})

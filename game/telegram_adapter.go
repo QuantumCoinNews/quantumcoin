@@ -2,16 +2,17 @@ package game
 
 import "fmt"
 
-// gs: GameState yapısı (global veya parametre olarak alınır)
-// player: Oyuncu adresi veya kullanıcı adı
-// score: Eklenecek puan
-
+// HandleTelegramScore: Telegram’dan gelen skorları işler (örnek adaptör)
 func HandleTelegramScore(gs *GameState, player string, score int) {
-	fmt.Printf("[Telegram] %s adlı oyuncunun skoru: %d\n", player, score)
+	if gs == nil || player == "" || score == 0 {
+		return
+	}
+	fmt.Printf("[Telegram] %s adlı oyuncunun skoru: %+d\n", player, score)
 	gs.AddScore(player, score)
 
-	// Oyun içi başarıya göre ödül sistemi
-	if score > 1000 {
-		GiveReward(player, "HighScore", 10)
-	}
+	// Skor güncellendi, eşiklere göre bonus ver
+	EvaluateAndReward(gs, player)
+
+	// Kalıcılık açıksa (dosya set edildiyse) sessizce kaydet
+	_ = gs.Save("")
 }

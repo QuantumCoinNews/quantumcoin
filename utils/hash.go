@@ -13,14 +13,14 @@ func HashSHA256(data []byte) []byte {
 	return hash[:]
 }
 
-// DoubleSHA256: 2 kez SHA-256 hash (genellikle blok ve checksum için)
+// DoubleSHA256: Double SHA-256 (used for blocks, checksums)
 func DoubleSHA256(data []byte) []byte {
 	first := sha256.Sum256(data)
 	second := sha256.Sum256(first[:])
 	return second[:]
 }
 
-// Hash160: SHA256 + RIPEMD160 kombinasyonu (adres, pubkey hash için)
+// Hash160: SHA256 + RIPEMD160 (address/pubkey hash)
 func Hash160(data []byte) []byte {
 	shaHash := sha256.Sum256(data)
 	ripemd := ripemd160.New()
@@ -31,7 +31,7 @@ func Hash160(data []byte) []byte {
 	return ripemd.Sum(nil)
 }
 
-// Checksum: DoubleSHA256'in ilk 4 baytı (adres doğrulama vs. için)
+// Checksum: First 4 bytes of DoubleSHA256
 func Checksum(payload []byte) []byte {
 	fullHash := DoubleSHA256(payload)
 	return fullHash[:4]

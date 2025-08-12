@@ -2,6 +2,7 @@ package ui
 
 import (
 	"quantumcoin/blockchain"
+	"quantumcoin/i18n"
 	"quantumcoin/wallet"
 
 	"fyne.io/fyne/v2"
@@ -9,7 +10,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-// Ana UI (sekme) fonksiyonu artık bc de alıyor!
+// Ana UI (sekme)
 func LaunchMainUI(a fyne.App, w fyne.Window, wlt *wallet.Wallet, bc *blockchain.Blockchain) {
 	w.SetTitle("QuantumCoin")
 
@@ -18,39 +19,38 @@ func LaunchMainUI(a fyne.App, w fyne.Window, wlt *wallet.Wallet, bc *blockchain.
 	addressEntry.SetText(wlt.GetAddress())
 
 	walletTab := container.NewVBox(
-		widget.NewLabelWithStyle("👛 Cüzdan Adresiniz", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
+		widget.NewLabelWithStyle(i18n.T(CurrentLang, "wallet_address"), fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
 		addressEntry,
 	)
 
-	sendTab := container.NewCenter(widget.NewButton("Gönderim Penceresini Aç", func() {
-		sendWin := a.NewWindow("Gönder")
+	sendTab := container.NewCenter(widget.NewButton(i18n.T(CurrentLang, "send_title"), func() {
+		sendWin := a.NewWindow(i18n.T(CurrentLang, "send_title"))
 		ShowSendWindow(a, sendWin, wlt, bc)
 	}))
 
-	mineTab := container.NewCenter(widget.NewButton("Madencilik Penceresini Aç", func() {
-		mineWin := a.NewWindow("Madencilik")
+	mineTab := container.NewCenter(widget.NewButton(i18n.T(CurrentLang, "mine_title"), func() {
+		mineWin := a.NewWindow(i18n.T(CurrentLang, "mine_title"))
 		ShowMineWindow(a, mineWin, wlt.GetAddress(), bc)
 	}))
 
-	explorerTab := container.NewCenter(widget.NewButton("Blok Gezgini", func() {
-		expWin := a.NewWindow("Explorer")
+	explorerTab := container.NewCenter(widget.NewButton(i18n.T(CurrentLang, "explorer_title"), func() {
+		expWin := a.NewWindow(i18n.T(CurrentLang, "explorer_title"))
 		ShowExplorerWindow(a, expWin, bc)
 	}))
 
-	// Ayarlar sekmesi: Buraya "Ayarları Aç" butonu ekle!
 	settingsTab := container.NewVBox(
-		widget.NewLabelWithStyle("⚙️ Ayarlar", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
-		widget.NewButton("Ayarları Aç", func() {
+		widget.NewLabelWithStyle(i18n.T(CurrentLang, "settings_title"), fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
+		widget.NewButton(i18n.T(CurrentLang, "settings_open"), func() {
 			ShowSettingsWindow(a)
 		}),
 	)
 
 	tabs := container.NewAppTabs(
-		container.NewTabItem("Cüzdan", walletTab),
-		container.NewTabItem("Gönder", sendTab),
-		container.NewTabItem("Madencilik", mineTab),
-		container.NewTabItem("Gezgin", explorerTab),
-		container.NewTabItem("Ayarlar", settingsTab),
+		container.NewTabItem(i18n.T(CurrentLang, "wallet_tab"), walletTab),
+		container.NewTabItem(i18n.T(CurrentLang, "send_tab"), sendTab),
+		container.NewTabItem(i18n.T(CurrentLang, "mine_tab"), mineTab),
+		container.NewTabItem(i18n.T(CurrentLang, "explorer_tab"), explorerTab),
+		container.NewTabItem(i18n.T(CurrentLang, "settings_tab"), settingsTab),
 	)
 
 	w.SetContent(tabs)

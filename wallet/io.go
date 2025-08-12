@@ -2,7 +2,6 @@ package wallet
 
 import (
 	"encoding/json"
-	"io/ioutil"
 	"log"
 	"os"
 
@@ -17,8 +16,7 @@ func SaveWalletToFile(w *Wallet) {
 	if err != nil {
 		log.Fatalf("Cüzdan serileştirme hatası: %v", err)
 	}
-	err = ioutil.WriteFile(walletFile, data, 0644)
-	if err != nil {
+	if err := os.WriteFile(walletFile, data, 0644); err != nil {
 		log.Fatalf("Cüzdan dosyası yazılamadı: %v", err)
 	}
 }
@@ -28,13 +26,12 @@ func LoadWalletFromFile() *Wallet {
 	if _, err := os.Stat(walletFile); os.IsNotExist(err) {
 		return NewWallet()
 	}
-	data, err := ioutil.ReadFile(walletFile)
+	data, err := os.ReadFile(walletFile)
 	if err != nil {
 		log.Fatalf("Cüzdan dosyası okunamadı: %v", err)
 	}
 	var w Wallet
-	err = json.Unmarshal(data, &w)
-	if err != nil {
+	if err := json.Unmarshal(data, &w); err != nil {
 		log.Fatalf("Cüzdan parse edilemedi: %v", err)
 	}
 	return &w

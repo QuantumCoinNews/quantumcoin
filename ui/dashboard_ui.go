@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"quantumcoin/blockchain"
-	"quantumcoin/miner"
+	"quantumcoin/i18n"
 	"quantumcoin/wallet"
 
 	"fyne.io/fyne/v2"
@@ -12,7 +12,6 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-// DashboardUI gösterimi, tüm temel bilgileri gösterir
 func ShowDashboardWindow(a fyne.App, w fyne.Window, bc *blockchain.Blockchain, wlt *wallet.Wallet) {
 	w.SetTitle("QuantumCoin Dashboard")
 
@@ -20,44 +19,53 @@ func ShowDashboardWindow(a fyne.App, w fyne.Window, bc *blockchain.Blockchain, w
 	addressEntry.Disable()
 	addressEntry.SetText(wlt.GetAddress())
 
-	bcLocal := bc
-	balance := bcLocal.GetBalance(wlt.GetAddress())
-	height := bcLocal.GetBestHeight()
+	refresh := func(balanceLabel, statusLabel *widget.Label) {
+		if bc == nil {
+			return
+		}
+		bal := bc.GetBalance(wlt.GetAddress())
+		height := bc.GetBestHeight()
+		balanceLabel.SetText(fmt.Sprintf("%s %d QC", i18n.T(CurrentLang, "explorer_tx_out")[:6], bal)) // "Amount:" yerine kısa kullanıyoruz
+		statusLabel.SetText(fmt.Sprintf("Height: %d", height))
+	}
 
-	statusLabel := widget.NewLabel(fmt.Sprintf("Son Blok Yüksekliği: %d", height))
-	balanceLabel := widget.NewLabel(fmt.Sprintf("Bakiyeniz: %d QC", balance))
+	balanceLabel := widget.NewLabel(i18n.T(CurrentLang, "mine_status_idle"))
+	statusLabel := widget.NewLabel(i18n.T(CurrentLang, "mine_last_block_none"))
+	miningStatus := widget.NewLabel(i18n.T(CurrentLang, "mine_status_idle"))
 
-	miningStatus := widget.NewLabel("Madencilik Durumu: Pasif")
-
-	startBtn := widget.NewButton("Madenciliği Başlat", func() {
-		if !miner.IsMiningActive() {
-			miner.StartMining(wlt.GetAddress(), func(status miner.MiningStatus) {
-				// UI güncellemesi için main thread gerekebilir
-				statusLabel.SetText(fmt.Sprintf("Son Blok Yüksekliği: %d", status.BlockHeight))
-				miningStatus.SetText("Madencilik Durumu: Aktif")
+	startBtn := widget.NewButton(i18n.T(CurrentLang, "mine_start"), func() {
+		miningStatus.SetText(i18n.T(CurrentLang, "mine_status_active"))
+		go func() {
+			block, err := bc.MineBlock(wlt.GetAddress(), 16)
+			if err != nil {
+				fyne.Do(func() {
+					miningStatus.SetText(fmt.Sprintf(i18n.T(CurrentLang, "mine_error"), err))
+				})
+				return
+			}
+			fyne.Do(func() {
+				miningStatus.SetText(fmt.Sprintf(i18n.T(CurrentLang, "mine_last_block"), block.Index, block.Hash))
+				refresh(balanceLabel, statusLabel)
 			})
-		}
+		}()
 	})
 
-	stopBtn := widget.NewButton("Madenciliği Durdur", func() {
-		if miner.IsMiningActive() {
-			miner.StopMining()
-			miningStatus.SetText("Madencilik Durumu: Pasif")
-		}
+	stopBtn := widget.NewButton(i18n.T(CurrentLang, "mine_stop"), func() {
+		miningStatus.SetText(i18n.T(CurrentLang, "mine_status_idle"))
 	})
 
-	sendBtn := widget.NewButton("Gönderim Penceresi", func() {
-		sendWin := a.NewWindow("Gönder")
+	sendBtn := widget.NewButton(i18n.T(CurrentLang, "send_title"), func() {
+		sendWin := a.NewWindow(i18n.T(CurrentLang, "send_title"))
 		ShowSendWindow(a, sendWin, wlt, bc)
 	})
 
-	explorerBtn := widget.NewButton("Blockchain Gezgini", func() {
-		expWin := a.NewWindow("Explorer")
+	explorerBtn := widget.NewButton(i18n.T(CurrentLang, "explorer_title"), func() {
+		expWin := a.NewWindow(i18n.T(CurrentLang, "explorer_title"))
 		ShowExplorerWindow(a, expWin, bc)
 	})
 
 	content := container.NewVBox(
-		widget.NewLabelWithStyle("👛 Cüzdan Adresi", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
+		widget.NewLabelWithStyle(i18n.T(CurrentLang, "wallet_address"), fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
 		addressEntry,
 		balanceLabel,
 		statusLabel,
@@ -67,7 +75,8 @@ func ShowDashboardWindow(a fyne.App, w fyne.Window, bc *blockchain.Blockchain, w
 		explorerBtn,
 	)
 
+	refresh(balanceLabel, statusLabel)
 	w.SetContent(content)
-	w.Resize(fyne.NewSize(600, 400))
+	w.Resize(fyne.NewSize(600, 420))
 	w.Show()
 }

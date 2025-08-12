@@ -7,19 +7,15 @@ import (
 	"math/big"
 )
 
-// curve: Hangi eğriyle imza/verify yapılacak?
+// curve: Elliptic curve selection for signing/verification
 func curve() elliptic.Curve {
 	return elliptic.P256()
-	// secp256k1 için: github.com/btcsuite/btcd/btcec kullanılır
+	// For secp256k1: use github.com/btcsuite/btcd/btcec
 }
 
-// VerifySig: ECDSA signature doğrulama
-// pubKey: 65-byte uncompressed (0x04 || X(32) || Y(32))
-// hash: sha256 hash (32 byte)
-// rBytes, sBytes: İmza bileşenleri
+// VerifySig: ECDSA signature verification
 func VerifySig(pubKey []byte, hash []byte, rBytes []byte, sBytes []byte) bool {
 	if len(pubKey) != 65 || pubKey[0] != 0x04 {
-		// Sadece uncompressed public key kabul edilir
 		return false
 	}
 	x := new(big.Int).SetBytes(pubKey[1:33])
@@ -30,7 +26,7 @@ func VerifySig(pubKey []byte, hash []byte, rBytes []byte, sBytes []byte) bool {
 	return ecdsa.Verify(&publicKey, hash, r, s)
 }
 
-// HashData: SHA256 ile hash al
+// HashData: SHA256 hashing
 func HashData(data []byte) []byte {
 	hash := sha256.Sum256(data)
 	return hash[:]

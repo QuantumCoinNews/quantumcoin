@@ -3,8 +3,8 @@ package i18n
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
+	"os"
 	"path/filepath"
 )
 
@@ -14,21 +14,22 @@ var messages map[string]map[string]string
 func init() {
 	messages = make(map[string]map[string]string)
 
-	loadLanguage("en")
-	loadLanguage("tr")
+	// Yüklenecek diller
+	for _, lang := range []string{"en", "tr", "es", "zh"} {
+		loadLanguage(lang)
+	}
 }
 
 // loadLanguage belirtilen dili dosyadan yükler
 func loadLanguage(lang string) {
 	path := filepath.Join("i18n", fmt.Sprintf("%s.json", lang))
-	data, err := ioutil.ReadFile(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		log.Printf("[i18n] %s.json yüklenemedi: %v", lang, err)
 		return
 	}
 	var langMessages map[string]string
-	err = json.Unmarshal(data, &langMessages)
-	if err != nil {
+	if err := json.Unmarshal(data, &langMessages); err != nil {
 		log.Printf("[i18n] %s.json parse hatası: %v", lang, err)
 		return
 	}

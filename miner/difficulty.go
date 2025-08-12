@@ -12,7 +12,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-// DifficultyWidget: Zorluk seviyesi için animasyonlu görsel bileşen
+// DifficultyWidget: görsel zorluk göstergesi (demo)
 func DifficultyWidget(currentDifficulty float64) fyne.CanvasObject {
 	title := canvas.NewText("⛏️ Mining Difficulty", theme.PrimaryColor())
 	title.TextStyle = fyne.TextStyle{Bold: true}
@@ -23,10 +23,9 @@ func DifficultyWidget(currentDifficulty float64) fyne.CanvasObject {
 
 	progress := widget.NewProgressBar()
 	progress.Min = 0.0
-	progress.Max = 10.0 // Örnek olarak en fazla 10 seviye zorluk
+	progress.Max = 10.0
 	progress.Value = currentDifficulty
 
-	// Zamanla artan sahte zorluk animasyonu (gerçek değerle değiştirilebilir)
 	go func() {
 		for {
 			time.Sleep(5 * time.Second)
@@ -39,7 +38,6 @@ func DifficultyWidget(currentDifficulty float64) fyne.CanvasObject {
 		}
 	}()
 
-	// Ana arayüz düzeni
 	return container.NewVBox(
 		title,
 		canvas.NewLine(color.Gray{Y: 100}),

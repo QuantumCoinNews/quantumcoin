@@ -5,7 +5,7 @@ import (
 	"encoding/gob"
 )
 
-// EncodeToBytes: Herhangi bir nesneyi gob ile []byte'a çevirir
+// EncodeToBytes: Gob encode any data to []byte
 func EncodeToBytes(data interface{}) ([]byte, error) {
 	var buff bytes.Buffer
 	enc := gob.NewEncoder(&buff)
@@ -16,7 +16,7 @@ func EncodeToBytes(data interface{}) ([]byte, error) {
 	return buff.Bytes(), nil
 }
 
-// DecodeFromBytes: Gob []byte'dan istenen nesneyi üretir
+// DecodeFromBytes: Gob decode []byte to struct
 func DecodeFromBytes(data []byte, target interface{}) error {
 	dec := gob.NewDecoder(bytes.NewReader(data))
 	return dec.Decode(target)

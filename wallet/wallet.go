@@ -14,7 +14,7 @@ import (
 // Wallet, bir cüzdanın özel ve açık anahtarlarını tutar
 type Wallet struct {
 	PrivateKey *ecdsa.PrivateKey
-	PublicKey  []byte
+	PublicKey  []byte // Uncompressed: 0x04 || X || Y
 }
 
 // NewWallet yeni bir cüzdan (anahtar çifti) oluşturur
@@ -23,11 +23,9 @@ func NewWallet() *Wallet {
 	if err != nil {
 		log.Panicf("Cüzdan anahtarı oluşturulamadı: %v", err)
 	}
-
-	// Public key = X ve Y koordinatlarının byte dizisi
-	pubKey := append(privKey.PublicKey.X.Bytes(), privKey.PublicKey.Y.Bytes()...)
-
-	return &Wallet{PrivateKey: privKey, PublicKey: pubKey}
+	// Uncompressed public key: 0x04 prefix + X + Y
+	pub := append([]byte{0x04}, append(privKey.PublicKey.X.Bytes(), privKey.PublicKey.Y.Bytes()...)...)
+	return &Wallet{PrivateKey: privKey, PublicKey: pub}
 }
 
 // GetAddress cüzdanın Base58Check formatında adresini üretir
@@ -53,10 +51,15 @@ func (w *Wallet) ExportPrivateKeyHex() string {
 	return hex.EncodeToString(privBytes)
 }
 
-// LoadWallet, adres bazlı cüzdan yükleme (dummy olarak yeni cüzdan oluşturur)
+// LoadWallet, adres bazlı cüzdan yükleme (önce dosyadakini dener, eşleşirse onu döner)
 func LoadWallet(address string) *Wallet {
-	// Gerçek uygulamada adresle özel anahtarı bulup yüklemelisin.
-	// Şimdilik örnek olarak yeni cüzdan döndürür.
+	// 1) Dosyadan tek cüzdanı yükle (mevcut mimari tek wallet tutuyor)
+	w := LoadWalletFromFile()
+	// 2) Eğer adres eşleşiyorsa bu cüzdanı döndür
+	if addr := w.GetAddress(); addr == address {
+		return w
+	}
+	// 3) Eşleşmiyorsa (ya da dosya yoksa) yeni cüzdan oluştur (eski davranış korunur)
 	return NewWallet()
 }
 

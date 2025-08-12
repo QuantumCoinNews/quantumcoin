@@ -2,10 +2,12 @@ package ui
 
 import (
 	"fmt"
-	"quantumcoin/blockchain"
-	"quantumcoin/wallet"
 	"strconv"
 	"strings"
+
+	"quantumcoin/blockchain"
+	"quantumcoin/i18n"
+	"quantumcoin/wallet"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -13,74 +15,61 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-// Gönder penceresi, Fyne thread-safe & kullanıcı dostu!
 func ShowSendWindow(a fyne.App, w fyne.Window, wlt *wallet.Wallet, bc *blockchain.Blockchain) {
-	w.SetTitle("Transfer Yap")
+	w.SetTitle(i18n.T(CurrentLang, "send_title"))
 	toEntry := widget.NewEntry()
-	toEntry.SetPlaceHolder("Alıcı Adresi")
+	toEntry.SetPlaceHolder(i18n.T(CurrentLang, "send_to_placeholder"))
 	amountEntry := widget.NewEntry()
-	amountEntry.SetPlaceHolder("Miktar (QC)")
+	amountEntry.SetPlaceHolder(i18n.T(CurrentLang, "send_amount_placeholder"))
 
-	// YARDIMCI: Adres minimum uzunluk kontrolü (isteğe bağlı, QC adres standardına göre ayarlayabilirsin)
-	isAddressValid := func(addr string) bool {
-		return len(strings.TrimSpace(addr)) >= 20 // örnek: min 20 karakter
-	}
-
-	sendBtn := widget.NewButton("Gönder", func() {
+	sendBtn := widget.NewButton(i18n.T(CurrentLang, "send_button"), func() {
 		to := strings.TrimSpace(toEntry.Text)
 		amountStr := strings.TrimSpace(amountEntry.Text)
 
 		if to == "" || amountStr == "" {
-			dialog.ShowError(fmt.Errorf("Lütfen tüm alanları doldurun!"), w)
+			dialog.ShowError(fmt.Errorf(i18n.T(CurrentLang, "error_fill_fields")), w)
 			return
 		}
-		if !isAddressValid(to) {
-			dialog.ShowError(fmt.Errorf("Geçersiz alıcı adresi!"), w)
+		if !wallet.ValidateAddress(to) {
+			dialog.ShowError(fmt.Errorf(i18n.T(CurrentLang, "error_invalid_address")), w)
 			return
 		}
 		amount, err := strconv.Atoi(amountStr)
 		if err != nil || amount <= 0 {
-			dialog.ShowError(fmt.Errorf("Geçersiz miktar!"), w)
-			return
-		}
-		if amount > 1000000000 {
-			dialog.ShowError(fmt.Errorf("Çok yüksek miktar!"), w)
+			dialog.ShowError(fmt.Errorf(i18n.T(CurrentLang, "error_invalid_amount")), w)
 			return
 		}
 		if bc == nil {
-			dialog.ShowError(fmt.Errorf("Blockchain bağlı değil!"), w)
+			dialog.ShowError(fmt.Errorf(i18n.T(CurrentLang, "error_blockchain_not_connected")), w)
 			return
 		}
-		// Varlık/bakiye kontrolü örnek (opsiyonel)
 		balance := bc.GetBalance(wlt.GetAddress())
 		if amount > balance {
-			dialog.ShowError(fmt.Errorf("Yetersiz bakiye! Mevcut: %d QC", balance), w)
+			dialog.ShowError(fmt.Errorf(i18n.T(CurrentLang, "error_insufficient_balance")), w)
 			return
 		}
 		tx, err := blockchain.NewTransaction(wlt.GetAddress(), to, amount, bc)
 		if err != nil {
-			dialog.ShowError(fmt.Errorf("İşlem hatası: %v", err), w)
+			dialog.ShowError(fmt.Errorf("%s: %v", i18n.T(CurrentLang, "error_tx_create"), err), w)
 			return
 		}
-		err = bc.AddTransaction(tx)
-		if err != nil {
-			dialog.ShowError(fmt.Errorf("İşlem havuza eklenemedi: %v", err), w)
+		if err := bc.AddTransaction(tx); err != nil {
+			dialog.ShowError(fmt.Errorf("%s: %v", i18n.T(CurrentLang, "error_tx_add"), err), w)
 			return
 		}
-		dialog.ShowInformation("Başarılı", "Transfer gönderildi!", w)
+		dialog.ShowInformation(i18n.T(CurrentLang, "success"), i18n.T(CurrentLang, "send_success"), w)
 		toEntry.SetText("")
 		amountEntry.SetText("")
-		// w.Close() // istersen pencereyi otomatik kapat
 	})
 
 	form := container.NewVBox(
-		widget.NewLabelWithStyle("QC Gönder", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
+		widget.NewLabelWithStyle(i18n.T(CurrentLang, "send_title"), fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
 		toEntry,
 		amountEntry,
 		sendBtn,
 	)
 
 	w.SetContent(container.NewCenter(form))
-	w.Resize(fyne.NewSize(400, 260))
+	w.Resize(fyne.NewSize(420, 280))
 	w.Show()
 }

@@ -2,31 +2,31 @@ package game
 
 import (
 	"fmt"
-	"sort"
 )
 
+// LeaderboardEntry: dış API’de kullanılan tip
 type LeaderboardEntry struct {
-	Player string
-	Score  int
+	Player string `json:"player"`
+	Score  int    `json:"score"`
 }
 
-// Basit skor sıralama fonksiyonu
+// GetTopPlayers: en iyi `limit` oyuncu
 func GetTopPlayers(gameState *GameState, limit int) []LeaderboardEntry {
-	gameState.mu.Lock()
-	defer gameState.mu.Unlock()
-	var entries []LeaderboardEntry
-	for player, score := range gameState.Players {
-		entries = append(entries, LeaderboardEntry{Player: player, Score: score})
+	if gameState == nil || limit <= 0 {
+		return nil
 	}
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].Score > entries[j].Score
-	})
-	if len(entries) > limit {
-		return entries[:limit]
+	arr := gameState.Sorted()
+	if len(arr) > limit {
+		arr = arr[:limit]
 	}
-	return entries
+	out := make([]LeaderboardEntry, 0, len(arr))
+	for _, e := range arr {
+		out = append(out, LeaderboardEntry{Player: e.Player, Score: e.Score})
+	}
+	return out
 }
 
+// PrintLeaderboard: konsola yazdırır
 func PrintLeaderboard(lb []LeaderboardEntry) {
 	fmt.Println("=== Liderlik Tablosu ===")
 	for i, entry := range lb {

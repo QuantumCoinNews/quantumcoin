@@ -1,0 +1,14 @@
+﻿bin/
+build/
+*.exe
+*.dll
+*.log
+*.dat
+*.db
+*.sqlite
+*.tmp
+*.out
+coverage/
+chain_data.dat
+bonus_store.json
+wallet_data.json

@@ -2,6 +2,7 @@ package internal
 
 import (
 	"encoding/hex"
+
 	"quantumcoin/blockchain"
 )
 
@@ -18,24 +19,34 @@ func NewUTXOSet() *UTXOSet {
 // Reindex: Zinciri baştan tarar ve UTXO'ları günceller
 func (set *UTXOSet) Reindex(chain *blockchain.Blockchain) {
 	set.UTXOs = make(map[string][]blockchain.TransactionOutput)
-	for _, block := range chain.Blocks {
-		for _, tx := range block.Transactions {
+
+	// 1) Tüm çıktıları ekle
+	for _, b := range chain.Blocks {
+		for _, tx := range b.Transactions {
 			txID := hex.EncodeToString(tx.ID)
-			// Tüm çıkışları geçici ekle
-			for _, out := range tx.Outputs {
-				set.UTXOs[txID] = append(set.UTXOs[txID], out)
+			if _, ok := set.UTXOs[txID]; !ok {
+				set.UTXOs[txID] = make([]blockchain.TransactionOutput, 0, len(tx.Outputs))
 			}
-			// Eğer coinbase değilse girişlere göre harcananları sil
-			if !tx.IsCoinbase() {
-				for _, in := range tx.Inputs {
-					inTxID := hex.EncodeToString(in.TxID)
-					index := in.OutIndex
-					outs := set.UTXOs[inTxID]
-					if index < len(outs) {
-						set.UTXOs[inTxID] = append(outs[:index], outs[index+1:]...)
-					}
-					if len(set.UTXOs[inTxID]) == 0 {
+			set.UTXOs[txID] = append(set.UTXOs[txID], tx.Outputs...)
+		}
+	}
+
+	// 2) Non-coinbase işlemlerin harcadığı çıktıları düş
+	for _, b := range chain.Blocks {
+		for _, tx := range b.Transactions {
+			if tx.IsCoinbase() {
+				continue
+			}
+			for _, in := range tx.Inputs {
+				inTxID := hex.EncodeToString(in.TxID)
+				outs := set.UTXOs[inTxID]
+				idx := in.OutIndex
+				if idx >= 0 && idx < len(outs) {
+					outs = append(outs[:idx], outs[idx+1:]...)
+					if len(outs) == 0 {
 						delete(set.UTXOs, inTxID)
+					} else {
+						set.UTXOs[inTxID] = outs
 					}
 				}
 			}
@@ -44,21 +55,23 @@ func (set *UTXOSet) Reindex(chain *blockchain.Blockchain) {
 }
 
 // FindSpendableOutputs: Belirli bir miktarı sağlayacak UTXO'ları bulur
-func (set *UTXOSet) FindSpendableOutputs(pubKeyHash []byte, amount int) (int, map[string][]int) {
+// İMZA UYUMU: blockchain.FindSpendableOutputs ile aynı sırada döndürür (map, int)
+func (set *UTXOSet) FindSpendableOutputs(pubKeyHash []byte, amount int) (map[string][]int, int) {
 	accumulated := 0
 	spendable := make(map[string][]int)
+
 	for txID, outs := range set.UTXOs {
 		for idx, out := range outs {
 			if out.IsLockedWithKey(pubKeyHash) {
 				accumulated += out.Amount
 				spendable[txID] = append(spendable[txID], idx)
 				if accumulated >= amount {
-					return accumulated, spendable
+					return spendable, accumulated
 				}
 			}
 		}
 	}
-	return accumulated, spendable
+	return spendable, accumulated
 }
 
 // FindUTXOs: Adrese ait tüm harcanmamış çıktıları döner

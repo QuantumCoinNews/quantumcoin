@@ -36,11 +36,11 @@ func RecordBlock(hashCount int) {
 func GetHashRate() int {
 	mu.Lock()
 	defer mu.Unlock()
-	duration := time.Since(startTime).Seconds()
-	if duration == 0 {
+	d := time.Since(startTime).Seconds()
+	if d == 0 {
 		return 0
 	}
-	return int(float64(hashesTried) / duration)
+	return int(float64(hashesTried) / d)
 }
 
 func GetLastBlockMetrics() (string, int) {

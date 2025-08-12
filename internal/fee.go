@@ -1,33 +1,61 @@
 package internal
 
 import (
+	"sync"
+
 	"quantumcoin/blockchain"
 )
 
-// Sabit işlem ücreti (örnek): 0.00001 QC (1 satoshi)
-const FixedFee = 1 // En küçük birim (int ile tutulur)
+// Varsayılan sabit ücret (QC cinsinden). İstersen SetFixedFee ile değiştirebilirsin.
+const defaultFixedFee = 1
 
 type FeeManager struct {
-	TotalFees int // Blok/mempool için toplanan toplam fee
+	mu        sync.Mutex
+	fixedFee  int
+	totalFees int
 }
 
-// Yeni FeeManager oluştur
 func NewFeeManager() *FeeManager {
-	return &FeeManager{TotalFees: 0}
+	return &FeeManager{fixedFee: defaultFixedFee}
 }
 
-// ApplyFee: İşleme fee uygula, toplam fee havuzuna ekle, madenciye aktarılacak kısmı döndür
-func (fm *FeeManager) ApplyFee(tx *blockchain.Transaction) int {
-	fm.TotalFees += FixedFee
-	return FixedFee
+// SetFixedFee: runtime'da ücreti günceller (>=0 olmalı)
+func (fm *FeeManager) SetFixedFee(fee int) {
+	if fee < 0 {
+		fee = 0
+	}
+	fm.mu.Lock()
+	fm.fixedFee = fee
+	fm.mu.Unlock()
 }
 
-// GetTotalFees: Blok/madenci için toplanan tüm fee
+// GetFixedFee: geçerli sabit ücreti döndürür
+func (fm *FeeManager) GetFixedFee() int {
+	fm.mu.Lock()
+	defer fm.mu.Unlock()
+	return fm.fixedFee
+}
+
+// ApplyFee: bir işleme ücret uygular ve toplam ücreti artırır.
+// Şimdilik sabit ücret modeli; ileride tx boyutu/önceliğe göre genişletilebilir.
+func (fm *FeeManager) ApplyFee(_ *blockchain.Transaction) int {
+	fm.mu.Lock()
+	fee := fm.fixedFee
+	fm.totalFees += fee
+	fm.mu.Unlock()
+	return fee
+}
+
+// GetTotalFees: toplanmış toplam ücreti döndürür
 func (fm *FeeManager) GetTotalFees() int {
-	return fm.TotalFees
+	fm.mu.Lock()
+	defer fm.mu.Unlock()
+	return fm.totalFees
 }
 
-// Reset: Fee havuzunu sıfırla (blok çıkarıldıktan sonra çağrılır)
+// Reset: toplam ücret sayacını sıfırlar
 func (fm *FeeManager) Reset() {
-	fm.TotalFees = 0
+	fm.mu.Lock()
+	fm.totalFees = 0
+	fm.mu.Unlock()
 }

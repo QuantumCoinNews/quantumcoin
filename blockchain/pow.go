@@ -9,6 +9,7 @@ import (
 )
 
 const maxNonce = math.MaxInt64
+const defaultDifficultyBits = 16 // config default ile uyumlu
 
 // ProofOfWork: QuantumCoin PoW algoritması
 type ProofOfWork struct {
@@ -19,13 +20,21 @@ type ProofOfWork struct {
 
 // NewProofOfWork: yeni PoW objesi
 func NewProofOfWork(block *Block) *ProofOfWork {
+	// Zorluk 1..255 aralığına sıkıştırılır; 0 gelirse güvenli varsayılan kullan
+	diff := block.Difficulty
+	if diff <= 0 {
+		diff = defaultDifficultyBits
+	}
+	if diff > 255 {
+		diff = 255
+	}
 	target := big.NewInt(1)
-	target.Lsh(target, uint(256-block.Difficulty)) // Zorluk seviyesine göre hedef ayarlanır
+	target.Lsh(target, uint(256-diff)) // Zorluk seviyesine göre hedef ayarlanır
 
 	return &ProofOfWork{
 		Block:      block,
 		Target:     target,
-		Difficulty: block.Difficulty,
+		Difficulty: diff,
 	}
 }
 
@@ -53,6 +62,7 @@ func (pow *ProofOfWork) prepareData(nonce int) []byte {
 		pow.Block.PrevHash,
 		pow.Block.HashTransactions(),
 		[]byte(strconv.Itoa(pow.Block.Index)),
+		[]byte(strconv.FormatInt(pow.Block.Timestamp, 10)), // (YENİ) timestamp dahil
 		[]byte(strconv.Itoa(nonce)),
 		[]byte(strconv.Itoa(pow.Difficulty)),
 		[]byte(pow.Block.Miner),

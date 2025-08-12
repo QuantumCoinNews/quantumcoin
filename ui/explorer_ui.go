@@ -2,7 +2,9 @@ package ui
 
 import (
 	"fmt"
+
 	"quantumcoin/blockchain"
+	"quantumcoin/i18n"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -10,27 +12,26 @@ import (
 )
 
 func ShowExplorerWindow(a fyne.App, w fyne.Window, bc *blockchain.Blockchain) {
-	w.SetTitle("Blockchain Explorer")
+	w.SetTitle(i18n.T(CurrentLang, "explorer_title"))
 	content := container.NewVBox()
 	scroll := container.NewVScroll(content)
+
 	if bc != nil {
 		for _, block := range bc.Blocks {
-			blockLabel := widget.NewLabel(fmt.Sprintf("Block #%d - Miner: %s\nHash: %x", block.Index, block.Miner, block.Hash))
-			content.Add(blockLabel)
+			content.Add(widget.NewLabel(fmt.Sprintf(i18n.T(CurrentLang, "explorer_block"), block.Index, block.Miner, block.Hash, block.PrevHash)))
 			for _, tx := range block.Transactions {
-				txLabel := widget.NewLabel(fmt.Sprintf("  TxID: %x", tx.ID))
-				content.Add(txLabel)
+				content.Add(widget.NewLabel(fmt.Sprintf(i18n.T(CurrentLang, "explorer_tx"), tx.ID)))
 				for _, out := range tx.Outputs {
-					outLabel := widget.NewLabel(fmt.Sprintf("    Amount: %d QC", out.Amount))
-					content.Add(outLabel)
+					content.Add(widget.NewLabel(fmt.Sprintf(i18n.T(CurrentLang, "explorer_tx_out"), out.Amount)))
 				}
 			}
 			content.Add(widget.NewSeparator())
 		}
 	} else {
-		content.Add(widget.NewLabel("Blockchain verisi mevcut değil."))
+		content.Add(widget.NewLabel("—"))
 	}
+
 	w.SetContent(scroll)
-	w.Resize(fyne.NewSize(700, 500))
+	w.Resize(fyne.NewSize(740, 520))
 	w.Show()
 }

@@ -41,6 +41,7 @@ func NewTransaction(from string, to string, amount int, bc *Blockchain) (*Transa
 	w := wallet.LoadWallet(from)
 	pubKeyHash := wallet.GetPubKeyHash(w.PublicKey)
 
+	// Harcanabilir (maturity dahil) UTXO'ları bul
 	utxos, acc := bc.FindSpendableOutputs(pubKeyHash, amount)
 	if acc < amount {
 		return nil, fmt.Errorf("yetersiz bakiye")
@@ -104,8 +105,7 @@ func (tx *Transaction) Hash() []byte {
 func (tx *Transaction) Serialize() []byte {
 	var buff bytes.Buffer
 	enc := gob.NewEncoder(&buff)
-	err := enc.Encode(tx)
-	if err != nil {
+	if err := enc.Encode(tx); err != nil {
 		log.Panicf("İşlem serileştirme hatası: %v", err)
 	}
 	return buff.Bytes()

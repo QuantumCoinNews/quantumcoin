@@ -1,8 +1,6 @@
 package miner
 
-import (
-	"time"
-)
+import "time"
 
 type Schedule struct {
 	StartHour int
@@ -10,7 +8,6 @@ type Schedule struct {
 }
 
 func ShouldMineNow(s Schedule) bool {
-	now := time.Now()
-	hour := now.Hour()
-	return hour >= s.StartHour && hour < s.EndHour
+	h := time.Now().Hour()
+	return h >= s.StartHour && h < s.EndHour
 }

@@ -22,7 +22,7 @@ type Block struct {
 	// Reward     int
 }
 
-// NewBlock: Zincire yeni blok ekler
+// NewBlock: Zincire yeni blok ekler (imzalar BOZULMADAN)
 func NewBlock(index int, txs []*Transaction, prevHash []byte, miner string, difficulty int) *Block {
 	block := &Block{
 		Index:        index,
@@ -56,8 +56,7 @@ func (b *Block) HashTransactions() []byte {
 func (b *Block) Serialize() []byte {
 	var result bytes.Buffer
 	encoder := gob.NewEncoder(&result)
-	err := encoder.Encode(b)
-	if err != nil {
+	if err := encoder.Encode(b); err != nil {
 		panic(err)
 	}
 	return result.Bytes()
@@ -67,8 +66,7 @@ func (b *Block) Serialize() []byte {
 func DeserializeBlock(data []byte) *Block {
 	var block Block
 	decoder := gob.NewDecoder(bytes.NewReader(data))
-	err := decoder.Decode(&block)
-	if err != nil {
+	if err := decoder.Decode(&block); err != nil {
 		panic(err)
 	}
 	return &block
@@ -87,5 +85,6 @@ func CreateGenesisBlock(reward int) *Block {
 		},
 	}
 	genesisTx.ID = genesisTx.Hash()
+	// Genesis'te düşük zorluk kullan
 	return NewBlock(0, []*Transaction{genesisTx}, []byte{}, "genesis", 1)
 }
