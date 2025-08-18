@@ -1,14 +1,29 @@
-﻿bin/
-build/
+﻿# Go build
+/bin/
+/dist/
+/build/
+/coverage/
+/*.exe
 *.exe
-*.dll
-*.log
-*.dat
-*.db
-*.sqlite
-*.tmp
+*.test
 *.out
-coverage/
-chain_data.dat
-bonus_store.json
+
+# IDE
+.vscode/
+*.code-workspace
+
+# Project local data
+chain_data*.dat
+qc_blockchain.db*
+*.db
+*.db.lock
+*.dat
+.wallet
 wallet_data.json
+bonus_store.json
+.quantumcoin_tmp/
+*.log
+
+# OS
+Thumbs.db
+.DS_Store
