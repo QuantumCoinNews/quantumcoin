@@ -1,3 +1,4 @@
+// config/config.go
 package config
 
 import (
@@ -11,64 +12,100 @@ import (
 	"time"
 )
 
+//
+// ===== Backward-compat shims (eski kod uyumluluğu) =====
+//
+
+// 1 QC = 100,000,000 "atoms"
+const QC int64 = 100_000_000
+
+// Eski kod bu sabiti bekliyor; ENV ile override edilebilir (QC_ANNUAL_BONUS_QC).
+var AnnualBonusPerYearQC int64 = 100
+
+// Eski kod bazı yerlerde time.Time olarak GenesisTime bekliyor.
+var GenesisTime time.Time
+
+// BlocksPerYear: hedef blok süresine göre yaklaşık blok/yıl (int64 döner)
+func BlocksPerYear() int64 {
+	c := Current()
+	secs := c.TargetBlockTimeSecs
+	if secs <= 0 {
+		secs = 30
+	}
+	return int64((365 * 24 * 3600) / secs)
+}
+
+//
+// ===== Yeni yapı =====
+//
+
 // Config: QuantumCoin temel ayarları
 type Config struct {
-	// Chain & Monetary Policy
-	Symbol                string `json:"symbol"`                  // "QC"
-	InitialReward         int    `json:"initial_reward"`          // 50
-	TotalSupply           int    `json:"total_supply"`            // 25_500_000 (0 = sınırsız)
-	GenesisUnix           int64  `json:"genesis_unix"`            // 2024-09-01 00:00:00 UTC örn.
-	HalvingIntervalSecs   int64  `json:"halving_interval_secs"`   // 2 yıl
-	MiningPeriodSecs      int64  `json:"mining_period_secs"`      // 10 yıl (0 = sınırsız)
-	TargetBlockTimeSecs   int    `json:"target_block_time_secs"`  // 30 (opsiyonel, PoW ayarı için)
-	HalvingPeriodBlocks   int    `json:"halving_period_blocks"`   // Blok bazlı halving için (opsiyonel)
-	DefaultDifficultyBits int    `json:"default_difficulty_bits"` // 16
+	// --- Chain & Monetary Policy ---
+	Symbol                string `json:"symbol"`
+	InitialReward         int    `json:"initial_reward"`
+	TotalSupply           int    `json:"total_supply"`
+	GenesisUnix           int64  `json:"genesis_unix"`
+	HalvingIntervalSecs   int64  `json:"halving_interval_secs"`
+	MiningPeriodSecs      int64  `json:"mining_period_secs"`
+	TargetBlockTimeSecs   int    `json:"target_block_time_secs"`
+	HalvingPeriodBlocks   int    `json:"halving_period_blocks"`
+	DefaultDifficultyBits int    `json:"default_difficulty_bits"`
 
-	// Coinbase olgunlaşma derinliği (blok cinsinden)
-	CoinbaseMaturity int `json:"coinbase_maturity"` // default 10
+	// --- Coinbase maturity (in blocks) ---
+	CoinbaseMaturity int `json:"coinbase_maturity"`
 
-	// Reward split yüzdeleri
-	RewardPctMiner int `json:"reward_pct_miner"` // 70
-	RewardPctStake int `json:"reward_pct_stake"` // 10
-	RewardPctDev   int `json:"reward_pct_dev"`   // 10
-	RewardPctBurn  int `json:"reward_pct_burn"`  // 5
-	// Community yüzdesi kalan üzerinden hesaplanır (>=0)
+	// --- Reward split percentages ---
+	RewardPctMiner int `json:"reward_pct_miner"`
+	RewardPctStake int `json:"reward_pct_stake"`
+	RewardPctDev   int `json:"reward_pct_dev"`
+	RewardPctBurn  int `json:"reward_pct_burn"`
+	// Community = 100 - (yukarıdakilerin toplamı)
 
-	// (YENİ) Split ödemeleri için hedef adresler (boşsa miner'a eklenir)
+	// --- Kanonik adres alanları ---
+	DevFundAddress       string `json:"dev_fund_address"`
+	StakePoolAddress     string `json:"stake_pool_address"`
+	CommunityPoolAddress string `json:"community_pool_address"`
+	BurnAddress          string `json:"burn_address"`
+
+	// --- Eski/alternatif adres alanları (normalize edilecek) ---
 	RewardAddrMiner     string `json:"reward_addr_miner"`
 	RewardAddrStake     string `json:"reward_addr_stake"`
 	RewardAddrDev       string `json:"reward_addr_dev"`
 	RewardAddrBurn      string `json:"reward_addr_burn"`
 	RewardAddrCommunity string `json:"reward_addr_community"`
 
-	// Networking
-	HTTPPort  string   `json:"http_port"` // ":8081"
-	P2PPort   string   `json:"p2p_port"`  // ":3001"
+	// --- Premine (ANA CÜZDAN) ---
+	PreminePercent int    `json:"premine_percent"` // varsayılan: 12
+	PremineAddress string `json:"premine_address"` // boşsa DevFundAddress kullanılır
+
+	// --- Networking ---
+	HTTPPort  string   `json:"http_port"`
+	P2PPort   string   `json:"p2p_port"`
 	BootPeers []string `json:"boot_peers"`
 
-	// Storage
-	ChainFile  string `json:"chain_file"`  // "chain_data.dat"
-	BonusFile  string `json:"bonus_file"`  // "bonus_store.json"
-	WalletFile string `json:"wallet_file"` // "wallet_data.json"
+	// --- Storage ---
+	ChainFile  string `json:"chain_file"`
+	BonusFile  string `json:"bonus_file"`
+	WalletFile string `json:"wallet_file"`
 
-	// Misc
-	LogLevel string `json:"log_level"` // "info","debug"
+	// --- Misc ---
+	LogLevel string `json:"log_level"`
 }
 
 // ---- Defaults ----
 
 func Default() *Config {
-	// 2024-09-01 00:00:00 UTC
-	const genesisUnix = 1725158400
+	const genesisUnix = 1725158400 // 2024-09-01 00:00:00 UTC
 	return &Config{
 		Symbol:                "QC",
 		InitialReward:         50,
 		TotalSupply:           25_500_000,
 		GenesisUnix:           genesisUnix,
-		HalvingIntervalSecs:   int64(2 * 365 * 24 * 60 * 60),  // 2 yıl
-		MiningPeriodSecs:      int64(10 * 365 * 24 * 60 * 60), // 10 yıl
+		HalvingIntervalSecs:   int64(2 * 365 * 24 * 60 * 60),
+		MiningPeriodSecs:      int64(10 * 365 * 24 * 60 * 60),
 		TargetBlockTimeSecs:   30,
-		HalvingPeriodBlocks:   0, // kullanmıyorsan 0 bırak
+		HalvingPeriodBlocks:   0,
 		DefaultDifficultyBits: 16,
 
 		CoinbaseMaturity: 10,
@@ -78,11 +115,20 @@ func Default() *Config {
 		RewardPctDev:   10,
 		RewardPctBurn:  5,
 
+		DevFundAddress:       "",
+		StakePoolAddress:     "",
+		CommunityPoolAddress: "",
+		BurnAddress:          "QC_BURN_SINK",
+
 		RewardAddrMiner:     "",
 		RewardAddrStake:     "",
 		RewardAddrDev:       "",
 		RewardAddrBurn:      "",
 		RewardAddrCommunity: "",
+
+		// Premine defaults
+		PreminePercent: 12,
+		PremineAddress: "",
 
 		HTTPPort:  ":8081",
 		P2PPort:   ":3001",
@@ -104,13 +150,12 @@ var (
 	mu      sync.RWMutex
 )
 
-// Load: ENV ve (varsa) dosyadan yükleyip tek bir Config oluşturur
-// filePath "" ise, sadece ENV + Defaults kullanılır.
+// Load: ENV ve (varsa) dosyadan yükle; normalize et; doğrula; global ata.
 func Load(filePath string) (*Config, error) {
 	var err error
 	once.Do(func() {
 		cfg := Default()
-		applyEnv(cfg) // ENV > Defaults
+		applyEnv(cfg)
 
 		if filePath != "" {
 			if _, statErr := os.Stat(filePath); statErr == nil {
@@ -121,6 +166,8 @@ func Load(filePath string) (*Config, error) {
 			}
 		}
 
+		cfg.normalizeRewardAddresses()
+
 		if vErr := cfg.Validate(); vErr != nil {
 			err = vErr
 			return
@@ -128,6 +175,12 @@ func Load(filePath string) (*Config, error) {
 
 		mu.Lock()
 		current = cfg
+		// Back-compat: GenesisTime
+		if cfg.GenesisUnix > 0 {
+			GenesisTime = time.Unix(cfg.GenesisUnix, 0).UTC()
+		} else {
+			GenesisTime = time.Unix(Default().GenesisUnix, 0).UTC()
+		}
 		mu.Unlock()
 	})
 	if err != nil {
@@ -136,20 +189,18 @@ func Load(filePath string) (*Config, error) {
 	return Current(), nil
 }
 
-// Current: aktif konfigürasyonu döndürür (Load çağrılmış olmalı)
+// Current: aktif konfigürasyon
 func Current() *Config {
 	mu.RLock()
 	defer mu.RUnlock()
 	if current == nil {
-		// Güvenli varsayılan (testler için)
 		return Default()
 	}
-	// shallow copy
 	cpy := *current
 	return &cpy
 }
 
-// Set: testlerde/config override için
+// Set: test/override
 func Set(c *Config) {
 	if c == nil {
 		return
@@ -157,6 +208,9 @@ func Set(c *Config) {
 	_ = c.Validate()
 	mu.Lock()
 	current = c
+	if c.GenesisUnix > 0 {
+		GenesisTime = time.Unix(c.GenesisUnix, 0).UTC()
+	}
 	mu.Unlock()
 }
 
@@ -183,8 +237,15 @@ func (c *Config) Validate() error {
 	if c.RewardPctMiner < 0 || c.RewardPctStake < 0 || c.RewardPctDev < 0 || c.RewardPctBurn < 0 {
 		return errors.New("reward percentages cannot be negative")
 	}
-	if c.RewardPctMiner+c.RewardPctStake+c.RewardPctDev+c.RewardPctBurn > 100 {
+	sum := c.RewardPctMiner + c.RewardPctStake + c.RewardPctDev + c.RewardPctBurn
+	if sum > 100 {
 		fmt.Println("[config] warning: reward percentages sum to >100")
+	}
+	if sum < 100 {
+		fmt.Printf("[config] info: reward percentages sum to %d%%; remaining %d%% goes to community.\n", sum, 100-sum)
+	}
+	if c.PreminePercent < 0 || c.PreminePercent > 100 {
+		return errors.New("premine_percent must be 0..100")
 	}
 	if c.HTTPPort == "" || c.P2PPort == "" {
 		return errors.New("ports cannot be empty")
@@ -206,15 +267,14 @@ func (c *Config) SaveToFile(filePath string) error {
 
 // ---- Helpers ----
 
-// HalvingIntervalBlocksComputed: TargetBlockTimeSecs ile yaklaşık blok sayısı
 func (c *Config) HalvingIntervalBlocksComputed() int {
 	if c.TargetBlockTimeSecs <= 0 || c.HalvingIntervalSecs <= 0 {
 		return 0
 	}
-	return int((time.Duration(c.HalvingIntervalSecs) * time.Second) / (time.Duration(c.TargetBlockTimeSecs) * time.Second))
+	return int((time.Duration(c.HalvingIntervalSecs) * time.Second) /
+		(time.Duration(c.TargetBlockTimeSecs) * time.Second))
 }
 
-// MiningEndsAt: zaman bazlı madencilik bitiş zamanı (epoch), 0 = sınırsız
 func (c *Config) MiningEndsAt() int64 {
 	if c.MiningPeriodSecs <= 0 || c.GenesisUnix <= 0 {
 		return 0
@@ -233,13 +293,12 @@ func loadFromFile(path string, into *Config) error {
 	if err := json.Unmarshal(data, &fileCfg); err != nil {
 		return fmt.Errorf("parse %s failed: %w", path, err)
 	}
-
-	// Sıfır/boş olmayan değerlerle override et
 	merge(into, &fileCfg)
 	return nil
 }
 
 func merge(base, src *Config) {
+	// Basit merge (zero-value olmayanlar)
 	if src.Symbol != "" {
 		base.Symbol = src.Symbol
 	}
@@ -283,7 +342,21 @@ func merge(base, src *Config) {
 		base.RewardPctBurn = src.RewardPctBurn
 	}
 
-	// (YENİ) split adresleri
+	// Kanonik adresler
+	if src.DevFundAddress != "" {
+		base.DevFundAddress = src.DevFundAddress
+	}
+	if src.StakePoolAddress != "" {
+		base.StakePoolAddress = src.StakePoolAddress
+	}
+	if src.CommunityPoolAddress != "" {
+		base.CommunityPoolAddress = src.CommunityPoolAddress
+	}
+	if src.BurnAddress != "" {
+		base.BurnAddress = src.BurnAddress
+	}
+
+	// Eski alanlar
 	if src.RewardAddrMiner != "" {
 		base.RewardAddrMiner = src.RewardAddrMiner
 	}
@@ -298,6 +371,14 @@ func merge(base, src *Config) {
 	}
 	if src.RewardAddrCommunity != "" {
 		base.RewardAddrCommunity = src.RewardAddrCommunity
+	}
+
+	// Premine
+	if src.PreminePercent != 0 {
+		base.PreminePercent = src.PreminePercent
+	}
+	if src.PremineAddress != "" {
+		base.PremineAddress = src.PremineAddress
 	}
 
 	if src.HTTPPort != "" {
@@ -324,7 +405,7 @@ func merge(base, src *Config) {
 }
 
 func applyEnv(c *Config) {
-	// Yardımcılar
+	// Helpers
 	envInt := func(key string, def int) int {
 		if v := strings.TrimSpace(os.Getenv(key)); v != "" {
 			if n, err := strconv.Atoi(v); err == nil {
@@ -362,7 +443,7 @@ func applyEnv(c *Config) {
 		return def
 	}
 
-	// ENV key'leri (QC_* prefix)
+	// ENV (QC_* prefix)
 	c.Symbol = envStr("QC_SYMBOL", c.Symbol)
 	c.InitialReward = envInt("QC_INITIAL_REWARD", c.InitialReward)
 	c.TotalSupply = envInt("QC_TOTAL_SUPPLY", c.TotalSupply)
@@ -380,12 +461,22 @@ func applyEnv(c *Config) {
 	c.RewardPctDev = envInt("QC_REWARD_PCT_DEV", c.RewardPctDev)
 	c.RewardPctBurn = envInt("QC_REWARD_PCT_BURN", c.RewardPctBurn)
 
-	// (YENİ) split adresleri
+	// Eski/alternatif adres alanları
 	c.RewardAddrMiner = envStr("QC_REWARD_ADDR_MINER", c.RewardAddrMiner)
 	c.RewardAddrStake = envStr("QC_REWARD_ADDR_STAKE", c.RewardAddrStake)
 	c.RewardAddrDev = envStr("QC_REWARD_ADDR_DEV", c.RewardAddrDev)
 	c.RewardAddrBurn = envStr("QC_REWARD_ADDR_BURN", c.RewardAddrBurn)
 	c.RewardAddrCommunity = envStr("QC_REWARD_ADDR_COMMUNITY", c.RewardAddrCommunity)
+
+	// Kanonik adresler
+	c.DevFundAddress = envStr("QC_DEV_FUND_ADDRESS", c.DevFundAddress)
+	c.StakePoolAddress = envStr("QC_STAKE_POOL_ADDRESS", c.StakePoolAddress)
+	c.CommunityPoolAddress = envStr("QC_COMMUNITY_POOL_ADDRESS", c.CommunityPoolAddress)
+	c.BurnAddress = envStr("QC_BURN_ADDRESS", c.BurnAddress)
+
+	// Premine
+	c.PreminePercent = envInt("QC_PREMINE_PERCENT", c.PreminePercent)
+	c.PremineAddress = envStr("QC_PREMINE_ADDRESS", c.PremineAddress)
 
 	c.HTTPPort = envStr("QC_HTTP_PORT", c.HTTPPort)
 	c.P2PPort = envStr("QC_P2P_PORT", c.P2PPort)
@@ -396,4 +487,31 @@ func applyEnv(c *Config) {
 	c.WalletFile = envStr("QC_WALLET_FILE", c.WalletFile)
 
 	c.LogLevel = envStr("QC_LOG_LEVEL", c.LogLevel)
+
+	// Back-compat: yıllık bonus ENV override
+	if v := strings.TrimSpace(os.Getenv("QC_ANNUAL_BONUS_QC")); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n >= 0 {
+			AnnualBonusPerYearQC = n
+		}
+	}
+}
+
+// Eski adres alanlarından kanoniğe taşıma + premine fallback
+func (c *Config) normalizeRewardAddresses() {
+	if c.DevFundAddress == "" && c.RewardAddrDev != "" {
+		c.DevFundAddress = c.RewardAddrDev
+	}
+	if c.StakePoolAddress == "" && c.RewardAddrStake != "" {
+		c.StakePoolAddress = c.RewardAddrStake
+	}
+	if c.CommunityPoolAddress == "" && c.RewardAddrCommunity != "" {
+		c.CommunityPoolAddress = c.RewardAddrCommunity
+	}
+	if c.BurnAddress == "" && c.RewardAddrBurn != "" {
+		c.BurnAddress = c.RewardAddrBurn
+	}
+	// Premine adresi boşsa DevFundAddress'tan devral
+	if c.PremineAddress == "" && c.DevFundAddress != "" {
+		c.PremineAddress = c.DevFundAddress
+	}
 }

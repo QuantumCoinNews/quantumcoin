@@ -1,30 +1,14 @@
 package miner
 
-import (
-	"fmt"
-	"log"
+import "time"
 
-	"quantumcoin/blockchain"
-)
-
-// Bu dosya YARDIMCI işlevler içindir.
-// ÖNEMLİ: MiningStatus tipi ve LogBlock fonksiyonu miner.go içindedir.
-// Burada aynı isimleri TEKRAR TANIMLAmıyoruz ki derleyici çakışma vermesin.
-
-// LogBlockVerbose: ayrıntılı log isteyen eski çağrılar için nazik sarmalayıcı.
-// Yeni kodda doğrudan miner.LogBlock(b) kullanabilirsiniz.
-func LogBlockVerbose(b *blockchain.Block) {
-	if b == nil {
-		return
+// kaba bir hashrate tahmini (sadece görsel): süre ve zorluk bitlerinden türetilmiş
+func estimateHashrate(elapsed time.Duration, difficultyBits int) float64 {
+	if elapsed <= 0 {
+		return 0
 	}
-	LogBlock(b) // miner.go'daki asıl fonksiyon
-	log.Printf("ℹ️  (verbose) block index=%d prev=%x txs=%d", b.Index, b.PrevHash, len(b.Transactions))
-}
-
-// FormatStatus: MiningStatus'i tek satır stringe çevirir (UI/log kolaylığı).
-func FormatStatus(st MiningStatus) string {
-	return fmt.Sprintf("height=%d time=%s hash=%x reward=%d",
-		st.BlockHeight, st.Timestamp.Format("2006-01-02 15:04:05"),
-		st.BlockHash, st.Reward,
-	)
+	// 2^difficulty kadar arama varsayımı (çok kabaca, sadece görsel amaçlı)
+	// NOT: Bu gerçek bir ölçüm değildir; PoW’nun “Run()” içindeki deneme sayısı bizde yok.
+	work := 1 << uint(difficultyBits/2) // “yumuşatılmış” ölçek
+	return float64(work) / elapsed.Seconds()
 }

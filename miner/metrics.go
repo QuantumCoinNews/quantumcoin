@@ -1,50 +1,31 @@
 package miner
 
-import (
-	"sync"
-	"time"
-)
+import "time"
 
-var (
-	mu              sync.Mutex
-	hashesTried     int
-	startTime       time.Time
-	lastBlockTime   time.Time
-	lastBlockHashes int
-)
-
-func StartMetrics() {
-	mu.Lock()
-	defer mu.Unlock()
-	hashesTried = 0
-	startTime = time.Now()
+type MinerActivity struct {
+	Address     string
+	BlocksMined int
+	LastActive  time.Time
 }
 
-func AddHashes(count int) {
-	mu.Lock()
-	defer mu.Unlock()
-	hashesTried += count
-}
+var minerStats = make(map[string]*MinerActivity)
 
-func RecordBlock(hashCount int) {
-	mu.Lock()
-	defer mu.Unlock()
-	lastBlockTime = time.Now()
-	lastBlockHashes = hashCount
-}
-
-func GetHashRate() int {
-	mu.Lock()
-	defer mu.Unlock()
-	d := time.Since(startTime).Seconds()
-	if d == 0 {
-		return 0
+func TrackMiner(address string) {
+	if _, ok := minerStats[address]; !ok {
+		minerStats[address] = &MinerActivity{Address: address}
 	}
-	return int(float64(hashesTried) / d)
+	minerStats[address].BlocksMined++
+	minerStats[address].LastActive = time.Now()
 }
 
-func GetLastBlockMetrics() (string, int) {
-	mu.Lock()
-	defer mu.Unlock()
-	return lastBlockTime.Format("02 Jan 2006 15:04:05"), lastBlockHashes
+func GetTopMiner() string {
+	var top string
+	var max int
+	for addr, stat := range minerStats {
+		if stat.BlocksMined > max {
+			max = stat.BlocksMined
+			top = addr
+		}
+	}
+	return top
 }

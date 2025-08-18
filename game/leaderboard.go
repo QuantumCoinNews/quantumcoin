@@ -1,35 +1,37 @@
 package game
 
 import (
-	"fmt"
+	"sort"
 )
 
-// LeaderboardEntry: dış API’de kullanılan tip
-type LeaderboardEntry struct {
+// PlayerScore: liderlik tablosu için DTO
+type PlayerScore struct {
 	Player string `json:"player"`
 	Score  int    `json:"score"`
 }
 
-// GetTopPlayers: en iyi `limit` oyuncu
-func GetTopPlayers(gameState *GameState, limit int) []LeaderboardEntry {
-	if gameState == nil || limit <= 0 {
-		return nil
+// GetTopPlayers: en yüksek N skor
+func GetTopPlayers(gs *GameState, n int) []PlayerScore {
+	if gs == nil || n <= 0 {
+		return []PlayerScore{}
 	}
-	arr := gameState.Sorted()
-	if len(arr) > limit {
-		arr = arr[:limit]
-	}
-	out := make([]LeaderboardEntry, 0, len(arr))
-	for _, e := range arr {
-		out = append(out, LeaderboardEntry{Player: e.Player, Score: e.Score})
-	}
-	return out
-}
 
-// PrintLeaderboard: konsola yazdırır
-func PrintLeaderboard(lb []LeaderboardEntry) {
-	fmt.Println("=== Liderlik Tablosu ===")
-	for i, entry := range lb {
-		fmt.Printf("%d. %s - %d puan\n", i+1, entry.Player, entry.Score)
+	// snapshot
+	gs.mu.RLock()
+	list := make([]PlayerScore, 0, len(gs.scores))
+	for p, s := range gs.scores {
+		list = append(list, PlayerScore{Player: p, Score: s})
 	}
+	gs.mu.RUnlock()
+
+	sort.Slice(list, func(i, j int) bool {
+		if list[i].Score == list[j].Score {
+			return list[i].Player < list[j].Player
+		}
+		return list[i].Score > list[j].Score
+	})
+	if n > len(list) {
+		n = len(list)
+	}
+	return list[:n]
 }

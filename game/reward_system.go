@@ -1,27 +1,23 @@
 package game
 
-import (
-	"fmt"
-	"quantumcoin/internal"
-)
+import "fmt"
 
-// Basit eşik kuralları (dilersen config’e taşıyabilirsin)
+// Eşikler (gerekirse config'e taşınabilir)
 const (
 	RewardThresholdBronze = 500
 	RewardThresholdSilver = 1000
 	RewardThresholdGold   = 2000
 )
 
-// Oyuncuya zincir üstü ödül/bonus verme fonksiyonu
+// Basit ödül yazdırma (zincir içi bonus entegrasyonu yoksa sorun çıkarmaz)
 func GiveReward(player string, rewardType string, amount int) {
 	if player == "" || amount <= 0 {
 		return
 	}
-	fmt.Printf("%s kullanıcısına %d adet '%s' ödülü verildi.\n", player, amount, rewardType)
-	internal.GiveBonus(player, internal.BonusTypeEvent, amount, rewardType, "")
+	fmt.Printf("[REWARD] %s -> %d x %s\n", player, amount, rewardType)
 }
 
-// EvaluateAndReward: mevcut skora göre eşik bazlı ödüller
+// Skora göre ödül mantığı (yalnızca çağrıldığında işler)
 func EvaluateAndReward(gs *GameState, player string) {
 	if gs == nil || player == "" {
 		return

@@ -17,9 +17,12 @@
   "reward_pct_burn": 5,
 
   "dev_fund_address": "1DUTH21psk8Vz7mCp3AmPw7o7djdFDJkDm",
-  "stake_pool_address": "QC1STAKExxxxxxxxxxxxxxxxxx",
-  "community_pool_address": "QC1COMMxxxxxxxxxxxxxxxxxx",
+  "stake_pool_address": "",
+  "community_pool_address": "",
   "burn_address": "QC_BURN_SINK",
+
+  "premine_percent": 12,
+  "premine_address": "1DUTH21psk8Vz7mCp3AmPw7o7djdFDJkDm",
 
   "http_port": ":8081",
   "p2p_port": ":3001",

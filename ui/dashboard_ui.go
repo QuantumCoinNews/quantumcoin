@@ -17,36 +17,38 @@ func ShowDashboardWindow(a fyne.App, w fyne.Window, bc *blockchain.Blockchain, w
 
 	addressEntry := widget.NewEntry()
 	addressEntry.Disable()
-	addressEntry.SetText(wlt.GetAddress())
+	if wlt != nil {
+		addressEntry.SetText(wlt.GetAddress())
+	}
 
-	refresh := func(balanceLabel, statusLabel *widget.Label) {
-		if bc == nil {
+	balanceLabel := widget.NewLabel("QC Balance: —")
+	statusLabel := widget.NewLabel(i18n.T(CurrentLang, "mine_last_block_none"))
+	miningStatus := widget.NewLabel(i18n.T(CurrentLang, "mine_status_idle"))
+
+	refresh := func() {
+		if bc == nil || wlt == nil {
 			return
 		}
 		bal := bc.GetBalance(wlt.GetAddress())
 		height := bc.GetBestHeight()
-		balanceLabel.SetText(fmt.Sprintf("%s %d QC", i18n.T(CurrentLang, "explorer_tx_out")[:6], bal)) // "Amount:" yerine kısa kullanıyoruz
+		balanceLabel.SetText(fmt.Sprintf("QC Balance: %d", bal))
 		statusLabel.SetText(fmt.Sprintf("Height: %d", height))
 	}
 
-	balanceLabel := widget.NewLabel(i18n.T(CurrentLang, "mine_status_idle"))
-	statusLabel := widget.NewLabel(i18n.T(CurrentLang, "mine_last_block_none"))
-	miningStatus := widget.NewLabel(i18n.T(CurrentLang, "mine_status_idle"))
-
 	startBtn := widget.NewButton(i18n.T(CurrentLang, "mine_start"), func() {
 		miningStatus.SetText(i18n.T(CurrentLang, "mine_status_active"))
+		// not: gerçek worker bağlandığında burası değişecek
 		go func() {
-			block, err := bc.MineBlock(wlt.GetAddress(), 16)
-			if err != nil {
-				fyne.Do(func() {
-					miningStatus.SetText(fmt.Sprintf(i18n.T(CurrentLang, "mine_error"), err))
-				})
+			if bc == nil || wlt == nil {
 				return
 			}
-			fyne.Do(func() {
-				miningStatus.SetText(fmt.Sprintf(i18n.T(CurrentLang, "mine_last_block"), block.Index, block.Hash))
-				refresh(balanceLabel, statusLabel)
-			})
+			block, err := bc.MineBlock(wlt.GetAddress(), 16)
+			if err != nil {
+				miningStatus.SetText(fmt.Sprintf(i18n.T(CurrentLang, "mine_error"), err))
+				return
+			}
+			miningStatus.SetText(fmt.Sprintf(i18n.T(CurrentLang, "mine_last_block"), block.Index, fmt.Sprintf("%x", block.Hash)))
+			refresh()
 		}()
 	})
 
@@ -75,7 +77,7 @@ func ShowDashboardWindow(a fyne.App, w fyne.Window, bc *blockchain.Blockchain, w
 		explorerBtn,
 	)
 
-	refresh(balanceLabel, statusLabel)
+	refresh()
 	w.SetContent(content)
 	w.Resize(fyne.NewSize(600, 420))
 	w.Show()

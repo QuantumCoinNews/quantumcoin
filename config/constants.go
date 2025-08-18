@@ -1,3 +1,4 @@
+// config/constants.go
 package config
 
 const (
@@ -12,7 +13,7 @@ const (
 	LangZH = "zh" // 中文
 
 	// Proje sloganı (i18n ile değiştirilebilir)
-	Slogan = "Yapılmayanı yapmak." // Çoklu dil için SloganEN, SloganTR vs. düşünebilirsin
+	Slogan = "Yapılmayanı yapmak."
 
 	// Explorer & UI temaları
 	ThemeDark  = "dark"
@@ -21,12 +22,8 @@ const (
 	// NFT metadata JSON API base URL
 	NFTBaseURL = "https://nft.quantumcoin.org/metadata/"
 
-	// Stake süresi sabitleri (gün cinsinden)
+	// Stake süresi sabitleri (gün)
 	StakeShortTerm = 90  // 3 ay
 	StakeMidTerm   = 180 // 6 ay
 	StakeLongTerm  = 365 // 1 yıl
-
-	// Yeni sabitler ekleyebilirsin:
-	// BurnAddress = "qc1burn000..." // Yakım adresi
-	// TokenFee    = 100 // QC cinsinden token çıkarma ücreti
 )

@@ -1,10 +1,6 @@
 package internal
 
-import (
-	"sync"
-
-	"quantumcoin/blockchain"
-)
+import "sync"
 
 // Varsayılan sabit ücret (QC cinsinden). İstersen SetFixedFee ile değiştirebilirsin.
 const defaultFixedFee = 1
@@ -37,8 +33,8 @@ func (fm *FeeManager) GetFixedFee() int {
 }
 
 // ApplyFee: bir işleme ücret uygular ve toplam ücreti artırır.
-// Şimdilik sabit ücret modeli; ileride tx boyutu/önceliğe göre genişletilebilir.
-func (fm *FeeManager) ApplyFee(_ *blockchain.Transaction) int {
+// Parametreyi interface{} tuttuk; böylece blockchain paketine bağımlılık yok.
+func (fm *FeeManager) ApplyFee(_ interface{}) int {
 	fm.mu.Lock()
 	fee := fm.fixedFee
 	fm.totalFees += fee

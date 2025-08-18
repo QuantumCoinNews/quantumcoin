@@ -39,7 +39,7 @@ func ShowSendWindow(a fyne.App, w fyne.Window, wlt *wallet.Wallet, bc *blockchai
 			dialog.ShowError(fmt.Errorf(i18n.T(CurrentLang, "error_invalid_amount")), w)
 			return
 		}
-		if bc == nil {
+		if bc == nil || wlt == nil {
 			dialog.ShowError(fmt.Errorf(i18n.T(CurrentLang, "error_blockchain_not_connected")), w)
 			return
 		}

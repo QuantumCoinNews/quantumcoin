@@ -1,8 +1,8 @@
-// main.go
 package main
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,10 +10,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
-	"strings"
-	"time"
-
 	"quantumcoin/ai"
 	"quantumcoin/blockchain"
 	"quantumcoin/config"
@@ -21,6 +17,9 @@ import (
 	"quantumcoin/internal"
 	"quantumcoin/p2p"
 	"quantumcoin/wallet"
+	"strconv"
+	"strings"
+	"time"
 )
 
 // --- API Veri Tipleri ---
@@ -28,15 +27,15 @@ type WalletResponse struct {
 	Address string `json:"address"`
 }
 type BalanceResponse struct {
-	Balance   float64 `json:"balance"`   // toplam UTXO
-	Spendable float64 `json:"spendable"` // olgunlaşma dâhil harcanabilir
-	Height    int     `json:"height"`    // zincir yüksekliği
+	Balance   float64 `json:"balance"`
+	Spendable float64 `json:"spendable"`
+	Height    int     `json:"height"`
 }
 type MineRequest struct {
 	Address string `json:"address"`
 }
 
-// --- (YENİ) Transfer endpoint türleri ---
+// Transfer endpoint
 type SendRequest struct {
 	From   string `json:"from"`
 	To     string `json:"to"`
@@ -46,6 +45,12 @@ type SendResponse struct {
 	Success bool   `json:"success"`
 	TxID    string `json:"txid"`
 	Message string `json:"message,omitempty"`
+}
+
+// Burn endpoint
+type BurnRequest struct {
+	From   string `json:"from"`
+	Amount int    `json:"amount"`
 }
 
 // --- GLOBAL ---
@@ -102,7 +107,7 @@ func main() {
 		log.Fatalf("Config yüklenemedi: %v", err)
 	}
 
-	// (YENİ) Bonus dosya yolunu config ile hizala (internal paketi)
+	// Bonus dosya yolunu config ile hizala
 	internal.SetBonusFile(cfg.BonusFile)
 
 	// 2) Zinciri yükle ya da oluştur
@@ -115,7 +120,7 @@ func main() {
 		bc = blockchain.NewBlockchain(cfg.InitialReward, cfg.TotalSupply)
 	}
 
-	// (YENİ) config’teki coinbase olgunlaşmasını uygula
+	// coinbase olgunlaşması
 	bc.SetCoinbaseMaturity(cfg.CoinbaseMaturity)
 
 	if len(os.Args) < 2 {
@@ -127,16 +132,13 @@ func main() {
 
 	switch command {
 	case "run":
-		// CLI port varsa config’i override et
 		if len(os.Args) >= 3 {
 			port := os.Args[2]
-			go startHTTPAPI() // HTTP port: ENV > config
+			go startHTTPAPI()
 			go autosaveLoop()
-			// Graceful shutdown sinyali
 			go trapAndShutdown()
-			p2p.RunNode(port, bc) // ":" + port içeride ekleniyor
+			p2p.RunNode(port, bc)
 		} else {
-			// Config’teki P2P portu kullan
 			go startHTTPAPI()
 			go autosaveLoop()
 			go trapAndShutdown()
@@ -146,7 +148,6 @@ func main() {
 
 	case "api":
 		go autosaveLoop()
-		// API tek başına (CTRL+C ile kapanır)
 		go trapAndShutdown()
 		startHTTPAPI()
 
@@ -183,7 +184,6 @@ func main() {
 			log.Println("Transaction failed:", err)
 			return
 		}
-		// P2P yayını
 		p2p.BroadcastMessage(p2p.TxMessage(tx))
 		fmt.Printf("✓ Transaction accepted and broadcasted (txid=%x)\n", tx.ID)
 
@@ -199,7 +199,6 @@ func main() {
 			log.Println("Mining failed:", err)
 			return
 		}
-		// P2P yayını
 		p2p.BroadcastMessage(p2p.BlockMessage(block))
 
 		fmt.Printf("✅ New block mined by %s\n", miner)
@@ -240,7 +239,7 @@ func main() {
 	}
 }
 
-// --- periyodik autosave (daemon modunda iş görür) ---
+// --- periyodik autosave ---
 func autosaveLoop() {
 	t := time.NewTicker(10 * time.Second)
 	defer t.Stop()
@@ -251,10 +250,9 @@ func autosaveLoop() {
 	}
 }
 
-// --- CORS middleware (geliştirme için basit) ---
+// --- CORS + Logging middleware ---
 func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Basit, tüm originlere izin (dev)
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
@@ -262,6 +260,7 @@ func withCORS(next http.Handler) http.Handler {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
+		log.Printf("%s %s", r.Method, r.URL.Path)
 		next.ServeHTTP(w, r)
 	})
 }
@@ -269,19 +268,30 @@ func withCORS(next http.Handler) http.Handler {
 // --- HTTP API ---
 func startHTTPAPI() {
 	mux := http.NewServeMux()
+	// Core
 	mux.HandleFunc("/api/health", handleHealth)
 	mux.HandleFunc("/api/wallet/new", handleNewWallet)
 	mux.HandleFunc("/api/wallet/balance/", handleBalance)
 	mux.HandleFunc("/api/mine", handleMineBlock)
-	// (ZATEN) REST transfer uç noktası
 	mux.HandleFunc("/api/tx/send", handleSendTx)
-	// (YENİ) hızlı madencilik (test/dev kolaylığı için)
 	mux.HandleFunc("/api/dev/fastmine", handleFastMine)
 
+	// AI + Game
 	mux.HandleFunc("/api/ai/bonus", handleAIBonus)
 	mux.HandleFunc("/api/ai/analysis", handleAIAnalysis)
 	mux.HandleFunc("/api/game/score", handleGameScore)
 	mux.HandleFunc("/api/game/leaderboard", handleLeaderboard)
+
+	// --- NEW: Explorer ---
+	mux.HandleFunc("/api/blocks", handleBlocksList)
+	mux.HandleFunc("/api/block", handleBlockDetail)
+
+	// --- NEW: Burn (yakım) ---
+	mux.HandleFunc("/api/tx/burn", handleBurn)
+
+	// --- NEW: Stake (stub) ---
+	mux.HandleFunc("/api/stake/start", handleStakeStart)
+	mux.HandleFunc("/api/stake/status", handleStakeStatus)
 
 	addr := getHTTPAddr()
 	httpServer = &http.Server{
@@ -290,7 +300,6 @@ func startHTTPAPI() {
 	}
 
 	fmt.Println("HTTP API starting at http://localhost" + addr)
-	// ListenAndServe bloklar; run/api komutunda zaten goroutine ile çağrılıyor
 	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Printf("http server error: %v", err)
 	}
@@ -349,7 +358,6 @@ func handleMineBlock(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	// P2P yayını
 	p2p.BroadcastMessage(p2p.BlockMessage(block))
 
 	res := map[string]any{
@@ -364,7 +372,7 @@ func handleMineBlock(w http.ResponseWriter, r *http.Request) {
 	writeOK(w, res)
 }
 
-// --- (ZATEN) REST Transfer Handler ---
+// Transfer
 func handleSendTx(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -390,8 +398,6 @@ func handleSendTx(w http.ResponseWriter, r *http.Request) {
 		writeOK(w, SendResponse{Success: false, Message: "submit tx: " + err.Error()})
 		return
 	}
-
-	// P2P yayını
 	p2p.BroadcastMessage(p2p.TxMessage(tx))
 
 	writeOK(w, SendResponse{
@@ -400,19 +406,17 @@ func handleSendTx(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// --- (YENİ) Hızlı Madencilik (test/dev) ---
+// Hızlı madencilik (dev)
 func handleFastMine(w http.ResponseWriter, r *http.Request) {
-	// Örnek: /api/dev/fastmine?n=10&address=QC1...
 	nStr := r.URL.Query().Get("n")
 	addr := r.URL.Query().Get("address")
-
 	if addr == "" {
 		writeError(w, http.StatusBadRequest, "address required")
 		return
 	}
 	n, _ := strconv.Atoi(nStr)
 	if n <= 0 {
-		n = 5 // varsayılan 5 blok
+		n = 5
 	}
 	for i := 0; i < n; i++ {
 		_, err := bc.MineBlock(addr, cfg.DefaultDifficultyBits)
@@ -421,7 +425,6 @@ func handleFastMine(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	// Son bloğu yayınlamak yeterli; istersen hepsi için de yayın yapılabilir
 	p2p.BroadcastMessage(p2p.BlockMessage(bc.Blocks[len(bc.Blocks)-1]))
 	_ = bc.SaveToFile(cfg.ChainFile)
 
@@ -432,28 +435,25 @@ func handleFastMine(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// --- AI/Bonus Otomasyonu ---
+// AI/Bonus
 func processAIBonus() {
 	fmt.Println("🔍 [AI] Bonus/Analiz sistemi başlatıldı...")
 	var recentTxs []*blockchain.Transaction
 	now := time.Now()
 	for _, block := range bc.Blocks {
 		for _, tx := range block.Transactions {
-			// 24 saatlik işlemler
 			if tx.Timestamp.After(now.Add(-24 * time.Hour)) {
 				recentTxs = append(recentTxs, tx)
 			}
 		}
 	}
-	internal.DistributeAIBonuses(recentTxs)
+	ai.DistributeAIBonuses(recentTxs)
 }
-
 func handleAIBonus(w http.ResponseWriter, r *http.Request) {
 	address := r.URL.Query().Get("address")
 	bonuses := internal.ListBonuses(address)
 	writeOK(w, bonuses)
 }
-
 func handleAIAnalysis(w http.ResponseWriter, r *http.Request) {
 	address := r.URL.Query().Get("address")
 	var userTxs []*blockchain.Transaction
@@ -475,17 +475,135 @@ func handleAIAnalysis(w http.ResponseWriter, r *http.Request) {
 	writeOK(w, result)
 }
 
-// --- GAME API ---
+// GAME
 func handleGameScore(w http.ResponseWriter, r *http.Request) {
 	player := r.URL.Query().Get("player")
 	score, _ := strconv.Atoi(r.URL.Query().Get("score"))
 	game.HandleTelegramScore(gameState, player, score)
 	writeOK(w, map[string]any{"success": true})
 }
-
 func handleLeaderboard(w http.ResponseWriter, r *http.Request) {
 	top := game.GetTopPlayers(gameState, 10)
 	writeOK(w, top)
+}
+
+// --- NEW: Explorer handlers ---
+func handleBlocksList(w http.ResponseWriter, r *http.Request) {
+	limitStr := r.URL.Query().Get("limit")
+	limit, _ := strconv.Atoi(limitStr)
+	if limit <= 0 {
+		limit = 20
+	}
+	// sondan limit kadar
+	total := len(bc.Blocks)
+	start := total - limit
+	if start < 0 {
+		start = 0
+	}
+	type bsum struct {
+		Index      int    `json:"index"`
+		Hash       string `json:"hash"`
+		PrevHash   string `json:"prev_hash"`
+		Timestamp  int64  `json:"timestamp"`
+		Miner      string `json:"miner"`
+		Difficulty int    `json:"difficulty"`
+		TxCount    int    `json:"tx_count"`
+	}
+	summaries := make([]bsum, 0, limit)
+	for i := start; i < total; i++ {
+		b := bc.Blocks[i]
+		summaries = append(summaries, bsum{
+			Index:      b.Index,
+			Hash:       hex.EncodeToString(b.Hash),
+			PrevHash:   hex.EncodeToString(b.PrevHash),
+			Timestamp:  b.Timestamp,
+			Miner:      b.Miner,
+			Difficulty: b.Difficulty,
+			TxCount:    len(b.Transactions),
+		})
+	}
+	writeOK(w, summaries)
+}
+
+func handleBlockDetail(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	if idxStr := q.Get("index"); idxStr != "" {
+		idx, err := strconv.Atoi(idxStr)
+		if err == nil {
+			if blk := bc.GetBlockByIndex(idx); blk != nil {
+				writeOK(w, blk)
+				return
+			}
+			writeError(w, http.StatusNotFound, "block not found")
+			return
+		}
+		writeError(w, http.StatusBadRequest, "invalid index")
+		return
+	}
+	if h := q.Get("hash"); h != "" {
+		raw, err := hex.DecodeString(strings.TrimPrefix(h, "0x"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid hash hex")
+			return
+		}
+		if blk := bc.GetBlockByHash(raw); blk != nil {
+			writeOK(w, blk)
+			return
+		}
+		writeError(w, http.StatusNotFound, "block not found")
+		return
+	}
+	writeError(w, http.StatusBadRequest, "index or hash required")
+}
+
+// --- NEW: Burn (yakım) handler ---
+func handleBurn(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if cfg.BurnAddress == "" || cfg.BurnAddress == "QC_BURN_SINK" {
+		writeError(w, http.StatusBadRequest, "burn address not configured (set QC_BURN_ADDRESS or config.burn_address)")
+		return
+	}
+	body, _ := io.ReadAll(r.Body)
+	var req BurnRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if req.From == "" || req.Amount <= 0 {
+		writeError(w, http.StatusBadRequest, "from and positive amount required")
+		return
+	}
+	tx, err := blockchain.NewTransaction(req.From, cfg.BurnAddress, req.Amount, bc)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "create tx: "+err.Error())
+		return
+	}
+	if err := bc.AddTransaction(tx); err != nil {
+		writeError(w, http.StatusBadRequest, "submit tx: "+err.Error())
+		return
+	}
+	p2p.BroadcastMessage(p2p.TxMessage(tx))
+	writeOK(w, map[string]any{
+		"success": true,
+		"txid":    fmt.Sprintf("%x", tx.ID),
+	})
+}
+
+// --- NEW: Stake stubs (ileride dolduracağız) ---
+func handleStakeStart(w http.ResponseWriter, r *http.Request) {
+	writeOK(w, map[string]any{
+		"success": false,
+		"message": "stake module coming soon; on-chain lock & reward scheduling under integration",
+	})
+}
+func handleStakeStatus(w http.ResponseWriter, r *http.Request) {
+	writeOK(w, map[string]any{
+		"success": false,
+		"message": "stake status endpoint coming soon",
+	})
 }
 
 // --- CTRL+C yakala ve temiz kapa ---
@@ -495,14 +613,11 @@ func trapAndShutdown() {
 	<-c
 	fmt.Println("\nShutting down...")
 
-	// HTTP server'i nazikçe kapat
 	if httpServer != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		_ = httpServer.Shutdown(ctx)
 		cancel()
 	}
-
-	// Zinciri kaydet
 	if err := bc.SaveToFile(cfg.ChainFile); err != nil {
 		log.Printf("save on shutdown error: %v", err)
 	}
