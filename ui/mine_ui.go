@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"encoding/hex"
 	"fmt"
 	"image/color"
 	"math/rand"
@@ -17,57 +18,81 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
+// Renkler
 var (
 	green  = color.NRGBA{R: 46, G: 204, B: 113, A: 255}
 	orange = color.NRGBA{R: 255, G: 154, B: 0, A: 255}
 )
 
+// UI güncellemeleri için mesaj
 type miningUpdate struct {
-	status     string
-	rewardText string
-	progress   float64
-	animate    bool
-	colorFlash bool
+	status      string
+	rewardText  string
+	progress    float64
+	animate     bool
+	colorFlash  bool
+	appendFound *canvas.Text
+}
+
+// --- UI thread güvenli çağrı (Fyne 2.x) ---
+func runOnMain(f func()) { fyne.Do(f) }
+
+// []byte hash -> kısa hex "xxxxxxxxxxxx..."
+func safeHashBytes(b []byte) string {
+	h := hex.EncodeToString(b)
+	if len(h) > 12 {
+		return h[:12] + "..."
+	}
+	return h
 }
 
 func ShowMineWindow(a fyne.App, w fyne.Window, minerAddress string, bc *blockchain.Blockchain) {
 	w.SetTitle(i18n.T(CurrentLang, "mine_title"))
 
+	// Üst kısım: durum + ödül + progress
 	statusLabel := widget.NewLabel(i18n.T(CurrentLang, "mine_status_idle"))
+
 	rewardLabel := canvas.NewText("", green)
 	rewardLabel.TextSize = 22
 	rewardLabel.Alignment = fyne.TextAlignCenter
 
 	progress := widget.NewProgressBar()
-	progress.Min = 0
-	progress.Max = 1
+	progress.Min, progress.Max = 0, 1
 
+	// Animasyon şeridi
 	animRect := canvas.NewRectangle(orange)
 	animRect.SetMinSize(fyne.NewSize(240, 12))
 	animRect.Hide()
 
-	updateChan := make(chan miningUpdate, 16)
+	// Bulunan bloklar listesi (scrollable)
+	foundBox := container.NewVBox()
+	foundScroll := container.NewVScroll(foundBox)
+	foundScroll.SetMinSize(fyne.NewSize(520, 140))
 
-	// UI updater
+	// UI güncellemeleri kanalı
+	updateChan := make(chan miningUpdate, 32)
+
+	// UI updater goroutine (her değişikliği ana threade kuyruklar)
 	go func() {
 		for upd := range updateChan {
-			fyne.Do(func() {
-				if upd.status != "" {
-					statusLabel.SetText(upd.status)
+			u := upd
+			runOnMain(func() {
+				if u.status != "" {
+					statusLabel.SetText(u.status)
 				}
-				if upd.rewardText != "" || rewardLabel.Text != "" {
-					rewardLabel.Text = upd.rewardText
+				if u.rewardText != "" || rewardLabel.Text != "" {
+					rewardLabel.Text = u.rewardText
 					canvas.Refresh(rewardLabel)
 				}
-				progress.SetValue(upd.progress)
+				progress.SetValue(u.progress)
 
-				if upd.animate {
+				if u.animate {
 					animRect.Show()
 				} else {
 					animRect.Hide()
 				}
 
-				if upd.colorFlash {
+				if u.colorFlash {
 					animRect.FillColor = color.NRGBA{
 						R: uint8(rand.Intn(256)),
 						G: uint8(rand.Intn(256)),
@@ -78,10 +103,16 @@ func ShowMineWindow(a fyne.App, w fyne.Window, minerAddress string, bc *blockcha
 					animRect.FillColor = orange
 				}
 				canvas.Refresh(animRect)
+
+				if u.appendFound != nil {
+					foundBox.Add(u.appendFound)
+					canvas.Refresh(foundBox)
+				}
 			})
 		}
 	}()
 
+	// Butonlar
 	startBtn := widget.NewButtonWithIcon(i18n.T(CurrentLang, "mine_start"), theme.MediaPlayIcon(), nil)
 	stopBtn := widget.NewButtonWithIcon(i18n.T(CurrentLang, "mine_stop"), theme.MediaStopIcon(), nil)
 
@@ -93,24 +124,38 @@ func ShowMineWindow(a fyne.App, w fyne.Window, minerAddress string, bc *blockcha
 		startBtn.Disable()
 		stopBtn.Enable()
 
-		updateChan <- miningUpdate{status: i18n.T(CurrentLang, "mine_status_active"), progress: 0, animate: true}
+		updateChan <- miningUpdate{
+			status:   i18n.T(CurrentLang, "mine_status_active"),
+			progress: 0,
+			animate:  true,
+		}
 
 		_ = miner.Start(bc, minerAddress, 16, miner.Options{
 			OnBlock: func(b *blockchain.Block, st miner.MiningStatus) {
+				// UI: son blok + ödül
 				updateChan <- miningUpdate{
-					rewardText: fmt.Sprintf("✔️ %d QC", st.Reward),
+					rewardText: fmt.Sprintf("✔️ %.8f QC", float64(st.Reward)),
 					progress:   1,
-					status:     fmt.Sprintf(i18n.T(CurrentLang, "mine_last_block"), b.Index, b.Hash),
+					status:     fmt.Sprintf(i18n.T(CurrentLang, "mine_last_block"), b.Index, safeHashBytes(b.Hash)),
 					animate:    true,
+					appendFound: func() *canvas.Text {
+						line := fmt.Sprintf("[BLOCK FOUND] h=%d hash=%s reward=%.8f QC",
+							b.Index, safeHashBytes(b.Hash), float64(st.Reward))
+						t := canvas.NewText(line, green)
+						t.TextSize = 14
+						return t
+					}(),
 				}
 
+				// Sistem bildirimi
 				if app := fyne.CurrentApp(); app != nil {
 					app.SendNotification(&fyne.Notification{
 						Title:   "QuantumCoin",
-						Content: fmt.Sprintf("🎉 %d QC", st.Reward),
+						Content: fmt.Sprintf("🎉 %.8f QC", float64(st.Reward)),
 					})
 				}
 
+				// Küçük animasyon
 				time.Sleep(900 * time.Millisecond)
 				updateChan <- miningUpdate{rewardText: "", progress: 0}
 				for i := 0; i < 5; i++ {
@@ -135,7 +180,11 @@ func ShowMineWindow(a fyne.App, w fyne.Window, minerAddress string, bc *blockcha
 		}
 		stopBtn.Disable()
 		startBtn.Enable()
-		updateChan <- miningUpdate{status: i18n.T(CurrentLang, "mine_status_idle"), progress: 0, animate: false}
+		updateChan <- miningUpdate{
+			status:   i18n.T(CurrentLang, "mine_status_idle"),
+			progress: 0,
+			animate:  false,
+		}
 	}
 
 	// İlk buton durumları
@@ -146,15 +195,24 @@ func ShowMineWindow(a fyne.App, w fyne.Window, minerAddress string, bc *blockcha
 		stopBtn.Disable()
 	}
 
+	// Layout
 	content := container.NewVBox(
-		widget.NewLabelWithStyle(i18n.T(CurrentLang, "mine_title"), fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
+		widget.NewLabelWithStyle(
+			i18n.T(CurrentLang, "mine_title"),
+			fyne.TextAlignCenter,
+			fyne.TextStyle{Bold: true},
+		),
 		statusLabel,
 		progress,
 		animRect,
 		rewardLabel,
 		container.NewHBox(startBtn, stopBtn),
+		widget.NewSeparator(),
+		widget.NewLabel(i18n.T(CurrentLang, "mine_found_blocks")),
+		foundScroll,
 	)
+
 	w.SetContent(content)
-	w.Resize(fyne.NewSize(520, 360))
+	w.Resize(fyne.NewSize(640, 480))
 	w.Show()
 }

@@ -6,10 +6,6 @@ import (
 	"time"
 )
 
-// Basit “bridge” — dış bağımlılık yok.
-// Varsayım: 1 QC = 1 “atom” (ölçekleme yok).
-
-// nftDropEligible: ~%1 olasılıkla NFT ödülü
 func nftDropEligible(height int64, blockHash []byte) (bool, string) {
 	h := sha256.Sum256(append(blockHash,
 		byte(height), byte(height>>8), byte(height>>16), byte(height>>24)))
@@ -29,7 +25,6 @@ func hexString(b []byte) string {
 	return string(out)
 }
 
-// ComputeRewardBridge: temel dağıtım (tamamı madenciye)
 func ComputeRewardBridge(
 	height int64,
 	now int64,

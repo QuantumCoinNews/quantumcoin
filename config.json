@@ -1,3 +1,4 @@
+﻿$cfg = @'
 {
   "symbol": "QC",
   "initial_reward": 50,
@@ -8,29 +9,26 @@
   "target_block_time_secs": 30,
   "halving_period_blocks": 0,
   "default_difficulty_bits": 16,
-
   "coinbase_maturity": 10,
-
   "reward_pct_miner": 70,
   "reward_pct_stake": 10,
   "reward_pct_dev": 10,
   "reward_pct_burn": 5,
-
   "dev_fund_address": "1DUTH21psk8Vz7mCp3AmPw7o7djdFDJkDm",
   "stake_pool_address": "",
   "community_pool_address": "",
   "burn_address": "QC_BURN_SINK",
-
   "premine_percent": 12,
   "premine_address": "1DUTH21psk8Vz7mCp3AmPw7o7djdFDJkDm",
-
   "http_port": ":8081",
   "p2p_port": ":3001",
   "boot_peers": [],
-
   "chain_file": "chain_data.dat",
   "bonus_file": "bonus_store.json",
   "wallet_file": "wallet_data.json",
-
-  "log_level": "info"
+  "log_level": "info",
+  "Miner": { "Address": "1DUTH21psk8Vz7mCp3AmPw7o7djdFDJkDm" }
 }
+'@
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText('C:\QuantumMiner\config.json', $cfg, $utf8NoBom)

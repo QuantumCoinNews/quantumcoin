@@ -141,16 +141,12 @@ func pubKeyToECDSA(pub []byte) *ecdsa.PublicKey {
 	return &ecdsa.PublicKey{Curve: curve, X: x, Y: y}
 }
 
-// --------- İşlem Oluşturma ---------
-
-// NewTransaction: Yeni transfer işlemi oluşturur (imzasız basit model)
 func NewTransaction(from string, to string, amount int, bc *Blockchain) (*Transaction, error) {
 	if amount <= 0 {
 		return nil, fmt.Errorf("invalid amount")
 	}
 	pubFrom := wallet.Base58DecodeAddress(from)
 
-	// UTXO'ları topla
 	utxos, acc := bc.FindSpendableOutputs(pubFrom, amount)
 	if acc < amount {
 		return nil, fmt.Errorf("yetersiz bakiye")
@@ -196,7 +192,6 @@ func NewTransaction(from string, to string, amount int, bc *Blockchain) (*Transa
 	return tx, nil
 }
 
-// İsteğe bağlı imzalama/doğrulama (şimdilik zorunlu değil)
 func (tx *Transaction) Sign(_ *ecdsa.PrivateKey) error { return nil }
 
 func (tx *Transaction) Verify() bool {

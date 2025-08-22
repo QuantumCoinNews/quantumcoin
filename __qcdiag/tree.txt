@@ -1,0 +1,230 @@
+﻿Folder PATH listing
+Volume serial number is EA73-F00A
+C:.
+│   .chain.json
+│   .gitignore
+│   .golangci.yml
+│   .wallet
+│   build_errors.txt
+│   chain_data.dat
+│   chain_data_backup.dat
+│   config.json
+│   go.mod
+│   go.sum
+│   index.html
+│   lint_report.txt
+│   main.go
+│   project_structure.txt
+│   qc_blockchain.db
+│   qc_blockchain.db.lock
+│   quantumcoin.exe
+│   QuantumMiner.exe
+│   README.md
+│   README.md.rtf
+│   staticcheck.conf
+│   test_ui.go
+│   
+├───.vscode
+│       tasks.json
+│       
+├───ai
+│       analyzer.go
+│       bonuses.go
+│       recommendation.go
+│       reward_optimizer.go
+│       
+├───api
+│       http_server.go
+│       
+├───assets
+│       quantum coin logo.png
+│       
+├───bin
+│       bonus_store.json
+│       chain_data.dat
+│       quantumcoin.exe
+│       quantumminer.exe
+│       
+├───blockchain
+│   │   block.go
+│   │   blockchain.go
+│   │   coinbase.go
+│   │   metadata.go
+│   │   nft.go
+│   │   pow.go
+│   │   reward_bridge.go
+│   │   transaction.go
+│   │   
+│   └───blockchain
+│           tx.go
+│           
+├───cmd
+│   └───miner
+│           main.go
+│           
+├───config
+│       config.go
+│       constants.go
+│       economics.go
+│       params.go
+│       
+├───docs
+│       whitepaper.md
+│       
+├───game
+│       game_engine.go
+│       leaderboard.go
+│       reward_system.go
+│       telegram_adapter.go
+│       
+├───gui
+│       startup.go
+│       
+├───i18n
+│       en.json
+│       es.json
+│       i18n.go
+│       tr.json
+│       zh.json
+│       
+├───internal
+│       bonus_compat.go
+│       bonus_core.go
+│       fee.go
+│       mempool.go
+│       reward.go
+│       reward_system.go
+│       utxo.go
+│       
+├───miner
+│       adapter_qc_local.go
+│       assemble_block.go
+│       difficulty.go
+│       helpers.go
+│       metrics.go
+│       miner.go
+│       miner_effect.go
+│       mock_backend.go
+│       nft_miner.go
+│       rewarder.go
+│       scheduler.go
+│       submit_external.go
+│       web_job.go
+│       worker.go
+│       worker_cmd.go
+│       
+├───nft
+│       nft.go
+│       
+├───p2p
+│       message.go
+│       network.go
+│       node.go
+│       
+├───socialbot
+│   │   auth.go
+│   │   bot.go
+│   │   content.go
+│   │   scheduler.go
+│   │   
+│   └───platforms
+│           instagram.go
+│           tiktok.go
+│           x.go
+│           youtube.go
+│           
+├───telegram_game
+│   │   config.py
+│   │   constants.py
+│   │   game.go
+│   │   main_bot.py
+│   │   requirements.txt
+│   │   
+│   ├───assets
+│   │       mining_gif.gif
+│   │       nft_templates
+│   │       
+│   ├───blockchain
+│   │   │   qc_chain_api.py
+│   │   │   
+│   │   └───__pycache__
+│   │           qc_chain_api.cpython-311.pyc
+│   │           
+│   ├───database
+│   │   │   redis_store.py
+│   │   │   
+│   │   └───__pycache__
+│   │           redis_store.cpython-311.pyc
+│   │           
+│   ├───handlers
+│   │   │   claim.py
+│   │   │   leaderboard.py
+│   │   │   mining.py
+│   │   │   profile.py
+│   │   │   referral.py
+│   │   │   start.py
+│   │   │   wallet.py
+│   │   │   __init__.py
+│   │   │   
+│   │   └───__pycache__
+│   │           claim.cpython-311.pyc
+│   │           leaderboard.cpython-311.pyc
+│   │           mining.cpython-311.pyc
+│   │           profile.cpython-311.pyc
+│   │           referral.cpython-311.pyc
+│   │           start.cpython-311.pyc
+│   │           wallet.cpython-311.pyc
+│   │           __init__.cpython-311.pyc
+│   │           
+│   ├───utils
+│   │   │   nft_utils.py
+│   │   │   reward_engine.py
+│   │   │   stats.py
+│   │   │   
+│   │   └───__pycache__
+│   │           reward_engine.cpython-311.pyc
+│   │           stats.cpython-311.pyc
+│   │           
+│   └───__pycache__
+│           config.cpython-311.pyc
+│           
+├───tests
+│       faucet.go
+│       testnet.go
+│       test_signature.go
+│       
+├───token
+│       miner.go
+│       qc20.go
+│       qc721.go
+│       storage.go
+│       token.go
+│       
+├───ui
+│       dashboard_ui.go
+│       explorer.go
+│       explorer_ui.go
+│       main_ui.go
+│       mine_ui.go
+│       send_ui.go
+│       settings_ui.go
+│       wallet_ui.go
+│       
+├───utils
+│       base58.go
+│       crypto.go
+│       hash.go
+│       helpers.go
+│       utils.go
+│       
+├───wallet
+│       io.go
+│       keypair.go
+│       signature.go
+│       test_wallet.go
+│       validate.go
+│       wallet.go
+│       
+└───__qcdiag
+        tree.txt
+        

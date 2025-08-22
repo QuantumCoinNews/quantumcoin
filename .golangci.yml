@@ -1,0 +1,40 @@
+# .golangci.yml — relaxed config (eski hâl)
+
+run:
+  timeout: 5m
+  go: "1.24"
+  tests: true
+
+linters:
+  enable-all: true
+  disable:
+    - funlen
+    - gocyclo
+    - dupl
+    - errcheck    # sosyalbot/* errcheck uyarılarını kapatır
+
+issues:
+  exclude-rules:
+    # UNUSED (gelecek için bırakılan helperlar)
+    - path: ^api/http_server\.go$|^blockchain/transaction\.go$|^miner/assemble_block\.go$
+      linters: [staticcheck, unused]
+      text: U1000
+      justification: Kept for future API/back-compat
+
+    # UI Printf format uyarıları
+    - path: ^ui/send_ui\.go$
+      linters: [staticcheck]
+      text: SA1006
+      justification: UI prints kept as-is
+
+    # Legacy/deprecated API'ler
+    - path: ^miner/difficulty\.go$|^ui/settings_ui\.go$|^utils/hash\.go$
+      linters: [staticcheck]
+      text: SA1019
+      justification: Legacy compatibility kept
+
+    # Stil tercihi: explicit nil-check
+    - path: ^blockchain/nft\.go$
+      linters: [gosimple, staticcheck]
+      text: S1031
+      justification: Readable explicit nil-check kept

@@ -1,4 +1,3 @@
-// config/config.go
 package config
 
 import (
@@ -214,6 +213,39 @@ func Set(c *Config) {
 	mu.Unlock()
 }
 
+// ====== EK: Community yüzdesi ve “ana cüzdan” çözümleyici ======
+
+// CommunityPercent: kalan % (negatifse 0’a sıkıştırılır)
+func (c *Config) CommunityPercent() int {
+	sum := c.RewardPctMiner + c.RewardPctStake + c.RewardPctDev + c.RewardPctBurn
+	if sum >= 100 {
+		return 0
+	}
+	rem := 100 - sum
+	if rem < 0 {
+		return 0
+	}
+	return rem
+}
+
+// ResolveCommunityAddress:
+// community_pool_address boşsa öncelik sırası:
+// 1) PremineAddress (ANA CÜZDAN)
+// 2) DevFundAddress
+// 3) (boş)
+func (c *Config) ResolveCommunityAddress() string {
+	if strings.TrimSpace(c.CommunityPoolAddress) != "" {
+		return c.CommunityPoolAddress
+	}
+	if strings.TrimSpace(c.PremineAddress) != "" {
+		return c.PremineAddress
+	}
+	if strings.TrimSpace(c.DevFundAddress) != "" {
+		return c.DevFundAddress
+	}
+	return ""
+}
+
 // Validate: mantıksal doğrulama
 func (c *Config) Validate() error {
 	if c.InitialReward < 0 {
@@ -237,13 +269,25 @@ func (c *Config) Validate() error {
 	if c.RewardPctMiner < 0 || c.RewardPctStake < 0 || c.RewardPctDev < 0 || c.RewardPctBurn < 0 {
 		return errors.New("reward percentages cannot be negative")
 	}
+
 	sum := c.RewardPctMiner + c.RewardPctStake + c.RewardPctDev + c.RewardPctBurn
 	if sum > 100 {
 		fmt.Println("[config] warning: reward percentages sum to >100")
 	}
 	if sum < 100 {
-		fmt.Printf("[config] info: reward percentages sum to %d%%; remaining %d%% goes to community.\n", sum, 100-sum)
+		rem := 100 - sum
+		fmt.Printf("[config] info: reward percentages sum to %d%%; remaining %d%% goes to community.\n", sum, rem)
+		// ADDED: community adresi boşsa otomatik “ana cüzdan”a bağla
+		if strings.TrimSpace(c.CommunityPoolAddress) == "" {
+			if addr := c.ResolveCommunityAddress(); addr == "" {
+				fmt.Println("[config] info: community address not set; will try premine/dev fund at runtime")
+			} else {
+				// Normalize içinde de set ediliyor; burada bilgi mesajı yeterli.
+				fmt.Printf("[config] info: community address resolved to %s\n", addr)
+			}
+		}
 	}
+
 	if c.PreminePercent < 0 || c.PreminePercent > 100 {
 		return errors.New("premine_percent must be 0..100")
 	}
@@ -496,7 +540,7 @@ func applyEnv(c *Config) {
 	}
 }
 
-// Eski adres alanlarından kanoniğe taşıma + premine fallback
+// Eski adres alanlarından kanoniğe taşıma + premine/community fallback
 func (c *Config) normalizeRewardAddresses() {
 	if c.DevFundAddress == "" && c.RewardAddrDev != "" {
 		c.DevFundAddress = c.RewardAddrDev
@@ -513,5 +557,13 @@ func (c *Config) normalizeRewardAddresses() {
 	// Premine adresi boşsa DevFundAddress'tan devral
 	if c.PremineAddress == "" && c.DevFundAddress != "" {
 		c.PremineAddress = c.DevFundAddress
+	}
+	// ADDED: Community adresi yoksa ana cüzdana (premine) ya da dev fona bağla
+	if strings.TrimSpace(c.CommunityPoolAddress) == "" {
+		if strings.TrimSpace(c.PremineAddress) != "" {
+			c.CommunityPoolAddress = c.PremineAddress
+		} else if strings.TrimSpace(c.DevFundAddress) != "" {
+			c.CommunityPoolAddress = c.DevFundAddress
+		}
 	}
 }

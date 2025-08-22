@@ -10,49 +10,66 @@ import (
 	"strings"
 	"time"
 
+	"quantumcoin/config"
 	"quantumcoin/wallet"
 )
 
-// ---- Blockchain ----
 type Blockchain struct {
 	Blocks           []*Block
 	UTXO             map[string][]TransactionOutput
 	TotalSupply      int
 	coinbaseMaturity int
-	pendingTxs       []*Transaction // mempool
+	pendingTxs       []*Transaction
 }
 
-// ---- Ödül/halving ----
+// Varsayılanlar (config yoksa devreye girer)
 const (
-	GenesisTime     = 1725158400              // 2024-09-01 UTC
-	HalvingInterval = 2 * 365 * 24 * 60 * 60  // 2 yıl
-	MiningPeriod    = 10 * 365 * 24 * 60 * 60 // 10 yıl
-	InitialReward   = 50
+	GenesisTimeDefault     = 1725158400             // 2024-09-01 UTC
+	HalvingIntervalDefault = 2 * 365 * 24 * 60 * 60 // ~2 yıl
+	MiningPeriodDefault    = 10 * 365 * 24 * 60 * 60
+	InitialRewardDefault   = 50
 )
 
 func GetCurrentReward() int {
+	p := config.Current()
 	now := time.Now().Unix()
-	elapsed := now - GenesisTime
+
+	genesis := p.GenesisUnix
+	if genesis <= 0 {
+		genesis = GenesisTimeDefault
+	}
+	elapsed := now - genesis
 	if elapsed < 0 {
 		elapsed = 0
 	}
-	halvings := int(elapsed / HalvingInterval)
-	r := InitialReward >> halvings
+
+	halvingSecs := p.HalvingIntervalSecs
+	if halvingSecs <= 0 {
+		halvingSecs = HalvingIntervalDefault
+	}
+	halvings := int(elapsed / halvingSecs)
+
+	r := p.InitialReward
+	if r <= 0 {
+		r = InitialRewardDefault
+	}
+	r >>= halvings
 	if r < 1 {
 		r = 1
 	}
-	if elapsed > MiningPeriod {
+	miningSecs := p.MiningPeriodSecs
+	if miningSecs <= 0 {
+		miningSecs = MiningPeriodDefault
+	}
+	if elapsed > miningSecs {
 		r = 0
 	}
 	return r
 }
 
-// ---- Oluşturma (GENESIS + %12 premine opsiyonel) ----
 func NewBlockchain(initialReward, totalSupply int) *Blockchain {
-	// 1) Genesis işlemleri
 	var txs []*Transaction
 
-	// 1.a) Basit genesis coinbase (gösterim amaçlı)
 	genesisCoinbase := &Transaction{
 		ID:        nil,
 		Inputs:    []TransactionInput{},
@@ -64,23 +81,23 @@ func NewBlockchain(initialReward, totalSupply int) *Blockchain {
 	genesisCoinbase.ID = genesisCoinbase.Hash()
 	txs = append(txs, genesisCoinbase)
 
-	// 1.b) %12 premine (QC_MAIN_ADDRESS env değişkeni ile)
-	if mainAddr := stringsTrim(os.Getenv("QC_MAIN_ADDRESS")); mainAddr != "" && totalSupply > 0 {
-		premine := int(float64(totalSupply) * 0.12) // toplam arzın %12’si
+	if mainAddr := strings.TrimSpace(os.Getenv("QC_MAIN_ADDRESS")); mainAddr != "" && totalSupply > 0 {
+		premine := int(float64(totalSupply) * 0.12)
 		if premine > 0 {
-			txs = append(txs, &Transaction{
+			pk := wallet.Base58DecodeAddress(mainAddr)
+			premTx := &Transaction{
 				ID:        nil,
 				Inputs:    []TransactionInput{},
-				Outputs:   []TransactionOutput{{Amount: premine, PubKeyHash: wallet.Base58DecodeAddress(mainAddr)}},
+				Outputs:   []TransactionOutput{{Amount: premine, PubKeyHash: pk}},
 				Timestamp: time.Now(),
 				Sender:    "COINBASE",
 				Amount:    float64(premine),
-			})
-			txs[len(txs)-1].ID = txs[len(txs)-1].Hash()
+			}
+			premTx.ID = premTx.Hash()
+			txs = append(txs, premTx)
 		}
 	}
 
-	// 2) Genesis bloğunu PoW ile üret
 	genesis := NewBlock(0, txs, []byte{}, "genesis", 1)
 
 	bc := &Blockchain{
@@ -93,12 +110,6 @@ func NewBlockchain(initialReward, totalSupply int) *Blockchain {
 	return bc
 }
 
-func stringsTrim(s string) string {
-	// küçük yardımcı: boşlukları temizle
-	return strings.TrimSpace(s)
-}
-
-// ---- Olgunlaşma ----
 func (bc *Blockchain) SetCoinbaseMaturity(n int) {
 	if n < 0 {
 		n = 0
@@ -106,7 +117,6 @@ func (bc *Blockchain) SetCoinbaseMaturity(n int) {
 	bc.coinbaseMaturity = n
 }
 
-// ---- Zincire blok ekleme (elle) ----
 func (bc *Blockchain) AddBlock(txs []*Transaction, miner string, difficulty int) *Block {
 	prev := bc.Blocks[len(bc.Blocks)-1]
 	nb := NewBlock(prev.Index+1, txs, prev.Hash, miner, difficulty)
@@ -115,7 +125,6 @@ func (bc *Blockchain) AddBlock(txs []*Transaction, miner string, difficulty int)
 	return nb
 }
 
-// ---- P2P yardımcıları ----
 func (bc *Blockchain) AddBlockFromPeer(blk *Block) error {
 	if !blk.ValidatePoW() {
 		return fmt.Errorf("invalid proof-of-work")
@@ -158,7 +167,6 @@ func (bc *Blockchain) ReplaceChain(blocks []*Block) error {
 
 func (bc *Blockchain) GetAllBlocks() []*Block { return bc.Blocks }
 
-// ---- UTXO ----
 func (bc *Blockchain) FindSpendableOutputs(pubKeyHash []byte, amount int) (map[string][]int, int) {
 	acc := 0
 	unspent := make(map[string][]int)
@@ -177,7 +185,7 @@ func (bc *Blockchain) FindSpendableOutputs(pubKeyHash []byte, amount int) (map[s
 }
 
 func (bc *Blockchain) UpdateUTXOSet() {
-	UTXO := make(map[string][]TransactionOutput)
+	utxo := make(map[string][]TransactionOutput)
 	for _, block := range bc.Blocks {
 		for _, tx := range block.Transactions {
 			txID := hex.EncodeToString(tx.ID)
@@ -200,15 +208,14 @@ func (bc *Blockchain) UpdateUTXOSet() {
 					}
 				}
 				if !spent {
-					UTXO[txID] = append(UTXO[txID], out)
+					utxo[txID] = append(utxo[txID], out)
 				}
 			}
 		}
 	}
-	bc.UTXO = UTXO
+	bc.UTXO = utxo
 }
 
-// ---- Mempool ----
 func (bc *Blockchain) AddTransaction(tx *Transaction) error {
 	if tx == nil {
 		return fmt.Errorf("nil transaction")
@@ -217,7 +224,6 @@ func (bc *Blockchain) AddTransaction(tx *Transaction) error {
 	return nil
 }
 
-// ---- Bakiye ----
 func (bc *Blockchain) GetSpendableBalance(address string) int {
 	pubKeyHash := wallet.Base58DecodeAddress(address)
 	best := bc.GetBestHeight()
@@ -269,43 +275,26 @@ func (bc *Blockchain) TotalMinted() int {
 	return total
 }
 
-// ---- MineBlock: coinbase + mempool ----
 func (bc *Blockchain) MineBlock(miner string, difficulty int) (*Block, error) {
-	reward := GetCurrentReward()
-	if reward == 0 {
-		return nil, fmt.Errorf("madencilik dönemi sona erdi")
+	if len(bc.Blocks) == 0 {
+		return nil, fmt.Errorf("blockchain not initialized (no genesis)")
 	}
-	if bc.TotalSupply > 0 {
-		rem := bc.TotalSupply - bc.TotalMinted()
-		if rem <= 0 {
-			return nil, fmt.Errorf("toplam arz tükendi")
-		}
-		if reward > rem {
-			reward = rem
-		}
+	cbTx, err := newCoinbaseTx(miner)
+	if err != nil {
+		return nil, err
 	}
-	cb := &Transaction{
-		ID:        nil,
-		Inputs:    []TransactionInput{},
-		Outputs:   []TransactionOutput{{Amount: reward, PubKeyHash: wallet.Base58DecodeAddress(miner)}},
-		Timestamp: time.Now(),
-		Sender:    "COINBASE",
-		Amount:    float64(reward),
-	}
-	cb.ID = cb.Hash()
+	txs := append([]*Transaction{cbTx}, bc.pendingTxs...)
 
-	txs := append([]*Transaction{cb}, bc.pendingTxs...)
 	prev := bc.Blocks[len(bc.Blocks)-1]
 	nb := NewBlock(prev.Index+1, txs, prev.Hash, miner, difficulty)
 
 	bc.Blocks = append(bc.Blocks, nb)
 	bc.UpdateUTXOSet()
-	bc.pendingTxs = []*Transaction{} // mempool boşalt
+	bc.pendingTxs = []*Transaction{}
 
 	return nb, nil
 }
 
-// ---- Serialize/Load ----
 func SerializeBlockchain(bc *Blockchain) []byte {
 	var buf bytes.Buffer
 	if err := gob.NewEncoder(&buf).Encode(bc); err != nil {
@@ -337,7 +326,8 @@ func LoadBlockchainFromFile(filename string) (*Blockchain, error) {
 	return DeserializeBlockchain(data), nil
 }
 
-// ---- helpers ----
+// Helpers
+
 func (bc *Blockchain) GetBestHeight() int {
 	if bc == nil || len(bc.Blocks) == 0 {
 		return -1

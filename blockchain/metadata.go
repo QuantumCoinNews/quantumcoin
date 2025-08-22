@@ -2,7 +2,6 @@ package blockchain
 
 import "fmt"
 
-// RewardBreakdown: basit özet (bridge için)
 type RewardBreakdown struct {
 	Height        int64
 	Timestamp     int64

@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>QuantumCoin Web Miner</title>
+  <script src="wasm_exec.js"></script>
+  <style>
+    body { font-family: monospace; background: #0d1117; color: #c9d1d9; text-align: center; padding: 30px; }
+    button { margin: 10px; padding: 10px 20px; border: none; border-radius: 8px; background: #238636; color: white; cursor: pointer; }
+    button.stop { background: #da3633; }
+    #log { margin-top: 20px; text-align: left; border: 1px solid #30363d; padding: 15px; background: #161b22; max-height: 300px; overflow-y: auto; }
+  </style>
+</head>
+<body>
+  <h1>⚡ QuantumCoin Web Miner</h1>
+  <button onclick="startMining()">Start Mining</button>
+  <button class="stop" onclick="stopMining()">Stop Mining</button>
+  <div id="log">Console log...</div>
+
+  <script>
+    const go = new Go();
+    WebAssembly.instantiateStreaming(fetch("main.wasm"), go.importObject).then((result) => {
+      go.run(result.instance);
+    });
+  </script>
+</body>
+</html>

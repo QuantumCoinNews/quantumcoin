@@ -11,7 +11,6 @@ import (
 const maxNonce = math.MaxInt64
 const defaultDifficultyBits = 16 // config default ile uyumlu
 
-// ProofOfWork: QuantumCoin PoW algoritması
 type ProofOfWork struct {
 	Block      *Block
 	Target     *big.Int

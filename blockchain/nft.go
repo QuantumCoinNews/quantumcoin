@@ -1,4 +1,3 @@
-// blockchain/nft.go
 package blockchain
 
 import (
@@ -8,9 +7,6 @@ import (
 	"time"
 )
 
-// MintNFT: Basit/stub NFT mint işlemi.
-// - Deterministik pseudo-ID üretir (adres + tip + zaman + yükseklik).
-// - Son bloğun Metadata alanına iz bırakır ve gelen meta'yı prefiksleyerek kaydeder.
 func (bc *Blockchain) MintNFT(toAddress, nftType string, meta map[string]string) (string, error) {
 	if bc == nil {
 		return "", fmt.Errorf("blockchain is nil")
@@ -33,11 +29,10 @@ func (bc *Blockchain) MintNFT(toAddress, nftType string, meta map[string]string)
 	if toAddress != "" {
 		last.Metadata[fmt.Sprintf("nft_last_%s", toAddress)] = nftID
 	}
-	// Gelen meta'yı da izlemek için prefiksli kaydet
-	if meta != nil {
-		for k, v := range meta {
-			last.Metadata["nft_meta_"+k] = v
-		}
+
+	// Gelen meta'yı da izlemek için prefiksli kaydet (nil map üzerinde range güvenlidir)
+	for k, v := range meta {
+		last.Metadata["nft_meta_"+k] = v
 	}
 
 	return nftID, nil
