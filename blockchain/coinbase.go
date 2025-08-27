@@ -1,7 +1,6 @@
 package blockchain
 
 import (
-	"errors"
 	"strings"
 	"time"
 
@@ -10,7 +9,7 @@ import (
 
 func newCoinbaseTx(miner string) (*Transaction, error) {
 	if strings.TrimSpace(miner) == "" {
-		return nil, errors.New("miner address empty")
+		return nil, ErrMinerAddressEmpty
 	}
 	reward := GetCurrentReward()
 	tx := &Transaction{

@@ -4,6 +4,7 @@ go 1.21
 
 require (
 	fyne.io/fyne/v2 v2.6.2
+	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0
 	golang.org/x/crypto v0.33.0
 )
 

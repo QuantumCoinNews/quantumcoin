@@ -2,72 +2,78 @@ package wallet
 
 import (
 	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/x509"
 	"encoding/hex"
 	"log"
 
 	"quantumcoin/utils"
+
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
 
-// Wallet bir cüzdanın özel ve açık anahtarlarını tutar
 type Wallet struct {
 	PrivateKey *ecdsa.PrivateKey
-	PublicKey  []byte // Uncompressed: 0x04 || X || Y
+	// 65 byte uncompressed public key: 0x04 || X(32) || Y(32)
+	PublicKey []byte
 }
 
-// Yeni anahtar çifti üret
+// 32-byte left-pad
+func pad32(b []byte) []byte {
+	if len(b) >= 32 {
+		return b
+	}
+	out := make([]byte, 32)
+	copy(out[32-len(b):], b)
+	return out
+}
+
+// Yeni anahtar çifti (secp256k1)
 func NewWallet() *Wallet {
-	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	curve := secp256k1.S256()
+	priv, err := ecdsa.GenerateKey(curve, rand.Reader)
 	if err != nil {
 		log.Panicf("Cüzdan anahtarı oluşturulamadı: %v", err)
 	}
-	// Uncompressed public key: 0x04 || X || Y
-	pub := append([]byte{0x04}, append(privKey.PublicKey.X.Bytes(), privKey.PublicKey.Y.Bytes()...)...)
-	return &Wallet{PrivateKey: privKey, PublicKey: pub}
+	pub := append([]byte{0x04}, pad32(priv.PublicKey.X.Bytes())...)
+	pub = append(pub, pad32(priv.PublicKey.Y.Bytes())...)
+	return &Wallet{PrivateKey: priv, PublicKey: pub}
 }
 
-// Base58Check adres üretimi
-func (w *Wallet) GetAddress() string {
-	pubKeyHash := HashPubKey(w.PublicKey)
-	versionedPayload := append([]byte{0x00}, pubKeyHash...) // 0x00 versiyon
-	checksum := utils.Checksum(versionedPayload)
-	fullPayload := append(versionedPayload, checksum...)
-	return string(utils.Base58Encode(fullPayload))
+// PubKey -> HASH160 -> Base58Check (version=0x00)
+func GetAddressFromPub(pub []byte) string {
+	pubKeyHash := HashPubKey(pub)
+	versioned := append([]byte{0x00}, pubKeyHash...)
+	checksum := utils.Checksum(versioned)
+	full := append(versioned, checksum...)
+	return string(utils.Base58Encode(full))
 }
 
-// PubKey -> HASH160
-func HashPubKey(pubKey []byte) []byte {
-	return utils.Hash160(pubKey)
-}
+func (w *Wallet) GetAddress() string { return GetAddressFromPub(w.PublicKey) }
 
-// Özel anahtarı hex dışa aktar (dev/test)
+// PubKey HASH160
+func HashPubKey(pubKey []byte) []byte { return utils.Hash160(pubKey) }
+
+// Özel anahtarı hex dışa aktar (ham 32 bayt secp256k1 skalar D)
+// ImportPrivateKeyHex bu formatı doğrudan kabul eder.
 func (w *Wallet) ExportPrivateKeyHex() string {
-	privBytes, err := x509.MarshalECPrivateKey(w.PrivateKey)
-	if err != nil {
-		log.Panicf("Özel anahtar dışa aktarılamadı: %v", err)
-	}
-	return hex.EncodeToString(privBytes)
+	d := w.PrivateKey.D.Bytes()
+	out := make([]byte, 32)
+	copy(out[32-len(d):], d) // left-pad
+	return hex.EncodeToString(out)
 }
 
 // Adrese göre cüzdan yükle (depoda varsa onu döndür, yoksa yeni üret)
 func LoadWallet(address string) *Wallet {
-	w := LoadWalletFromFile() // depodan default/ilk cüzdan
+	w := LoadWalletFromFile()
 	if addr := w.GetAddress(); addr == address {
 		return w
 	}
-	// eşleşmiyorsa yeni cüzdan (eski davranış)
 	return NewWallet()
 }
 
 // Yardımcılar
 func GetPubKeyHash(pubKey []byte) []byte { return HashPubKey(pubKey) }
+func HashAndEncode(pubKey []byte) string { return GetAddressFromPub(pubKey) }
 
-func HashAndEncode(pubKey []byte) string {
-	pubKeyHash := HashPubKey(pubKey)
-	versionedPayload := append([]byte{0x00}, pubKeyHash...)
-	checksum := utils.Checksum(versionedPayload)
-	fullPayload := append(versionedPayload, checksum...)
-	return string(utils.Base58Encode(fullPayload))
-}
+// 65B uncompressed public key (0x04||X||Y)
+func (w *Wallet) UncompressedPub() []byte { return w.PublicKey }

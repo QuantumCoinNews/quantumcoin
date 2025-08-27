@@ -1,0 +1,33 @@
+// POST /api/tx/send
+func sendTx(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		j(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	if bc == nil {
+		j(w, http.StatusServiceUnavailable, map[string]string{"error": "blockchain not ready"})
+		return
+	}
+
+	var tx blockchain.Transaction
+	if err := json.NewDecoder(r.Body).Decode(&tx); err != nil {
+		j(w, http.StatusBadRequest, map[string]string{"error": "bad json: " + err.Error()})
+		return
+	}
+
+	// İmza doğrulama zorunlu (coinbase hariç)
+	if !tx.IsCoinbase() && !tx.Verify() {
+		j(w, http.StatusBadRequest, map[string]string{"error": "invalid tx signature"})
+		return
+	}
+
+	if err := bc.AddTransaction(&tx); err != nil {
+		j(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	j(w, http.StatusOK, map[string]any{
+		"accepted": true,
+		"id":       hex.EncodeToString(tx.ID),
+	})
+}

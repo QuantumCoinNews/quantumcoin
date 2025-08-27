@@ -1,0 +1,10 @@
+{
+  "network": "testnet",
+  "genesisTime": "2025-09-01T00:00:00Z",
+  "initialDifficulty": 1,
+  "blockReward": 50,
+  "halvingIntervalBlocks": 1051200,
+  "premine": [
+    { "address": "QCTESTPREMINE1111111111111111111111111", "amount": 250000 }
+  ]
+}

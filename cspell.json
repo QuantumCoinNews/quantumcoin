@@ -1,0 +1,11 @@
+{
+  "version": "0.2",
+  "language": "en,tr",
+  "words": [
+    "PoW", "UTXO", "txid", "prevhash", "coinbase", "QC",
+    "nolint", "prealloc", "gofumpt", "gocognit"
+  ],
+  "ignorePaths": [
+    "**/bin/**", "**/vendor/**", "**/*.sum", "**/*.mod"
+  ]
+}

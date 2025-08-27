@@ -1,16 +1,18 @@
-﻿# Go build
+﻿# Go build artifacts
 /bin/
 /dist/
 /build/
 /coverage/
-/*.exe
 *.exe
 *.test
 *.out
 
-# IDE
+# IDE / Editor
 .vscode/
 *.code-workspace
+.idea/
+*.swp
+*.swo
 
 # Project local data
 chain_data*.dat

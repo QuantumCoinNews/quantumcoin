@@ -2,52 +2,12 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "00: Clean caches",
-      "type": "shell",
-      "command": "go clean -cache -modcache",
-      "problemMatcher": []
-    },
-    {
-      "label": "01: Go mod tidy",
-      "type": "shell",
-      "command": "go mod tidy",
-      "problemMatcher": "$go"
-    },
-    {
-      "label": "02: Build (all)",
-      "type": "shell",
-      "command": "go build ./...",
-      "problemMatcher": "$go",
-      "options": {
-        "env": {
-          "CGO_ENABLED": "1",
-          "CC": "C:\\mingw64\\bin\\gcc.exe"
-        }
-      }
-    },
-    {
-      "label": "03: Vet",
-      "type": "shell",
-      "command": "go vet ./...",
-      "problemMatcher": "$go"
-    },
-    {
-      "label": "04: Staticcheck",
-      "type": "shell",
-      "command": "staticcheck ./...",
-      "problemMatcher": "$go"
-    },
-    {
       "label": "HATA TARAMA: full",
-      "dependsOrder": "sequence",
-      "dependsOn": [
-        "00: Clean caches",
-        "01: Go mod tidy",
-        "02: Build (all)",
-        "03: Vet",
-        "04: Staticcheck"
-      ],
-      "problemMatcher": []
+      "type": "shell",
+      "command": "go clean -cache -modcache && go fmt ./... && go vet ./... && go build ./...",
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": ["$go"]
     }
   ]
 }

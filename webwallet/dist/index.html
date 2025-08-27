@@ -1,0 +1,137 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>QuantumCoin Wallet</title>
+  </head>
+  <body>
+    <h1>QuantumCoin Wallet</h1>
+    <p>İlk iskelet. Gönder/imzalama, mining ve diğer sayfaları burada test ediyoruz.</p>
+
+    <!-- QC Controls (injected) -->
+    <div id="qc-controls" style="margin-top:24px;border-top:1px solid #ddd;padding-top:16px;font-family:system-ui,Segoe UI,Arial">
+      <h2 style="margin:0 0 12px 0;">Developer Panel (Local)</h2>
+
+      <!-- Get Balance -->
+      <div style="margin-bottom:12px;">
+        <label>Address</label>
+        <input id="qc-addr" style="width:360px;margin-left:8px;" placeholder="Wallet address"/>
+        <button id="qc-btn-balance">Get Balance</button>
+      </div>
+
+      <!-- Fast Mine -->
+      <div style="margin-bottom:12px;">
+        <label>Fast Mine</label>
+        <input id="qc-fast-addr" style="width:360px;margin-left:8px;" placeholder="Address for coinbase reward"/>
+        <input id="qc-fast-n" style="width:60px;margin-left:8px;" placeholder="n" value="3"/>
+        <button id="qc-btn-fast">Mine n blocks</button>
+      </div>
+
+      <!-- Send -->
+      <div style="margin-bottom:12px;">
+        <label>Send (signed)</label><br/>
+        <input id="qc-send-from" style="width:420px;margin:4px 0;" placeholder="From address"/><br/>
+        <input id="qc-send-to" style="width:420px;margin:4px 0;" placeholder="To address"/><br/>
+        <input id="qc-send-amt" type="number" style="width:120px;margin:4px 0;" placeholder="Amount (int)"/><br/>
+        <input id="qc-send-priv" style="width:520px;margin:4px 0;" placeholder="Private key (hex)"/><br/>
+        <button id="qc-btn-send">Send</button>
+      </div>
+
+      <!-- Miner Control -->
+      <div style="margin-bottom:12px;">
+        <label>Mining Control</label><br/>
+        <input id="qc-miner-addr" style="width:420px;margin:4px 0;" placeholder="Miner address (wallet)"/><br/>
+        <button id="qc-btn-miner-start">Start Miner</button>
+        <button id="qc-btn-miner-stop">Stop Miner</button>
+        <button id="qc-btn-miner-status">Status</button>
+      </div>
+
+      <pre id="qc-out" style="background:#f6f6f6;padding:12px;border-radius:6px;min-height:160px;overflow:auto;"></pre>
+    </div>
+
+    <script>
+    (function () {
+      const $ = (id) => document.getElementById(id);
+      const out = $("qc-out");
+      const show = (obj) => out.textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
+
+      async function jget(url) {
+        const r = await fetch(url, {credentials: "same-origin"});
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      }
+      async function jpost(url, body) {
+        const r = await fetch(url, {
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify(body)
+        });
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      }
+
+      // Get Balance
+      $("qc-btn-balance")?.addEventListener("click", async () => {
+        const addr = ($("qc-addr").value || "").trim();
+        if (!addr) return show("⚠️ Address boş");
+        try {
+          const data = await jget(`/api/wallet/balance/${encodeURIComponent(addr)}`);
+          show(data);
+        } catch (e) { show("Hata: " + e.message); }
+      });
+
+      // Fast Mine
+      $("qc-btn-fast")?.addEventListener("click", async () => {
+        const addr = ($("qc-fast-addr").value || "").trim();
+        const n = parseInt(($("qc-fast-n").value || "3"), 10);
+        if (!addr) return show("⚠️ Address boş");
+        try {
+          const data = await jget(`/api/dev/fastmine?n=${encodeURIComponent(n)}&address=${encodeURIComponent(addr)}`);
+          show(data);
+        } catch (e) { show("Hata: " + e.message); }
+      });
+
+      // Send
+      $("qc-btn-send")?.addEventListener("click", async () => {
+        const from = ($("qc-send-from").value || "").trim();
+        const to   = ($("qc-send-to").value   || "").trim();
+        const amt  = parseInt(($("qc-send-amt").value || "0"), 10);
+        const priv = ($("qc-send-priv").value || "").trim();
+        if (!from || !to || !amt || !priv) return show("⚠️ from, to, amount, priv_hex gerekli");
+        try {
+          const data = await jpost(`/api/tx/send`, {from: from, to: to, amount: amt, priv_hex: priv});
+          show(data);
+        } catch (e) { show("Hata: " + e.message); }
+      });
+
+      // Miner Start
+      $("qc-btn-miner-start")?.addEventListener("click", async () => {
+        const addr = ($("qc-miner-addr").value || "").trim();
+        if (!addr) return show("⚠️ Miner address boş");
+        try {
+          const data = await jpost(`/api/miner/start`, {address: addr});
+          show(data);
+        } catch (e) { show("Hata: " + e.message); }
+      });
+
+      // Miner Stop
+      $("qc-btn-miner-stop")?.addEventListener("click", async () => {
+        try {
+          const data = await jpost(`/api/miner/stop`, {});
+          show(data);
+        } catch (e) { show("Hata: " + e.message); }
+      });
+
+      // Miner Status
+      $("qc-btn-miner-status")?.addEventListener("click", async () => {
+        try {
+          const data = await jget(`/api/miner/status`);
+          show(data);
+        } catch (e) { show("Hata: " + e.message); }
+      });
+
+    })();
+    </script>
+  </body>
+</html>

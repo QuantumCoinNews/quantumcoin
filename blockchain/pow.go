@@ -3,42 +3,60 @@ package blockchain
 import (
 	"bytes"
 	"crypto/sha256"
-	"math"
 	"math/big"
-	"strconv"
 )
 
-const maxNonce = math.MaxInt64
-const defaultDifficultyBits = 16 // config default ile uyumlu
+const (
+	hashBits = 256
+	maxBits  = 255
+	maxNonce = int(^uint(0) >> 1) // platform int için güvenli üst sınır
+)
 
 type ProofOfWork struct {
-	Block      *Block
-	Target     *big.Int
-	Difficulty int
+	block  *Block
+	target *big.Int
 }
 
-func NewProofOfWork(block *Block) *ProofOfWork {
-	diff := block.Difficulty
-	if diff <= 0 {
-		diff = defaultDifficultyBits
-	}
-	if diff > 255 {
-		diff = 255
-	}
+func NewProofOfWork(b *Block) *ProofOfWork {
 	target := big.NewInt(1)
-	target.Lsh(target, uint(256-diff))
-	return &ProofOfWork{Block: block, Target: target, Difficulty: diff}
+
+	// Güvenli zorluk (G115 fix + mnd temizliği)
+	diff := b.Difficulty
+	if diff < 0 {
+		diff = 0
+	}
+	if diff > maxBits {
+		diff = maxBits
+	}
+	shift := uint(hashBits - diff) // burada artık negatif/taşma yok
+	target.Lsh(target, shift)
+
+	return &ProofOfWork{block: b, target: target}
+}
+
+func (pow *ProofOfWork) prepareData(nonce int) []byte {
+	return bytes.Join([][]byte{
+		pow.block.PrevHash,
+		pow.block.HashTransactions(),
+		intToHex(pow.block.Timestamp),
+		intToHex(int64(pow.block.Difficulty)),
+		intToHex(int64(nonce)),
+	}, []byte{})
 }
 
 func (pow *ProofOfWork) Run() (int, []byte) {
-	var hashInt big.Int
-	var hash [32]byte
-	nonce := 0
+	var (
+		hash    [32]byte
+		hashInt big.Int
+		nonce   = 0
+	)
+
 	for nonce < maxNonce {
 		data := pow.prepareData(nonce)
 		hash = sha256.Sum256(data)
 		hashInt.SetBytes(hash[:])
-		if hashInt.Cmp(pow.Target) == -1 {
+
+		if hashInt.Cmp(pow.target) == -1 {
 			break
 		}
 		nonce++
@@ -46,23 +64,19 @@ func (pow *ProofOfWork) Run() (int, []byte) {
 	return nonce, hash[:]
 }
 
-func (pow *ProofOfWork) prepareData(nonce int) []byte {
-	data := bytes.Join([][]byte{
-		pow.Block.PrevHash,
-		pow.Block.HashTransactions(),
-		[]byte(strconv.Itoa(pow.Block.Index)),
-		[]byte(strconv.FormatInt(pow.Block.Timestamp, 10)),
-		[]byte(strconv.Itoa(nonce)),
-		[]byte(strconv.Itoa(pow.Difficulty)),
-		[]byte(pow.Block.Miner),
-	}, []byte{})
-	return data
-}
-
 func (pow *ProofOfWork) Validate() bool {
 	var hashInt big.Int
-	data := pow.prepareData(pow.Block.Nonce)
-	hash := sha256.Sum256(data)
-	hashInt.SetBytes(hash[:])
-	return hashInt.Cmp(pow.Target) == -1
+	data := pow.prepareData(pow.block.Nonce)
+	sum := sha256.Sum256(data)
+	hashInt.SetBytes(sum[:])
+
+	return hashInt.Cmp(pow.target) == -1
+}
+
+// intToHex eski yardımcı (mevcut projede zaten vardı)
+func intToHex(num int64) []byte {
+	return []byte{
+		byte(num >> 56), byte(num >> 48), byte(num >> 40), byte(num >> 32),
+		byte(num >> 24), byte(num >> 16), byte(num >> 8), byte(num),
+	}
 }

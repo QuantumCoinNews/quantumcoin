@@ -16,10 +16,8 @@ func main() {
 	myApp := app.NewWithID("quantumcoin.app")
 	mainWindow := myApp.NewWindow("QuantumCoin")
 
-	// Cüzdanı yükle veya oluştur
 	wlt := wallet.LoadWalletFromFile()
 
-	// Blockchain’i dosyadan yükle veya yeni oluştur
 	var bc *blockchain.Blockchain
 	if _, err := os.Stat(blockchainFile); err == nil {
 		bc, err = blockchain.LoadBlockchainFromFile(blockchainFile)

@@ -3,8 +3,9 @@ package blockchain
 import (
 	"bytes"
 	"crypto/ecdsa"
-	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/gob"
 	"encoding/hex"
 	"fmt"
@@ -13,6 +14,8 @@ import (
 	"time"
 
 	"quantumcoin/wallet"
+
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
 
 // --------- TX Yapıları ---------
@@ -20,8 +23,8 @@ import (
 type TransactionInput struct {
 	TxID      []byte // Harcanan çıktının TxID'si
 	OutIndex  int    // Hangi output
-	Signature []byte // r||s (isteğe bağlı)
-	PubKey    []byte // Uncompressed (0x04||X||Y) (isteğe bağlı)
+	Signature []byte // encodeSig(r,s)
+	PubKey    []byte // Uncompressed (0x04||X||Y)
 }
 
 type TransactionOutput struct {
@@ -45,7 +48,7 @@ func (out *TransactionOutput) IsLockedWithKey(pubKeyHash []byte) bool {
 }
 
 func (in *TransactionInput) UsesKey(pubKeyHash []byte) bool {
-	// Basit profil: PubKey yoksa true kabul et (doğrulama zorunlu değil)
+	// PubKey boşsa true (eski davranış) — asıl doğrulama Verify()'da
 	if len(in.PubKey) == 0 {
 		return true
 	}
@@ -93,7 +96,16 @@ func (tx *Transaction) TrimmedCopy() Transaction {
 	}
 }
 
-// encode/decode ECDSA imzası (opsiyonel kullanılır)
+func pad32(b []byte) []byte {
+	if len(b) >= 32 {
+		return b
+	}
+	out := make([]byte, 32)
+	copy(out[32-len(b):], b)
+	return out
+}
+
+// encode/decode ECDSA imzası (r,s)
 func encodeSig(r, s *big.Int) []byte {
 	rb := r.Bytes()
 	sb := s.Bytes()
@@ -124,22 +136,39 @@ func decodeSig(sig []byte) (r, s *big.Int) {
 	s = new(big.Int).SetBytes(sb[1 : 1+sl])
 	return r, s
 }
+
+// Uncompressed (0x04||X||Y) -> *ecdsa.PublicKey (secp256k1)
 func pubKeyToECDSA(pub []byte) *ecdsa.PublicKey {
-	if len(pub) == 0 || pub[0] != 0x04 {
+	if len(pub) != 65 || pub[0] != 0x04 {
 		return nil
 	}
-	curve := elliptic.P256()
-	byteLen := (curve.Params().BitSize + 7) / 8
-	if len(pub) != 1+2*byteLen {
-		return nil
-	}
-	x := new(big.Int).SetBytes(pub[1 : 1+byteLen])
-	y := new(big.Int).SetBytes(pub[1+byteLen:])
+	curve := secp256k1.S256()
+	x := new(big.Int).SetBytes(pub[1:33])
+	y := new(big.Int).SetBytes(pub[33:65])
 	if !curve.IsOnCurve(x, y) {
 		return nil
 	}
 	return &ecdsa.PublicKey{Curve: curve, X: x, Y: y}
 }
+
+// İmza mesajı (deterministik): TrimmedCopy.Serialize + input.TxID + input.OutIndex
+func signMessageBytes(tx *Transaction, inputIdx int) []byte {
+	txCopy := tx.TrimmedCopy()
+	var buf bytes.Buffer
+	buf.Write(txCopy.Serialize())
+
+	in := tx.Inputs[inputIdx]
+	buf.Write(in.TxID)
+
+	var outIdx [4]byte
+	binary.BigEndian.PutUint32(outIdx[:], uint32(in.OutIndex))
+	buf.Write(outIdx[:])
+
+	sum := sha256.Sum256(buf.Bytes())
+	return sum[:]
+}
+
+// --------- İşlem oluşturma / imzalama / doğrulama ---------
 
 func NewTransaction(from string, to string, amount int, bc *Blockchain) (*Transaction, error) {
 	if amount <= 0 {
@@ -192,15 +221,84 @@ func NewTransaction(from string, to string, amount int, bc *Blockchain) (*Transa
 	return tx, nil
 }
 
-func (tx *Transaction) Sign(_ *ecdsa.PrivateKey) error { return nil }
+// Tüm input'ları imzala (secp256k1)
+func (tx *Transaction) Sign(priv *ecdsa.PrivateKey) error {
+	if tx == nil {
+		return fmt.Errorf("nil tx")
+	}
+	if tx.IsCoinbase() {
+		return nil
+	}
 
+	fromPKH := wallet.Base58DecodeAddress(tx.Sender)
+	if len(fromPKH) == 0 {
+		return fmt.Errorf("invalid sender address")
+	}
+
+	// Uncompressed pubkey (65B)
+	pub := append([]byte{0x04}, pad32(priv.PublicKey.X.Bytes())...)
+	pub = append(pub, pad32(priv.PublicKey.Y.Bytes())...)
+
+	for i := range tx.Inputs {
+		msg := signMessageBytes(tx, i)
+
+		r, s, err := ecdsa.Sign(rand.Reader, priv, msg)
+		if err != nil {
+			return fmt.Errorf("ecdsa sign failed: %w", err)
+		}
+		tx.Inputs[i].Signature = encodeSig(r, s)
+		tx.Inputs[i].PubKey = pub
+	}
+	return nil
+}
+
+// İmzaları doğrula (coinbase hariç)
 func (tx *Transaction) Verify() bool {
-	// Basit profil: geçerli format kontrolü
 	if tx == nil {
 		return false
 	}
 	if tx.IsCoinbase() {
 		return len(tx.Outputs) > 0
 	}
-	return len(tx.Inputs) > 0 && len(tx.Outputs) > 0
+	if len(tx.Inputs) == 0 || len(tx.Outputs) == 0 {
+		return false
+	}
+
+	fromPKH := wallet.Base58DecodeAddress(tx.Sender)
+	if len(fromPKH) == 0 {
+		return false
+	}
+
+	for i := range tx.Inputs {
+		in := tx.Inputs[i]
+		if len(in.Signature) == 0 || len(in.PubKey) != 65 || in.PubKey[0] != 0x04 {
+			return false
+		}
+		if !in.UsesKey(fromPKH) {
+			return false
+		}
+		pub := pubKeyToECDSA(in.PubKey)
+		if pub == nil {
+			return false
+		}
+		r, s := decodeSig(in.Signature)
+		if r == nil || s == nil {
+			return false
+		}
+		msg := signMessageBytes(tx, i)
+		if !ecdsa.Verify(pub, msg, r, s) {
+			return false
+		}
+	}
+	return true
+}
+
+// ---- Web cüzdan için: her input’un imzalanacak mesajının HEX’i ----
+func SigningHashes(tx *Transaction) []string {
+	out := make([]string, 0, len(tx.Inputs))
+	for i := range tx.Inputs {
+		h := signMessageBytes(tx, i)
+		out = append(out, hex.EncodeToString(h))
+	}
+	return out
 }

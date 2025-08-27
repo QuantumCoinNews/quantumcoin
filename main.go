@@ -21,6 +21,8 @@ import (
 	"sync"
 	"time"
 
+	// not: runtime is unnecessary here
+
 	"quantumcoin/ai"
 	"quantumcoin/blockchain"
 	"quantumcoin/config"
@@ -28,6 +30,7 @@ import (
 	"quantumcoin/internal"
 	"quantumcoin/p2p"
 	"quantumcoin/wallet"
+	"quantumcoin/webui"
 )
 
 /* ====== ANSI renk sabitleri (sadece konsol görünümü için) ====== */
@@ -67,10 +70,13 @@ type WebMineSubmitResp struct {
 	Hash     string `json:"hash"`
 	Message  string `json:"message,omitempty"`
 }
+
+/* 🟢 GÜNCEL: imzalı gönderim için priv_hex eklendi */
 type SendRequest struct {
-	From   string `json:"from"`
-	To     string `json:"to"`
-	Amount int    `json:"amount"`
+	From    string `json:"from"`
+	To      string `json:"to"`
+	Amount  int    `json:"amount"`
+	PrivHex string `json:"priv_hex,omitempty"`
 }
 type SendResponse struct {
 	Success bool   `json:"success"`
@@ -119,6 +125,7 @@ func printUsage() {
 	fmt.Println("  mine-forever [miner]     - Continuous mining")
 	fmt.Println("  print                    - Print chain")
 	fmt.Println("  newaddr                  - Generate wallet address")
+	fmt.Println("  newaddr-priv             - Generate wallet + print private key (hex)")
 	fmt.Println("  api                      - Start HTTP API")
 }
 
@@ -146,7 +153,44 @@ func getHTTPAddr() string {
 	return addr
 }
 
-/* miner address resolution: ENV -> config.json -> miner_address.txt -> generate */
+/*
+🟢 YENİ: Varsayılan adresi çözen yardımcı
+
+	Öncelik: %APPDATA%\QuantumCoin\wallet.json (Address) → miner_address.txt → config → env
+*/
+func getDefaultAddress() string {
+	// 1) APPDATA wallet.json
+	if app := os.Getenv("APPDATA"); strings.TrimSpace(app) != "" {
+		wpath := filepath.Join(app, "QuantumCoin", "wallet.json")
+		if b, err := os.ReadFile(wpath); err == nil {
+			var w struct {
+				Address string `json:"address"`
+			}
+			if json.Unmarshal(b, &w) == nil && strings.TrimSpace(w.Address) != "" {
+				return strings.TrimSpace(w.Address)
+			}
+		}
+	}
+	// 2) mevcut fallback zinciri
+	if v := strings.TrimSpace(os.Getenv("QC_MINER")); v != "" {
+		return v
+	}
+	if v := getMinerAddressFromConfig(); v != "" {
+		return v
+	}
+	if data, err := os.ReadFile("miner_address.txt"); err == nil {
+		if s := strings.TrimSpace(string(data)); s != "" {
+			return s
+		}
+	}
+	// 3) son çare: yeni üret ve miner_address.txt'ye yaz
+	w := wallet.NewWallet()
+	addr := w.GetAddress()
+	_ = os.WriteFile("miner_address.txt", []byte(addr), 0644)
+	return addr
+}
+
+/* miner address resolution (eski), gerektiğinde getDefaultAddress() kullanıyoruz */
 
 func getMinerAddressFromConfig() string {
 	if s := os.Getenv("QC_MINER"); strings.TrimSpace(s) != "" {
@@ -177,6 +221,7 @@ func getMinerAddressFromConfig() string {
 }
 
 func ensureMinerAddress() (string, error) {
+	// Bu fonksiyon eski davranışı korur; yeni yolu getDefaultAddress() ile birleştirdik.
 	if v := strings.TrimSpace(os.Getenv("QC_MINER")); v != "" {
 		return v, nil
 	}
@@ -223,7 +268,7 @@ func main() {
 
 	/* auto mode: no args -> node + api + mining */
 	if len(os.Args) < 2 {
-		minerAddr, _ := ensureMinerAddress()
+		minerAddr := getDefaultAddress()
 		fmt.Printf("⛏️  Auto mode: node+api+mining -> %s (difficulty=%d)\n", minerAddr, cfg.DefaultDifficultyBits)
 		minerStop = make(chan struct{})
 		go startHTTPAPI()
@@ -319,12 +364,9 @@ func main() {
 			return
 		}
 		p2p.BroadcastMessage(p2p.BlockMessage(block))
-
-		// === RENKLİ ÇIKTI (sadece bulunan bloklar yeşil) ===
 		fmt.Printf(ansiGreen+"✅ New block mined by %s"+ansiReset+"\n", miner)
 		fmt.Printf("   Hash:   %s%s%s\n", ansiCyan, hex.EncodeToString(block.Hash), ansiReset)
 		fmt.Printf("   Height: %d  Reward: %d QC\n", bc.GetBestHeight(), blockchain.GetCurrentReward())
-
 		processAIBonus()
 		_ = bc.SaveToFile(cfg.ChainFile)
 
@@ -360,11 +402,17 @@ func main() {
 		address := w.GetAddress()
 		fmt.Println("New Wallet Address:", address)
 
+	case "newaddr-priv":
+		w := wallet.NewWallet()
+		address := w.GetAddress()
+		fmt.Println("New Wallet Address:", address)
+		fmt.Println("PrivateKey (hex):", w.ExportPrivateKeyHex())
+		return
+
 	default:
 		printUsage()
 	}
 
-	// Tek seferlik komutlar için çıkmadan kaydet
 	if err := bc.SaveToFile(cfg.ChainFile); err != nil {
 		log.Fatalf("Blockchain kaydedilemedi: %v", err)
 	}
@@ -387,11 +435,8 @@ func startContinuousMining(miner string) {
 				continue
 			}
 			p2p.BroadcastMessage(p2p.BlockMessage(blk))
-
-			// === RENKLİ ÇIKTI (sadece bulunan bloklar yeşil) ===
 			fmt.Printf(ansiGreen+"✅ Block #%d mined"+ansiReset+"  Hash: %s%s%s\n",
 				blk.Index, ansiCyan, hex.EncodeToString(blk.Hash), ansiReset)
-
 			processAIBonus()
 			_ = bc.SaveToFile(cfg.ChainFile)
 			time.Sleep(50 * time.Millisecond)
@@ -428,13 +473,10 @@ func withCORS(next http.Handler) http.Handler {
 func startHTTPAPI() {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"ok":true,"service":"QuantumCoin API"}`))
-	})
-
+	// API uçları
 	mux.HandleFunc("/api/health", handleHealth)
 	mux.HandleFunc("/api/wallet/new", handleNewWallet)
+	mux.HandleFunc("/api/wallet/address", handleWalletAddress) // 🟢 YENİ
 	mux.HandleFunc("/api/wallet/balance/", handleBalance)
 	mux.HandleFunc("/api/mine", handleMineBlock)
 	mux.HandleFunc("/api/tx/send", handleSendTx)
@@ -454,6 +496,21 @@ func startHTTPAPI() {
 
 	mux.HandleFunc("/api/mine/job", handleMineJob)
 	mux.HandleFunc("/api/mine/submit", handleMineSubmit)
+
+	// Miner kontrol
+	mux.HandleFunc("/api/miner/start", handleMinerStart)
+	mux.HandleFunc("/api/miner/stop", handleMinerStop)
+	mux.HandleFunc("/api/miner/status", handleMinerStatus)
+
+	// Gömülü web cüzdan (SPA)
+	if h, err := webui.Handler(); err == nil {
+		mux.Handle("/", h)
+	} else {
+		mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"service":"QuantumCoin API"}`))
+		})
+	}
 
 	addr := getHTTPAddr()
 	httpServer = &http.Server{
@@ -489,6 +546,11 @@ func handleNewWallet(w http.ResponseWriter, r *http.Request) {
 	}
 	wal := wallet.NewWallet()
 	writeOK(w, WalletResponse{Address: wal.GetAddress()})
+}
+
+/* 🟢 YENİ: /api/wallet/address — APPDATA→miner_address.txt→config→env */
+func handleWalletAddress(w http.ResponseWriter, _ *http.Request) {
+	writeOK(w, WalletResponse{Address: getDefaultAddress()})
 }
 
 func handleBalance(w http.ResponseWriter, r *http.Request) {
@@ -543,6 +605,7 @@ func handleMineBlock(w http.ResponseWriter, r *http.Request) {
 	_ = bc.SaveToFile(cfg.ChainFile)
 }
 
+/* 🟢 GÜNCEL: /api/tx/send -> priv_hex ile imzalama */
 func handleSendTx(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -563,10 +626,27 @@ func handleSendTx(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "from, to, amount required")
 		return
 	}
+	if strings.TrimSpace(req.PrivHex) == "" {
+		writeOK(w, SendResponse{Success: false, TxID: "", Message: "missing priv_hex for signing"})
+		return
+	}
 
 	tx, err := blockchain.NewTransaction(req.From, req.To, req.Amount, bc)
 	if err != nil {
 		writeOK(w, SendResponse{Success: false, TxID: "", Message: "create tx: " + err.Error()})
+		return
+	}
+	priv, err := wallet.ImportPrivateKeyHex(strings.TrimSpace(req.PrivHex))
+	if err != nil {
+		writeOK(w, SendResponse{Success: false, TxID: "", Message: "invalid priv_hex: " + err.Error()})
+		return
+	}
+	if err := tx.Sign(priv); err != nil {
+		writeOK(w, SendResponse{Success: false, TxID: "", Message: "sign tx: " + err.Error()})
+		return
+	}
+	if !tx.Verify() {
+		writeOK(w, SendResponse{Success: false, TxID: "", Message: "verify failed"})
 		return
 	}
 	if err := bc.AddTransaction(tx); err != nil {
@@ -894,6 +974,7 @@ func handleMineSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Kabul -> arka planda 1 blok kaz
 	go func(miner string) {
 		if blk, err := bc.MineBlock(miner, cfg.DefaultDifficultyBits); err == nil {
 			p2p.BroadcastMessage(p2p.BlockMessage(blk))
@@ -905,4 +986,81 @@ func handleMineSubmit(w http.ResponseWriter, r *http.Request) {
 	}(req.Address)
 
 	writeOK(w, WebMineSubmitResp{Accepted: true, Hash: hex.EncodeToString(h[:])})
+}
+
+/* ---- Miner control (start/stop/status) ---- */
+
+type minerStartReq struct {
+	Address string `json:"address"`
+}
+
+func handleMinerStart(w http.ResponseWriter, r *http.Request) {
+	// GET veya POST(JSON) kabul
+	var addr string
+	if r.Method == http.MethodPost {
+		defer r.Body.Close()
+		var req minerStartReq
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		addr = strings.TrimSpace(req.Address)
+	}
+	if addr == "" {
+		addr = strings.TrimSpace(r.URL.Query().Get("address"))
+	}
+	if addr == "" {
+		if a, err := ensureMinerAddress(); err == nil {
+			addr = a
+		}
+	}
+	if addr == "" {
+		writeError(w, http.StatusBadRequest, "address required")
+		return
+	}
+
+	if minerStop != nil {
+		writeOK(w, map[string]any{
+			"running":    true,
+			"message":    "miner already running",
+			"address":    addr,
+			"difficulty": cfg.DefaultDifficultyBits,
+			"height":     bc.GetBestHeight(),
+		})
+		return
+	}
+
+	minerStop = make(chan struct{})
+	go startContinuousMining(addr)
+
+	writeOK(w, map[string]any{
+		"running":    true,
+		"address":    addr,
+		"difficulty": cfg.DefaultDifficultyBits,
+		"height":     bc.GetBestHeight(),
+	})
+}
+
+func handleMinerStop(w http.ResponseWriter, r *http.Request) {
+	if minerStop == nil {
+		writeOK(w, map[string]any{
+			"running": false,
+			"message": "miner not running",
+			"height":  bc.GetBestHeight(),
+		})
+		return
+	}
+	close(minerStop)
+	minerStop = nil
+	writeOK(w, map[string]any{
+		"running": false,
+		"message": "miner stopped",
+		"height":  bc.GetBestHeight(),
+	})
+}
+
+func handleMinerStatus(w http.ResponseWriter, _ *http.Request) {
+	writeOK(w, map[string]any{
+		"running":  minerStop != nil,
+		"height":   bc.GetBestHeight(),
+		"bits":     cfg.DefaultDifficultyBits,
+		"httpPort": getHTTPPort(),
+	})
 }

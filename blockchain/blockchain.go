@@ -118,6 +118,12 @@ func (bc *Blockchain) SetCoinbaseMaturity(n int) {
 }
 
 func (bc *Blockchain) AddBlock(txs []*Transaction, miner string, difficulty int) *Block {
+	// Blok içindeki işlemleri doğrula (coinbase hariç imza zorunlu)
+	if err := bc.validateBlockTxs(txs); err != nil {
+		log.Printf("rejecting block: %v", err)
+		return nil
+	}
+
 	prev := bc.Blocks[len(bc.Blocks)-1]
 	nb := NewBlock(prev.Index+1, txs, prev.Hash, miner, difficulty)
 	bc.Blocks = append(bc.Blocks, nb)
@@ -127,14 +133,19 @@ func (bc *Blockchain) AddBlock(txs []*Transaction, miner string, difficulty int)
 
 func (bc *Blockchain) AddBlockFromPeer(blk *Block) error {
 	if !blk.ValidatePoW() {
-		return fmt.Errorf("invalid proof-of-work")
+		return ErrInvalidPoW
 	}
 	if len(bc.Blocks) > 0 {
 		last := bc.Blocks[len(bc.Blocks)-1]
 		if !bytes.Equal(blk.PrevHash, last.Hash) {
-			return fmt.Errorf("prev hash mismatch")
+			return ErrPrevHashMismatch
 		}
 	}
+	// Peer'den gelen bloğun işlemlerini doğrula
+	if err := bc.validateBlockTxs(blk.Transactions); err != nil {
+		return err
+	}
+
 	bc.Blocks = append(bc.Blocks, blk)
 	bc.UpdateUTXOSet()
 	return nil
@@ -153,11 +164,15 @@ func (bc *Blockchain) GetHeight() int { return len(bc.Blocks) - 1 }
 
 func (bc *Blockchain) ReplaceChain(blocks []*Block) error {
 	if len(blocks) <= len(bc.Blocks) {
-		return fmt.Errorf("incoming chain is not longer")
+		return ErrIncomingChainNotLonger
 	}
 	for i := 1; i < len(blocks); i++ {
 		if !blocks[i].ValidatePoW() || !bytes.Equal(blocks[i].PrevHash, blocks[i-1].Hash) {
-			return fmt.Errorf("incoming chain is invalid")
+			return ErrIncomingChainInvalid
+		}
+		// Zincir değiştirmede her bloğun işlemlerini denetle
+		if err := bc.validateBlockTxs(blocks[i].Transactions); err != nil {
+			return fmt.Errorf("incoming chain invalid tx: %w", err)
 		}
 	}
 	bc.Blocks = blocks
@@ -216,10 +231,23 @@ func (bc *Blockchain) UpdateUTXOSet() {
 	bc.UTXO = utxo
 }
 
+// --- İMZA ZORUNLULUĞU: mempool’a eklemeden önce doğrula ---
 func (bc *Blockchain) AddTransaction(tx *Transaction) error {
 	if tx == nil {
-		return fmt.Errorf("nil transaction")
+		return ErrNilTransaction
 	}
+	// coinbase dışındaki işlemler imzalı ve doğrulanmış olmalı
+	if !tx.IsCoinbase() && !tx.Verify() {
+		return fmt.Errorf("invalid tx signature")
+	}
+	// basit kurallar
+	if len(tx.Outputs) == 0 {
+		return fmt.Errorf("empty outputs")
+	}
+	if !tx.IsCoinbase() && len(tx.Inputs) == 0 {
+		return fmt.Errorf("empty inputs")
+	}
+
 	bc.pendingTxs = append(bc.pendingTxs, tx)
 	return nil
 }
@@ -277,20 +305,25 @@ func (bc *Blockchain) TotalMinted() int {
 
 func (bc *Blockchain) MineBlock(miner string, difficulty int) (*Block, error) {
 	if len(bc.Blocks) == 0 {
-		return nil, fmt.Errorf("blockchain not initialized (no genesis)")
+		return nil, ErrChainNotInitialized
 	}
 	cbTx, err := newCoinbaseTx(miner)
 	if err != nil {
+		return nil, fmt.Errorf("coinbase tx: %w", err) // wrapcheck
+	}
+
+	// pending kopyasını al, coinbase ile birleştir ve doğrula
+	txs := append([]*Transaction{cbTx}, bc.PendingTxs()...)
+	if err := bc.validateBlockTxs(txs); err != nil {
 		return nil, err
 	}
-	txs := append([]*Transaction{cbTx}, bc.pendingTxs...)
 
 	prev := bc.Blocks[len(bc.Blocks)-1]
 	nb := NewBlock(prev.Index+1, txs, prev.Hash, miner, difficulty)
 
 	bc.Blocks = append(bc.Blocks, nb)
 	bc.UpdateUTXOSet()
-	bc.pendingTxs = []*Transaction{}
+	bc.pendingTxs = []*Transaction{} // mempool’u boşalt
 
 	return nb, nil
 }
@@ -315,13 +348,13 @@ func DeserializeBlockchain(data []byte) *Blockchain {
 }
 
 func (bc *Blockchain) SaveToFile(filename string) error {
-	return os.WriteFile(filename, SerializeBlockchain(bc), 0644)
+	return os.WriteFile(filename, SerializeBlockchain(bc), 0o600)
 }
 
 func LoadBlockchainFromFile(filename string) (*Blockchain, error) {
 	data, err := os.ReadFile(filename)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read blockchain file: %w", err) // wrapcheck
 	}
 	return DeserializeBlockchain(data), nil
 }
@@ -371,4 +404,35 @@ func (bc *Blockchain) isOutputSpent(txid []byte, outIdx int) bool {
 		}
 	}
 	return false
+}
+
+// ---- Eklenen yardımcılar ----
+
+// Blok içindeki tüm işlemleri doğrula (coinbase için sadece output kuralı)
+func (bc *Blockchain) validateBlockTxs(txs []*Transaction) error {
+	for _, tx := range txs {
+		if tx == nil {
+			return fmt.Errorf("nil tx")
+		}
+		if tx.IsCoinbase() {
+			if len(tx.Outputs) == 0 {
+				return fmt.Errorf("invalid coinbase (no outputs)")
+			}
+			continue
+		}
+		if !tx.Verify() {
+			return fmt.Errorf("invalid tx signature")
+		}
+	}
+	return nil
+}
+
+// pendingTxs'in güvenli kopyası (API/mine kullanımı için)
+func (bc *Blockchain) PendingTxs() []*Transaction {
+	if bc == nil || bc.pendingTxs == nil {
+		return []*Transaction{}
+	}
+	cp := make([]*Transaction, len(bc.pendingTxs))
+	copy(cp, bc.pendingTxs)
+	return cp
 }

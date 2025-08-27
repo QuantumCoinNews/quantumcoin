@@ -3,8 +3,8 @@ package config
 
 const (
 	// Sürüm & build bilgisi
-	Version = "QuantumCoin v2.0.0"
-	Build   = "2025-07-Quantum"
+	Version = "v0.1.0"     // testnet-alpha sürümü
+	Build   = "2025-08-27" // tarih veya build ID
 
 	// i18n: Desteklenen diller
 	LangEN = "en" // English
