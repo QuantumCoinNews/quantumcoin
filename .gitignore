@@ -29,3 +29,23 @@ bonus_store.json
 # OS
 Thumbs.db
 .DS_Store
+# --- keep repo clean: don't commit built artifacts from release ---
+/release/*.exe
+/release/*.dll
+/release/*.pdb
+/release/*.db
+/release/*.db*
+/release/*.dat
+/release/qc_blockchain.db*
+/release/*.log
+# --- keep repo clean: don't commit built artifacts or runtime data ---
+/release/*.exe
+/release/*.dll
+/release/*.pdb
+/release/*.db
+/release/*.db*
+/release/*.dat
+/release/qc_blockchain.db*
+/release/*.log
+/chain_data*.dat
+*.log
