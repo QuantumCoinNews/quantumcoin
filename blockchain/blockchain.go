@@ -307,6 +307,16 @@ func (bc *Blockchain) MineBlock(miner string, difficulty int) (*Block, error) {
 	if len(bc.Blocks) == 0 {
 		return nil, ErrChainNotInitialized
 	}
+
+	// >>> EKLENDİ: yalnız başarılı kazımda mined_balance.json yaz (defer ile güvenli)
+	var _minedOK bool
+	_minedReward := GetCurrentReward()
+	defer func() {
+		if _minedOK && _minedReward > 0 {
+			AddMinedBalance(miner, _minedReward)
+		}
+	}()
+
 	cbTx, err := newCoinbaseTx(miner)
 	if err != nil {
 		return nil, fmt.Errorf("coinbase tx: %w", err) // wrapcheck
@@ -325,6 +335,8 @@ func (bc *Blockchain) MineBlock(miner string, difficulty int) (*Block, error) {
 	bc.UpdateUTXOSet()
 	bc.pendingTxs = []*Transaction{} // mempool’u boşalt
 
+	// >>> EKLENDİ: başarı bayrağı
+	_minedOK = true
 	return nb, nil
 }
 

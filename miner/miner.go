@@ -1,15 +1,20 @@
 package miner
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"quantumcoin/blockchain"
 	"quantumcoin/config"
+	"quantumcoin/consolefx"
 	qint "quantumcoin/internal"
 )
 
@@ -54,6 +59,52 @@ type minerState struct {
 	hashrate float64
 }
 
+/*
+-----------------------------------------------------------
+
+	MINED BALANCE PERSIST (yalnız kazımdan gelen bakiyeyi tut)
+	-----------------------------------------------------------
+*/
+func exeDir() string {
+	self, _ := os.Executable()
+	return filepath.Dir(self)
+}
+func minedBalancePath() string { return filepath.Join(exeDir(), "mined_balance.json") }
+
+type minedBal struct {
+	Address string  `json:"address"`
+	Balance float64 `json:"balance"`
+	Updated int64   `json:"updated"`
+}
+
+// Her blokta kazanılan ödülü kümülatif olarak dosyaya ekler.
+// Tek adresi takip eder; adres değişirse sayaç sıfırlanır.
+func addMinedBalance(addr string, deltaQC int) {
+	addr = strings.TrimSpace(addr)
+	if addr == "" || deltaQC == 0 {
+		return
+	}
+
+	p := minedBalancePath()
+	var mb minedBal
+	if b, err := os.ReadFile(p); err == nil {
+		_ = json.Unmarshal(b, &mb) // bozulmuşsa sıfırdan yazarız
+	}
+
+	if !strings.EqualFold(strings.TrimSpace(mb.Address), addr) {
+		mb.Address = addr
+		mb.Balance = 0
+	}
+	mb.Balance += float64(deltaQC)
+	mb.Updated = time.Now().Unix()
+
+	tmp := p + ".tmp"
+	if b, err := json.MarshalIndent(mb, "", "  "); err == nil {
+		_ = os.WriteFile(tmp, b, 0644)
+		_ = os.Rename(tmp, p) // atomik güncelleme
+	}
+}
+
 // Start: sürekli kazıma döngüsünü başlatır
 func Start(bc *blockchain.Blockchain, minerAddress string, difficulty int, opts ...Options) error {
 	if bc == nil {
@@ -95,6 +146,8 @@ func Start(bc *blockchain.Blockchain, minerAddress string, difficulty int, opts 
 	state.stopCh = make(chan struct{})
 	if merged.Animate {
 		state.effect = NewEffect("QC")
+	} else {
+		state.effect = nil
 	}
 
 	state.active.Store(true)
@@ -109,7 +162,13 @@ func Stop() {
 	if !IsActive() {
 		return
 	}
-	close(state.stopCh)
+	// bir kere kapat
+	select {
+	case <-state.stopCh:
+		// zaten kapalı
+	default:
+		close(state.stopCh)
+	}
 	state.wg.Wait()
 	state.active.Store(false)
 	if state.effect != nil {
@@ -153,6 +212,9 @@ func MineOne(bc *blockchain.Blockchain, address string, difficulty int) (*blockc
 	checkYearlyBonus(address)
 	TrackMiner(address) // sende varsa
 
+	// >>> YENİ: kazım bakiyesini dosyaya ekle
+	addMinedBalance(address, rw)
+
 	return block, nil
 }
 
@@ -186,32 +248,44 @@ func loop() {
 				state.opts.OnError(err)
 			}
 			time.Sleep(450 * time.Millisecond)
-		} else {
-			status := MiningStatus{
-				BlockHeight: block.Index,
-				BlockHash:   block.Hash,
-				Reward:      blockchain.GetCurrentReward(),
-				Timestamp:   time.Now(),
-			}
-			if state.effect != nil {
-				state.effect.Clear()
-			}
-			fmt.Printf("🚀 New block #%d mined by %s  (hash=%x, t=%.2fs)\n",
-				block.Index, state.address, block.Hash, dur.Seconds())
-			fmt.Printf("💰 Reward: %d QC\n", status.Reward)
-			showSplitInfoPreview()
-			checkYearlyBonus(state.address)
-			TrackMiner(state.address) // sende varsa
+			continue
+		}
 
-			if state.opts.OnBlock != nil {
-				state.opts.OnBlock(block, status)
-			}
-			if state.opts.Broadcaster != nil {
-				state.opts.Broadcaster(block)
-			}
-			if state.opts.Interval > 0 {
-				time.Sleep(state.opts.Interval)
-			}
+		status := MiningStatus{
+			BlockHeight: block.Index,
+			BlockHash:   block.Hash,
+			Reward:      blockchain.GetCurrentReward(),
+			Timestamp:   time.Now(),
+		}
+
+		if state.effect != nil {
+			state.effect.Clear()
+		}
+
+		fmt.Printf("🚀 New block #%d mined by %s  (hash=%x, t=%.2fs)\n",
+			block.Index, state.address, block.Hash, dur.Seconds())
+
+		// ✨ spinner’ı ALT satırda ve interval süresince göster
+		if state.opts.Interval > 0 {
+			consolefx.SpinFor(state.opts.Interval)
+		}
+
+		fmt.Printf("💰 Reward: %d QC\n", status.Reward)
+		showSplitInfoPreview()
+		checkYearlyBonus(state.address)
+		TrackMiner(state.address) // sende varsa
+
+		// >>> YENİ: kazım bakiyesini dosyaya ekle
+		addMinedBalance(state.address, status.Reward)
+
+		if state.opts.OnBlock != nil {
+			state.opts.OnBlock(block, status)
+		}
+		if state.opts.Broadcaster != nil {
+			state.opts.Broadcaster(block)
+		}
+		if state.opts.Interval > 0 {
+			time.Sleep(state.opts.Interval)
 		}
 
 		if state.opts.OnTick != nil {
