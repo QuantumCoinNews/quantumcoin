@@ -38,3 +38,14 @@ Thumbs.db
 /release/*.dat
 /release/qc_blockchain.db*
 /release/*.log
+# --- keep repo clean: don't commit built artifacts or runtime data ---
+/release/*.exe
+/release/*.dll
+/release/*.pdb
+/release/*.db
+/release/*.db*
+/release/*.dat
+/release/qc_blockchain.db*
+/release/*.log
+/chain_data*.dat
+*.log
