@@ -1,0 +1,14 @@
+{
+  "InitialReward": 50,
+  "TotalSupply": 22500000,
+  "HalvingIntervalSecs": 63072000,
+  "MiningPeriodSecs": 315360000,
+  "GenesisUnix": 1725158400,
+  "CoinbaseMaturity": 10,
+  "DefaultDifficultyBits": 20,
+  "HTTPPort": "__FILL_ME__",
+  "P2PPort": "__FILL_ME__",
+  "ChainFile": "__FILL_ME__",
+  "BonusFile": "__FILL_ME__",
+  "BurnAddress": "__FILL_ME__"
+}

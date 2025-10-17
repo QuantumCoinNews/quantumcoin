@@ -1,0 +1,720 @@
+package ui
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"sync"
+	"time"
+
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/data/binding"
+	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/theme"
+	"fyne.io/fyne/v2/widget"
+
+	// compatibility types for main.go signature
+	"quantumcoin/blockchain"
+	"quantumcoin/wallet"
+)
+
+// ----------------------------------------------------------------------------
+//                             PERSISTENT PREFS
+// ----------------------------------------------------------------------------
+
+type prefs struct {
+	Lang        string `json:"lang"`
+	Dark        bool   `json:"dark"`
+	Address     string `json:"address"`
+	LastTo      string `json:"last_to"`
+	AutoStart   bool   `json:"auto_start"`
+	AutoRefresh int    `json:"auto_refresh_sec"`
+}
+
+func exeDir() string    { exe, _ := os.Executable(); return filepath.Dir(exe) }
+func prefsPath() string { return filepath.Join(exeDir(), "wallet_prefs.json") }
+func addrFile() string  { return filepath.Join(exeDir(), "wallet_address.txt") }
+
+func loadPrefs() prefs {
+	p := prefs{Lang: "tr", Dark: true, AutoRefresh: 5}
+	if b, err := os.ReadFile(prefsPath()); err == nil {
+		_ = json.Unmarshal(b, &p)
+	}
+	return p
+}
+func savePrefs(p prefs)          { _ = os.WriteFile(prefsPath(), must(json.MarshalIndent(p, "", "  ")), 0o644) }
+func must[T any](v T, _ error) T { return v }
+
+// ----------------------------------------------------------------------------
+//                                   I18N
+// ----------------------------------------------------------------------------
+
+type langKey string
+
+const (
+	LTabWallet   langKey = "tabWallet"
+	LTabMiner    langKey = "tabMiner"
+	LTabStatus   langKey = "tabStatus"
+	LTabSettings langKey = "tabSettings"
+
+	LTitle        langKey = "title"
+	LAddrLabel    langKey = "addrLabel"
+	LCopy         langKey = "copy"
+	LLoadAddr     langKey = "loadAddr"
+	LSaveAddr     langKey = "saveAddr"
+	LBalance      langKey = "balance"
+	LRefresh      langKey = "refresh"
+	LTheme        langKey = "theme"
+	LSend         langKey = "send"
+	LFrom         langKey = "from"
+	LTo           langKey = "to"
+	LAmount       langKey = "amount"
+	LFee          langKey = "fee"
+	LPrivKey      langKey = "privkey"
+	LSendNow      langKey = "sendNow"
+	LStartMiner   langKey = "startMiner"
+	LStopMiner    langKey = "stopMiner"
+	LStartExt     langKey = "startExt"
+	LMinerLog     langKey = "minerLog"
+	LLang         langKey = "lang"
+	LSavedRestart langKey = "savedRestart"
+	LAutoStart    langKey = "autoStart"
+	LAutoRefresh  langKey = "autoRefresh"
+	LRecentBlocks langKey = "recentBlocks"
+	LHalvingInfo  langKey = "halvingInfo"
+)
+
+var tr = map[langKey]string{
+	LTabWallet:    "Cüzdan",
+	LTabMiner:     "Madenci",
+	LTabStatus:    "Ağ Durumu",
+	LTabSettings:  "Ayarlar",
+	LTitle:        "QuantumCoin Cüzdan & Madenci",
+	LAddrLabel:    "Cüzdan Adresim",
+	LCopy:         "Kopyala",
+	LLoadAddr:     "Adresi Yükle",
+	LSaveAddr:     "Adresi Kaydet",
+	LBalance:      "Bakiye",
+	LRefresh:      "Yenile",
+	LTheme:        "Tema: Aç/Kapa",
+	LSend:         "Gönder",
+	LFrom:         "Gönderen (Adres)",
+	LTo:           "Alıcı (Adres)",
+	LAmount:       "Miktar (QC)",
+	LFee:          "Ücret (ops.)",
+	LPrivKey:      "Private Key (ops., V1 için)",
+	LSendNow:      "Gönder",
+	LStartMiner:   "Madenciyi Başlat",
+	LStopMiner:    "Madenciyi Durdur",
+	LStartExt:     "CMD'de Başlat",
+	LMinerLog:     "Madenci Logları",
+	LLang:         "Dil",
+	LSavedRestart: "Dil kaydedildi. Tam uygulanması için uygulamayı yeniden başlatın.",
+	LAutoStart:    "Uygulama açılınca madenciyi başlat",
+	LAutoRefresh:  "Bakiye yenileme (sn)",
+	LRecentBlocks: "Son Bloklar",
+	LHalvingInfo:  "Ödül: 50 QC, Halving: 2 yılda bir",
+}
+
+var en = map[langKey]string{
+	LTabWallet:    "Wallet",
+	LTabMiner:     "Miner",
+	LTabStatus:    "Network",
+	LTabSettings:  "Settings",
+	LTitle:        "QuantumCoin Wallet & Miner",
+	LAddrLabel:    "My Wallet Address",
+	LCopy:         "Copy",
+	LLoadAddr:     "Load Address",
+	LSaveAddr:     "Save Address",
+	LBalance:      "Balance",
+	LRefresh:      "Refresh",
+	LTheme:        "Theme: Toggle",
+	LSend:         "Send",
+	LFrom:         "From (Address)",
+	LTo:           "To (Address)",
+	LAmount:       "Amount (QC)",
+	LFee:          "Fee (opt.)",
+	LPrivKey:      "Private Key (opt., for V1)",
+	LSendNow:      "Send",
+	LStartMiner:   "Start Miner",
+	LStopMiner:    "Stop Miner",
+	LStartExt:     "Start in CMD",
+	LMinerLog:     "Miner Logs",
+	LLang:         "Language",
+	LSavedRestart: "Language saved. Restart the app for full effect.",
+	LAutoStart:    "Start miner on app launch",
+	LAutoRefresh:  "Balance refresh (sec)",
+	LRecentBlocks: "Recent Blocks",
+	LHalvingInfo:  "Reward: 50 QC, Halving: every 2 years",
+}
+
+var es = map[langKey]string{
+	LTabWallet:    "Billetera",
+	LTabMiner:     "Minero",
+	LTabStatus:    "Red",
+	LTabSettings:  "Ajustes",
+	LTitle:        "Billetera & Minero QuantumCoin",
+	LAddrLabel:    "Mi Dirección",
+	LCopy:         "Copiar",
+	LLoadAddr:     "Cargar Dirección",
+	LSaveAddr:     "Guardar Dirección",
+	LBalance:      "Saldo",
+	LRefresh:      "Actualizar",
+	LTheme:        "Tema: Alternar",
+	LSend:         "Enviar",
+	LFrom:         "De (Dirección)",
+	LTo:           "A (Dirección)",
+	LAmount:       "Cantidad (QC)",
+	LFee:          "Tarifa (op.)",
+	LPrivKey:      "Clave Privada (op.)",
+	LSendNow:      "Enviar",
+	LStartMiner:   "Iniciar Minero",
+	LStopMiner:    "Detener Minero",
+	LStartExt:     "Iniciar en CMD",
+	LMinerLog:     "Registros del Minero",
+	LLang:         "Idioma",
+	LSavedRestart: "Idioma guardado. Reinicia la app para aplicar todo.",
+	LAutoStart:    "Iniciar minero al abrir",
+	LAutoRefresh:  "Actualización de saldo (seg)",
+	LRecentBlocks: "Bloques Recientes",
+	LHalvingInfo:  "Recompensa: 50 QC, Halving: cada 2 años",
+}
+
+var zh = map[langKey]string{
+	LTabWallet:    "钱包",
+	LTabMiner:     "矿工",
+	LTabStatus:    "网络",
+	LTabSettings:  "设置",
+	LTitle:        "QuantumCoin 钱包与矿工",
+	LAddrLabel:    "我的地址",
+	LCopy:         "复制",
+	LLoadAddr:     "加载地址",
+	LSaveAddr:     "保存地址",
+	LBalance:      "余额",
+	LRefresh:      "刷新",
+	LTheme:        "主题：切换",
+	LSend:         "发送",
+	LFrom:         "来自（地址）",
+	LTo:           "到（地址）",
+	LAmount:       "数量（QC）",
+	LFee:          "手续费（可选）",
+	LPrivKey:      "私钥（可选）",
+	LSendNow:      "发送",
+	LStartMiner:   "启动矿工",
+	LStopMiner:    "停止矿工",
+	LStartExt:     "在CMD启动",
+	LMinerLog:     "矿工日志",
+	LLang:         "语言",
+	LSavedRestart: "语言已保存。重启应用以完全生效。",
+	LAutoStart:    "启动时自动挖矿",
+	LAutoRefresh:  "余额刷新（秒）",
+	LRecentBlocks: "最新区块",
+	LHalvingInfo:  "奖励：50 QC；减半：每2年",
+}
+
+func t(lang string, k langKey) string {
+	switch lang {
+	case "en":
+		return en[k]
+	case "es":
+		return es[k]
+	case "zh":
+		return zh[k]
+	default:
+		return tr[k]
+	}
+}
+
+// ----------------------------------------------------------------------------
+//                                  UI STATE
+// ----------------------------------------------------------------------------
+
+type walletUI struct {
+	app fyne.App
+	win fyne.Window
+	p   prefs
+
+	addr     string
+	addrB    binding.String
+	balanceB binding.String
+
+	minerLock sync.Mutex
+	minerCmd  *exec.Cmd
+
+	cancelRefresh context.CancelFunc
+
+	logRich *widget.RichText
+
+	recentList *widget.List
+	recentMu   sync.Mutex
+	recent     []string
+}
+
+func New() *walletUI {
+	p := loadPrefs()
+	application := app.NewWithID("quantumcoin.wallet")
+	if p.Dark {
+		application.Settings().SetTheme(theme.DarkTheme())
+	} else {
+		application.Settings().SetTheme(theme.LightTheme())
+	}
+	w := application.NewWindow("QuantumCoin")
+	w.Resize(fyne.NewSize(1100, 720))
+
+	u := &walletUI{app: application, win: w, p: p, addrB: binding.NewString(), balanceB: binding.NewString(), logRich: widget.NewRichText()}
+	u.addr = p.Address
+	if u.addr == "" {
+		if b, err := os.ReadFile(addrFile()); err == nil {
+			u.addr = strings.TrimSpace(string(b))
+		}
+	}
+	_ = u.addrB.Set(u.addr)
+	_ = u.balanceB.Set("0.00000000 QC (h=?, proxy-fallback)")
+	return u
+}
+
+// NewWithApp lets main pass an existing fyne.App and Window
+func NewWithApp(a fyne.App, w fyne.Window) *walletUI {
+	p := loadPrefs()
+	if p.Dark {
+		a.Settings().SetTheme(theme.DarkTheme())
+	} else {
+		a.Settings().SetTheme(theme.LightTheme())
+	}
+	w.Resize(fyne.NewSize(1100, 720))
+	u := &walletUI{app: a, win: w, p: p, addrB: binding.NewString(), balanceB: binding.NewString(), logRich: widget.NewRichText()}
+	u.addr = p.Address
+	if u.addr == "" {
+		if b, err := os.ReadFile(addrFile()); err == nil {
+			u.addr = strings.TrimSpace(string(b))
+		}
+	}
+	_ = u.addrB.Set(u.addr)
+	_ = u.balanceB.Set("0.00000000 QC (h=?, proxy-fallback)")
+	return u
+}
+
+func (u *walletUI) Run() {
+	u.win.SetContent(u.buildTabs())
+	u.startAutoRefresh()
+	u.win.ShowAndRun()
+	if u.cancelRefresh != nil {
+		u.cancelRefresh()
+	}
+}
+
+func (u *walletUI) buildTabs() fyne.CanvasObject {
+	wallet := u.buildWallet()
+	miner := u.buildMiner()
+	status := u.buildStatus()
+	settings := u.buildSettings()
+	return container.NewAppTabs(
+		container.NewTabItem(t(u.lang(), LTabWallet), wallet),
+		container.NewTabItem(t(u.lang(), LTabMiner), miner),
+		container.NewTabItem(t(u.lang(), LTabStatus), status),
+		container.NewTabItem(t(u.lang(), LTabSettings), settings),
+	)
+}
+
+func (u *walletUI) buildWallet() fyne.CanvasObject {
+	title := widget.NewLabelWithStyle(t(u.lang(), LTitle), fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	addrE := widget.NewEntryWithData(u.addrB)
+	addrE.Disable()
+	copyBtn := widget.NewButton(t(u.lang(), LCopy), func() { u.win.Clipboard().SetContent(u.addr) })
+	loadBtn := widget.NewButton(t(u.lang(), LLoadAddr), func() { u.loadAddrFromFile() })
+	saveBtn := widget.NewButton(t(u.lang(), LSaveAddr), func() { u.saveAddrToFile() })
+	refreshBtn := widget.NewButton(t(u.lang(), LRefresh), func() { go u.refreshOnce() })
+
+	head := container.NewHBox(title, layout.NewSpacer(), copyBtn, loadBtn, saveBtn, refreshBtn)
+
+	balLabel := widget.NewLabel(t(u.lang(), LBalance) + ":")
+	balVal := widget.NewLabelWithData(u.balanceB)
+
+	fromE := widget.NewEntry()
+	fromE.SetPlaceHolder(t(u.lang(), LFrom))
+	fromE.SetText(u.addr)
+	toE := widget.NewEntry()
+	toE.SetPlaceHolder(t(u.lang(), LTo))
+	if u.p.LastTo != "" {
+		toE.SetText(u.p.LastTo)
+	}
+	amtE := widget.NewEntry()
+	amtE.SetPlaceHolder(t(u.lang(), LAmount))
+	feeE := widget.NewEntry()
+	feeE.SetPlaceHolder(t(u.lang(), LFee))
+	pkE := widget.NewPasswordEntry()
+	pkE.SetPlaceHolder(t(u.lang(), LPrivKey))
+
+	sendBtn := widget.NewButton(t(u.lang(), LSendNow), func() {
+		if toE.Text == "" || amtE.Text == "" {
+			u.alert("Missing fields", "To & Amount are required")
+			return
+		}
+		if err := u.sendTx(fromE.Text, toE.Text, amtE.Text, feeE.Text, pkE.Text); err != nil {
+			u.alert("Send error", err.Error())
+			return
+		}
+		u.p.LastTo = toE.Text
+		savePrefs(u.p)
+		u.toast("Submitted")
+		go func() { time.Sleep(800 * time.Millisecond); u.refreshOnce() }()
+	})
+
+	form := container.NewVBox(
+		widget.NewLabel(t(u.lang(), LSend)),
+		fromE, toE, amtE, feeE, pkE,
+		container.NewHBox(layout.NewSpacer(), sendBtn),
+	)
+
+	return container.NewVBox(
+		head,
+		widget.NewSeparator(),
+		container.NewGridWithColumns(2,
+			container.NewHBox(widget.NewLabel(t(u.lang(), LAddrLabel)), layout.NewSpacer()),
+			addrE,
+		),
+		container.NewHBox(balLabel, balVal),
+		widget.NewSeparator(),
+		form,
+	)
+}
+
+func (u *walletUI) buildMiner() fyne.CanvasObject {
+	startBtn := widget.NewButton(t(u.lang(), LStartMiner), func() { go u.startMiner(false) })
+	startExt := widget.NewButton(t(u.lang(), LStartExt), func() { go u.startMiner(true) })
+	stopBtn := widget.NewButton(t(u.lang(), LStopMiner), func() { u.stopMiner() })
+
+	u.logRich.Wrapping = fyne.TextWrapWord
+	head := container.NewHBox(startBtn, startExt, stopBtn, layout.NewSpacer())
+	return container.NewBorder(head, nil, nil, nil, container.NewVScroll(u.logRich))
+}
+
+func (u *walletUI) buildStatus() fyne.CanvasObject {
+	header := container.NewHBox(widget.NewLabel(t(u.lang(), LRecentBlocks)), layout.NewSpacer(), widget.NewLabel(t(u.lang(), LHalvingInfo)))
+	u.recent = []string{}
+	u.recentList = widget.NewList(
+		func() int { u.recentMu.Lock(); defer u.recentMu.Unlock(); return len(u.recent) },
+		func() fyne.CanvasObject { return widget.NewLabel("-") },
+		func(i widget.ListItemID, o fyne.CanvasObject) {
+			u.recentMu.Lock()
+			defer u.recentMu.Unlock()
+			o.(*widget.Label).SetText(u.recent[i])
+		},
+	)
+	go u.pollRecentBlocks()
+	return container.NewBorder(header, nil, nil, nil, u.recentList)
+}
+
+func (u *walletUI) buildSettings() fyne.CanvasObject {
+	// Language + Theme + Auto options
+	langs := []string{"tr", "en", "es", "zh"}
+	langSelect := widget.NewSelect(langs, func(s string) { u.p.Lang = s; savePrefs(u.p); u.toast(t(u.lang(), LSavedRestart)) })
+	langSelect.Selected = u.p.Lang
+	themeBtn := widget.NewButton(t(u.lang(), LTheme), func() { u.toggleTheme() })
+	autoStart := widget.NewCheck(t(u.lang(), LAutoStart), func(v bool) { u.p.AutoStart = v; savePrefs(u.p) })
+	autoStart.Checked = u.p.AutoStart
+	refSpin := widget.NewEntry()
+	refSpin.SetText(fmt.Sprintf("%d", max(1, u.p.AutoRefresh)))
+	apply := widget.NewButton(t(u.lang(), LRefresh), func() {
+		if n, err := atoiSafe(refSpin.Text); err == nil {
+			u.p.AutoRefresh = max(1, n)
+			savePrefs(u.p)
+		}
+	})
+
+	return container.NewVBox(
+		container.NewHBox(widget.NewLabel(t(u.lang(), LLang)), langSelect, layout.NewSpacer()),
+		themeBtn,
+		autoStart,
+		container.NewHBox(widget.NewLabel(t(u.lang(), LAutoRefresh)), refSpin, apply),
+	)
+}
+
+// ----------------------------------------------------------------------------
+//                                ACTIONS
+// ----------------------------------------------------------------------------
+
+func (u *walletUI) lang() string {
+	if u.p.Lang == "" {
+		return "tr"
+	}
+	return u.p.Lang
+}
+
+func (u *walletUI) toggleTheme() {
+	u.p.Dark = !u.p.Dark
+	savePrefs(u.p)
+	if u.p.Dark {
+		u.app.Settings().SetTheme(theme.DarkTheme())
+	} else {
+		u.app.Settings().SetTheme(theme.LightTheme())
+	}
+}
+
+func (u *walletUI) startAutoRefresh() {
+	ctx, cancel := context.WithCancel(context.Background())
+	u.cancelRefresh = cancel
+	go func() {
+		t := time.NewTicker(time.Duration(max(1, u.p.AutoRefresh)) * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				u.refreshOnce()
+			}
+		}
+	}()
+	u.refreshOnce()
+}
+
+func (u *walletUI) refreshOnce() {
+	bal, err := queryBalance(u.addr)
+	if err != nil {
+		_ = u.balanceB.Set(fmt.Sprintf("0.00000000 QC (proxy-fallback: %v)", err))
+		return
+	}
+	_ = u.balanceB.Set(bal)
+}
+
+func queryBalance(addr string) (string, error) {
+	if addr == "" {
+		return "0", errors.New("no address")
+	}
+	url := envOr("QC_PROXY", "http://localhost:8082") + "/api/address/balance?address=" + addr
+	r, err := http.Get(url)
+	if err != nil {
+		return "", err
+	}
+	defer r.Body.Close()
+	if r.StatusCode != 200 {
+		return "", fmt.Errorf("%s", r.Status)
+	}
+	var out struct {
+		Balance string `json:"balance"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&out); err != nil {
+		return "", err
+	}
+	return out.Balance + " QC", nil
+}
+
+func (u *walletUI) sendTx(from, to, amount, fee, pk string) error {
+	body := map[string]string{"from": from, "to": to, "amount": amount}
+	if fee != "" {
+		body["fee"] = fee
+	}
+	if pk != "" {
+		body["privkey"] = pk
+	}
+	b := must(json.Marshal(body))
+	url := envOr("QC_PROXY", "http://localhost:8082") + "/api/tx/send"
+	r, err := http.Post(url, "application/json", strings.NewReader(string(b)))
+	if err != nil {
+		return err
+	}
+	defer r.Body.Close()
+	if r.StatusCode != 200 {
+		by, _ := io.ReadAll(r.Body)
+		return fmt.Errorf("%s: %s", r.Status, string(by))
+	}
+	return nil
+}
+
+func (u *walletUI) startMiner(openInCmd bool) {
+	u.minerLock.Lock()
+	defer u.minerLock.Unlock()
+	if u.minerCmd != nil {
+		u.toast("Miner already running")
+		return
+	}
+
+	bin := minerBinary()
+	if _, err := os.Stat(bin); err != nil {
+		u.alert("Binary missing", bin+" not found next to the app")
+		return
+	}
+
+	if openInCmd && runtime.GOOS == "windows" {
+		_ = exec.Command("cmd", "/C", "start", "", bin, "mine", "-addr", u.addr).Start()
+		u.toast("Miner started in CMD window")
+		return
+	}
+
+	cmd := exec.Command(bin, "mine", "-addr", u.addr)
+	cmd.Dir = exeDir()
+	stdout, _ := cmd.StdoutPipe()
+	stderr, _ := cmd.StderrPipe()
+	if err := cmd.Start(); err != nil {
+		u.alert("Start error", err.Error())
+		return
+	}
+	u.minerCmd = cmd
+	u.toast("Miner started")
+	go u.pipeLogs(stdout)
+	go u.pipeLogs(stderr)
+	go func() {
+		_ = cmd.Wait()
+		u.minerLock.Lock()
+		u.minerCmd = nil
+		u.minerLock.Unlock()
+		u.toast("Miner exited")
+	}()
+}
+
+func (u *walletUI) stopMiner() {
+	u.minerLock.Lock()
+	defer u.minerLock.Unlock()
+	if u.minerCmd == nil {
+		return
+	}
+	_ = u.minerCmd.Process.Kill()
+	u.minerCmd = nil
+	u.toast("Miner stopped")
+}
+
+func minerBinary() string {
+	name := "quantumcoin.exe"
+	if runtime.GOOS != "windows" {
+		name = "quantumcoin"
+	}
+	return filepath.Join(exeDir(), name)
+}
+
+func (u *walletUI) pipeLogs(r io.Reader) {
+	s := bufio.NewScanner(r)
+	for s.Scan() {
+		line := s.Text()
+		u.appendLog(line)
+		low := strings.ToLower(line)
+		if strings.Contains(low, "block found") || strings.Contains(low, "mined") || strings.Contains(low, "tx confirmed") {
+			go u.refreshOnce()
+		}
+	}
+}
+
+// Color-coded log append (green for block found/mined)
+func (u *walletUI) appendLog(line string) {
+	fyne.CurrentApp().Driver().CallOnMain(func() {
+		seg := &widget.TextSegment{Text: line + "\n"}
+		low := strings.ToLower(line)
+		if strings.Contains(low, "block found") || strings.Contains(low, "mined") {
+			seg.Style = widget.RichTextStyle{TextStyle: fyne.TextStyle{Bold: true}, ColorName: theme.ColorNameSuccess}
+		}
+		u.logRich.Segments = append(u.logRich.Segments, seg)
+		u.logRich.Refresh()
+	})
+}
+
+// Recent blocks polling
+func (u *walletUI) pollRecentBlocks() {
+	for {
+		time.Sleep(6 * time.Second)
+		items, err := fetchRecentBlocks()
+		if err != nil {
+			continue
+		}
+		u.recentMu.Lock()
+		u.recent = items
+		u.recentMu.Unlock()
+		fyne.CurrentApp().Driver().CallOnMain(func() {
+			if u.recentList != nil {
+				u.recentList.Refresh()
+			}
+		})
+	}
+}
+
+func fetchRecentBlocks() ([]string, error) {
+	url := envOr("QC_PROXY", "http://localhost:8082") + "/api/blocks/recent?limit=10"
+	r, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Body.Close()
+	if r.StatusCode != 200 {
+		return nil, fmt.Errorf("%s", r.Status)
+	}
+	var out []struct {
+		Height int    `json:"height"`
+		Hash   string `json:"hash"`
+		Time   string `json:"time"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	res := make([]string, 0, len(out))
+	for _, b := range out {
+		res = append(res, fmt.Sprintf("h=%d  %s  %s", b.Height, b.Hash, b.Time))
+	}
+	return res, nil
+}
+
+// Helpers
+func envOr(k, d string) string {
+	if v := os.Getenv(k); v != "" {
+		return v
+	}
+	return d
+}
+
+func atoiSafe(s string) (int, error) { var n int; _, err := fmt.Sscanf(s, "%d", &n); return n, err }
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func (u *walletUI) toast(msg string) {
+	w := widget.NewLabel(msg)
+	w.Wrapping = fyne.TextWrapWord
+	w.Alignment = fyne.TextAlignCenter
+	d := dialog.NewCustom("Info", "OK", container.NewMax(w), u.win)
+	d.Show()
+	go func() { time.Sleep(1600 * time.Millisecond); fyne.CurrentApp().Driver().CallOnMain(d.Hide) }()
+}
+
+func (u *walletUI) alert(title, body string) { dialog.ShowInformation(title, body, u.win) }
+
+func (u *walletUI) loadAddrFromFile() {
+	if b, err := os.ReadFile(addrFile()); err == nil {
+		u.addr = strings.TrimSpace(string(b))
+		_ = u.addrB.Set(u.addr)
+		u.p.Address = u.addr
+		savePrefs(u.p)
+		u.toast("Address loaded")
+	} else {
+		u.alert("Not found", "wallet_address.txt not found next to the app")
+	}
+}
+
+func (u *walletUI) saveAddrToFile() {
+	if u.addr == "" {
+		u.alert("Empty", "No address to save")
+		return
+	}
+	_ = os.WriteFile(addrFile(), []byte(u.addr+"\n"), 0o644)
+	u.toast("Address saved")
+}
+
+// LaunchMainUI matches main.go signature exactly — no structure changes
+func LaunchMainUI(a fyne.App, w fyne.Window, _ *wallet.Wallet, _ *blockchain.Blockchain) {
+	u := NewWithApp(a, w)
+	w.SetContent(u.buildTabs())
+	u.startAutoRefresh()
+	w.Show()
+}

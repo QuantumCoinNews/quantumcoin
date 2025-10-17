@@ -1,0 +1,46 @@
+id: 2025-10-02-sample
+title: "Bitcoin’in Gizemli Hikâyesi"
+caption: "Bugünün postu. #Bitcoin #Crypto"
+text: ""                        # Telegram/X uzun metin
+tags: ["Bitcoin","Crypto","Blockchain"]
+
+# Ortak medya (fallback)
+image: content/media/post01.jpg
+video: content/media/short01.mp4
+album:
+  - content/media/post01_a.jpg
+  - content/media/post01_b.jpg
+
+# Platform bazlı override (isteğe bağlı)
+platforms:
+  youtube:
+    enabled: true
+    title: "Bitcoin Documentary | Satoshi"
+    description: "Kısa açıklama + hashtag"
+    tags: ["bitcoin","crypto","documentary"]
+    video: content/media/yt_video.mp4   # yoksa üstteki video
+    privacy: public                     # public|unlisted|private
+    shorts: true                        # 60s/dikey ise
+  x:
+    enabled: true
+    text: "Bugün #Bitcoin hakkında ilginç bir gerçek…"
+    images:
+      - content/media/x_1.jpg
+      - content/media/x_2.jpg
+    video: ""                           # varsa tek video
+  instagram:
+    enabled: true
+    type: "image"                       # image|reel
+    caption: "IG alt yazı"
+    media:
+      - content/media/ig_1.jpg          # image için
+    reel: content/media/reel01.mp4      # reel için
+  telegram:
+    enabled: true
+    text: ""                            # boşsa caption+title kullanır
+    image: ""                           # boşsa ortak image
+    video: ""                           # boşsa ortak video
+  tiktok:
+    enabled: true
+    caption: "TikTok kısa açıklama"
+    video: content/media/tk_short.mp4

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <p class="h">🏆 Top 50 by QC</p>
+  <table>
+    <thead><tr><th>#</th><th>Player</th><th>QC</th><th>TGWT</th><th>Lvl</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td>
+          {% if loop.index == 1 %>🥇{% elif loop.index == 2 %}🥈{% elif loop.index == 3 %}🥉{% else %}{{ loop.index }}{% endif %}
+        </td>
+        <td><a href="/player/{{ r['id'] }}">{{ r['username'] or 'player' }}</a></td>
+        <td class="mono">{{ "%.3f"|format(r["qc"]) }}</td>
+        <td class="mono">{{ r["tgwt"] }}</td>
+        <td class="mono">{{ r["level"] }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">No players yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

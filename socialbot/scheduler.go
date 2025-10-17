@@ -1,17 +1,33 @@
-package socialbot
+package main
 
 import (
 	"fmt"
 	"time"
+
+	"github.com/robfig/cron/v3"
 )
 
-func Start(bot *SocialBot) {
+type CronScheduler struct {
+	bot  *SocialBot
+	cron *cron.Cron
+}
+
+func NewCronScheduler(bot *SocialBot) *CronScheduler {
+	return &CronScheduler{
+		bot:  bot,
+		cron: cron.New(cron.WithLocation(time.UTC)),
+	}
+}
+
+func (s *CronScheduler) AddSpec(spec string) error {
+	_, err := s.cron.AddFunc(spec, func() {
+		fmt.Println("⏰ Tetikleme:", time.Now().UTC().Format(time.RFC3339))
+		s.bot.DoAutoShare()
+	})
+	return err
+}
+
+func (s *CronScheduler) Start() {
 	fmt.Println("Scheduler başlatıldı.")
-	go func() {
-		for {
-			bot.DoAutoShare()
-			// Her gün bir kez çalışması için 24 saat bekler
-			time.Sleep(24 * time.Hour)
-		}
-	}()
+	s.cron.Start()
 }

@@ -1,0 +1,120 @@
+package main
+
+import (
+	"errors"
+	"log"
+	"net"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"syscall"
+	"time"
+
+	"quantumcoin/blockchain"
+	"quantumcoin/ui"
+	"quantumcoin/wallet"
+
+	"fyne.io/fyne/v2/app"
+)
+
+const (
+	blockchainFile = "chain_data.dat"
+	apiPort        = "8081"
+	proxyPort      = "8082"
+)
+
+func exeDir() string {
+	p, _ := os.Executable()
+	return filepath.Dir(p)
+}
+
+func portOpen(port string) bool {
+	c, err := net.DialTimeout("tcp", "127.0.0.1:"+port, 500*time.Millisecond)
+	if err == nil {
+		_ = c.Close()
+		return true
+	}
+	return false
+}
+
+func waitHTTP(url string, max time.Duration) bool {
+	dead := time.Now().Add(max)
+	for time.Now().Before(dead) {
+		resp, err := http.Get(url)
+		if err == nil && resp.StatusCode < 500 {
+			_ = resp.Body.Close()
+			return true
+		}
+		time.Sleep(700 * time.Millisecond)
+	}
+	return false
+}
+
+func startDetached(exe string, args ...string) error {
+	cmd := exec.Command(exe, args...)
+	cmd.Dir = exeDir()
+	// Windows’ta arka planda
+	if runtime.GOOS == "windows" {
+		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	}
+	return cmd.Start()
+}
+
+func ensureBackends() error {
+	// Node (8081)
+	if !portOpen(apiPort) {
+		if err := startDetached("quantumcoin.exe", "api", "--api-only"); err != nil {
+			return err
+		}
+		if !waitHTTP("http://127.0.0.1:8081/api/status", 20*time.Second) {
+			return errors.New("node http 8081 cevap vermiyor")
+		}
+	}
+	// Proxy (8082)
+	if !portOpen(proxyPort) {
+		if err := startDetached("qc_api_proxy.exe", "--listen", ":8082", "--target", "http://127.0.0.1:8081"); err != nil {
+			return err
+		}
+		if !waitHTTP("http://127.0.0.1:8082/api/status", 10*time.Second) {
+			return errors.New("proxy 8082 cevap vermiyor")
+		}
+	}
+	return nil
+}
+
+func main() {
+	// Arka uçları kaldır
+	if err := ensureBackends(); err != nil {
+		log.Println("Backend uyarısı:", err)
+	}
+
+	myApp := app.NewWithID("quantumcoin.app")
+	mainWindow := myApp.NewWindow("QuantumCoin")
+
+	wlt := wallet.LoadWalletFromFile()
+
+	// Zinciri yükle/oluştur
+	var bc *blockchain.Blockchain
+	if _, err := os.Stat(blockchainFile); err == nil {
+		var lerr error
+		bc, lerr = blockchain.LoadBlockchainFromFile(blockchainFile)
+		if lerr != nil {
+			log.Println("Blockchain dosyası okunamadı, yeni başlatılıyor:", lerr)
+			bc = blockchain.NewBlockchain(50, 25500000)
+		}
+	} else {
+		bc = blockchain.NewBlockchain(50, 25500000)
+	}
+
+	// GUI’yi başlat
+	ui.LaunchMainUI(myApp, mainWindow, wlt, bc)
+
+	myApp.Run()
+
+	// Çıkarken kaydet
+	if err := bc.SaveToFile(blockchainFile); err != nil {
+		log.Printf("Blockchain kaydedilemedi: %v", err)
+	}
+}

@@ -1,0 +1,5 @@
+<b>QuantumCoin — {TITLE}</b>
+{BLURB}
+Time: {TIME}
+GitHub: https://github.com/QuantumCoinNews/quantumcoin
+#QuantumCoin #QC #Crypto #Web3

@@ -1,0 +1,22 @@
+[
+  {
+    "title_en": "Wallet & Miner Alpha",
+    "blurb_en": "Alpha tests for the wallet + miner integration are live. Community feedback is welcome!",
+    "tag": "alpha"
+  },
+  {
+    "title_en": "Real-time Hashstream",
+    "blurb_en": "Live hashrate and block feed visualizations are coming online.",
+    "tag": "realtime"
+  },
+  {
+    "title_en": "AI-Augmented Chain",
+    "blurb_en": "Daily experiments on model-assisted consensus optimization.",
+    "tag": "ai"
+  },
+  {
+    "title_en": "Roadmap v1",
+    "blurb_en": "Core roadmap published: node, wallet, miner, explorer.",
+    "tag": "roadmap"
+  }
+]

@@ -1,9 +1,9 @@
-package platforms
+package main
 
-import "fmt"
+import "log"
 
-func PostInstagramMedia(caption, filePath string) error {
-	fmt.Printf("Instagram'a gönderi paylaşılıyor: %s %s\n", caption, filePath)
-	// Instagram API ile paylaşım (mock)
+// Şimdilik sadece log basıyor (stub)
+func PublishInstagram(item ContentItem) error {
+	log.Printf("[stub] Instagram paylaşımı: %s", item.Title)
 	return nil
 }

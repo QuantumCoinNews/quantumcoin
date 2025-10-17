@@ -1,9 +1,9 @@
-package platforms
+package main
 
-import "fmt"
+import "log"
 
-func PostXStatus(status string, mediaPath string) error {
-	fmt.Printf("X (Twitter)'a gönderiliyor: %s %s\n", status, mediaPath)
-	// X API ile paylaşım (mock)
+// Şimdilik sadece log basıyor (stub)
+func PublishX(item ContentItem) error {
+	log.Printf("[stub] X paylaşımı: %s", item.Title)
 	return nil
 }

@@ -1,41 +1,52 @@
-package socialbot
+package main
 
 import (
-	"fmt"
-	"quantumcoin/socialbot/platforms" //
+	"log"
+	"sync"
 	"time"
 )
 
-type SocialBot struct{}
-
-func (b *SocialBot) Start() {
-	fmt.Println("SocialBot başlatıldı.")
-	Start(b) // Scheduler ile otomatik başlar
+type SocialBot struct {
+	auth       *Auth
+	publishers *Publishers
+	mu         sync.Mutex
+	running    bool
 }
 
-// Otomatik içerik üretip, bütün platformlara paylaş
-func (b *SocialBot) DoAutoShare() {
-	topic := getTodayTopic() // Her gün farklı bir konu
-	caption, filePath := GenerateContent(topic)
-
-	fmt.Println("🟢 Otomatik paylaşım başlıyor:", topic)
-
-	platforms.PostInstagramMedia(caption, filePath)
-	platforms.PostTikTokVideo(caption, filePath)
-	platforms.PostXStatus(caption, filePath)
-	platforms.PostYouTubeVideo(topic, caption, filePath)
-	fmt.Println("🟢 Tüm platformlarda paylaşım tamamlandı.")
-}
-
-// Her gün için farklı bir konu (AI, trend, random…)
-func getTodayTopic() string {
-	topics := []string{
-		"Quantum Coin Haberleri",
-		"Blokzincir Eğitimi",
-		"Kripto Analizleri",
-		"Quantum Mining İpuçları",
-		"Haftanın NFT'si",
+func NewSocialBot(a *Auth) *SocialBot {
+	return &SocialBot{
+		auth:       a,
+		publishers: NewPublishers(a),
 	}
-	t := time.Now().Day() % len(topics)
-	return topics[t]
+}
+
+// DoAutoShare -> günlük otomatik paylaşım akışı
+func (b *SocialBot) DoAutoShare() {
+	b.mu.Lock()
+	if b.running {
+		log.Printf("DoAutoShare atlandı: zaten çalışıyor")
+		b.mu.Unlock()
+		return
+	}
+	b.running = true
+	b.mu.Unlock()
+
+	start := time.Now()
+	defer func() {
+		b.mu.Lock()
+		b.running = false
+		b.mu.Unlock()
+		log.Printf("DoAutoShare bitti (%.1fs)", time.Since(start).Seconds())
+	}()
+
+	item, err := PickToday()
+	if err != nil {
+		log.Printf("İçerik seçilemedi: %v", err)
+		return
+	}
+	log.Printf("Gönderim ID=%s Title=%q", item.ID, item.Title)
+
+	if err := b.publishers.PublishAll(item); err != nil {
+		log.Printf("Publish hatası: %v", err)
+	}
 }

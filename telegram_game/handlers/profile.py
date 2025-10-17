@@ -1,36 +1,14 @@
-# quantumcoin/telegram_game/handlers/profile.py
+from telegram.ext import MessageHandler, CommandHandler, filters
+from utils.state import get_user, flood_guard
 
-from aiogram import Router, types
-from aiogram.filters import Command
-from utils.stats import get_user_stats
-from aiogram.utils.markdown import hbold
-import datetime
-
-router = Router()
-
-def format_timestamp(unix_ts: int) -> str:
-    try:
-        dt = datetime.datetime.fromtimestamp(unix_ts)
-        return dt.strftime("%d %b %Y %H:%M")
-    except:
-        return "Bilinmiyor"
-
-@router.message(Command("profile", "stats"))
-async def handle_profile(message: types.Message):
-    user_id = str(message.from_user.id)
-    stats = get_user_stats(user_id)
-
-    if not stats:
-        await message.answer("❌ Kayıt bulunamadı. Önce /start komutunu kullanmalısın.")
+async def _profile(u, c):
+    usr = get_user(u)
+    if not flood_guard(usr):
         return
-
-    reply = (
-        f"🪐 <b>Profil Bilgilerin</b>\n\n"
-        f"{hbold('👤 Kullanıcı:')} {stats['name']}\n"
-        f"{hbold('⛏ Toplam Kazım:')} {stats['mining_count']}\n"
-        f"{hbold('🎁 Toplam Ödül:')} {stats['total_rewards']} QC\n"
-        f"{hbold('👥 Referanslar:')} {stats['referrals']}\n"
-        f"{hbold('🕒 Son Aktif:')} {format_timestamp(stats['last_active'])}\n"
+    await u.message.reply_text(
+        f"Profile\nQC: {usr.qc}\nTGWT: {usr.tgwt}\nEnergy: {usr.energy}/100\nLevel: {usr.level}"
     )
 
-    await message.answer(reply)
+def wire(app):
+    app.add_handler(MessageHandler(filters.Regex(r"^Profile$"), _profile), group=10)
+    app.add_handler(CommandHandler("profile", _profile), group=10)

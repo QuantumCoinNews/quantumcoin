@@ -1,0 +1,10 @@
+ROOT: C:\Projects\quantumcoin\release
+Excluded: node_modules, logs, tmp, .git, out, dist, .cache, .vscode, coverage, .DS_Store
+---
+      bonus_store.json
+      chain_data.dat
+      mined_balance.json
+      miner_address.txt
+      quantumcoin.exe
+      wallet_address.txt
+      wallet-gui.exe

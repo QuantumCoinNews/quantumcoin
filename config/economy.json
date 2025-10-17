@@ -1,0 +1,33 @@
+{
+  "tgwt": {
+    "cooldownHours": 8,
+    "perClaim": 1,
+    "socialFollowOneTime": 1,
+    "withdrawMin": 10,
+    "withdrawFeePct": 0.0
+  },
+  "rarity": {
+    "nftSpecialDropPct": 0.05,
+    "nftTegetDropPct": 0.005,
+    "pityAfterSessions": 200
+  },
+  "jackpot": {
+    "qcAmount": 500,
+    "winnersPerMonth": 1,
+    "eligibility": { "minPlayMinutesMonthly": 60 }
+  },
+  "mining": {
+    "planets": 3,
+    "spotsPerPlanet": 5,
+    "sessionSeconds": 60,
+    "energyPerSession": 15,
+    "baseYield": 1.0,
+    "shipMultiplier": 1.0
+  },
+  "shop": [
+    { "id": "scout", "title": "Scout Miner", "mult": 1.5, "priceQc": 50 },
+    { "id": "quantum", "title": "Quantum Driller", "mult": 2.5, "priceQc": 200 },
+    { "id": "warp", "title": "Warp Excavator", "mult": 4.0, "priceQc": 600 }
+  ],
+  "daily": { "loginRewardQc": 2 }
+}

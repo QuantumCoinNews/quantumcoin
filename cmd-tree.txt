@@ -1,0 +1,24 @@
+ROOT: C:\Projects\quantumcoin\cmd
+Excluded: node_modules, logs, tmp, .git, out, dist, .cache, .vscode, coverage, .DS_Store
+---
+  [D] apitest
+        main.go
+    [D] quantumcoin-gui
+          main.go
+  [D] miner
+        main.go
+  [D] quantumcoin-gui
+        main.go
+        quantumcoin-gui.exe
+  [D] wallet
+    [D] assets
+          icon.png
+    [D] bin
+          bonus_store.json
+          chain_data.dat
+          quantumcoin.exe
+    [D] build
+      [D] bin
+            qc-wallet.exe
+        icon.go
+        main_fyne.go

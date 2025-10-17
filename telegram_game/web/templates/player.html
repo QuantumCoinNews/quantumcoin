@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="row">
+    <div class="card">
+        <p class="h">👤 Player #{{ u["id"] }} — {{ u["username"] or "player" }}</p>
+
+        <div class="grid cards" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;padding:0">
+            <div class="card" style="padding:12px">
+                <div class="muted">QC</div>
+                <div class="big mono">{{ "%.3f"|format(u["qc"]) }}</div>
+            </div>
+
+            <div class="card" style="padding:12px">
+                <div class="muted">TGWT</div>
+                <div class="big mono">{{ u["tgwt"] }}</div>
+            </div>
+
+            <div class="card" style="padding:12px">
+                <div class="muted">Energy</div>
+                <div class="bar"><i class="bar-fill" data-width="{{ (u['energy'] or 0)|int }}"></i></div>
+                <div class="mono" style="margin-top:6px">{{ u["energy"] }}/100</div>
+            </div>
+
+            <div class="card" style="padding:12px">
+                <div class="muted">Level</div>
+                <div class="big mono">{{ u["level"] }}</div>
+            </div>
+
+            <div class="card" style="padding:12px">
+                <div class="muted">Ship</div>
+                <div>{{ u["ship"] }}</div>
+                <div class="mono">x{{ "%.2f"|format(u["ship_mul"]) }}</div>
+            </div>
+
+            <div class="card" style="padding:12px">
+                <div class="muted">Verified</div>
+                <span class="badge">{{ "yes" if u["verified"] else "no" }}</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <p class="h">📈 Recent Session Rewards</p>
+
+        {% if ses_values and ses_values|length > 0 %}
+        <canvas id="sesChart" height="160"></canvas>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+        <!-- Embed chart data as JSON so JS linter does not flag template syntax -->
+        <script id="ses-json" type="application/json">
+        {{ {'labels': ses_labels, 'values': ses_values} | tojson }}
+      </script>
+
+        <script>
+            (function () {
+                var el = document.getElementById('ses-json');
+                var payload = { labels: [], values: [] };
+                try { payload = JSON.parse(el.textContent || '{}'); } catch (e) { }
+                var labels = payload.labels || [];
+                var data = payload.values || [];
+                var ctx = document.getElementById('sesChart');
+                // eslint-disable-next-line no-undef
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: { labels: labels, datasets: [{ label: 'QC', data: data }] },
+                    options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+                });
+            })();
+        </script>
+        {% else %}
+        <p class="muted">No completed sessions yet.</p>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row" style="margin-top:16px">
+    <div class="card">
+        <p class="h">⛏️ Recent Sessions</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>Sector</th>
+                    <th>Start</th>
+                    <th>End</th>
+                    <th>QC</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for s in ses %}
+                <tr>
+                    <td>{{ s["sector"] }}</td>
+                    <td>{{ s["start_ts"] }}</td>
+                    <td>{{ s["end_ts"] or "-" }}</td>
+                    <td class="mono">{{ s["reward_qc"] if s["reward_qc"] is not none else "-" }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="4" class="muted">No sessions yet.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="card">
+        <p class="h">💳 Recent Transactions</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>Kind</th>
+                    <th>Amount</th>
+                    <th>Meta</th>
+                    <th>Time</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in tx %}
+                <tr>
+                    <td>{{ t["kind"] }}</td>
+                    <td class="mono">{{ t["amount"] }}</td>
+                    <td>{{ t["meta"] or "-" }}</td>
+                    <td>{{ t["created_at"] }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="4" class="muted">No transactions yet.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    // set widths for any .bar-fill
+    document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('.bar-fill[data-width]').forEach(function (el) {
+            var w = Number(el.getAttribute('data-width') || '0');
+            if (isNaN(w)) { w = 0; }
+            if (w < 0) w = 0; if (w > 100) w = 100;
+            el.style.width = w + '%';
+        });
+    });
+</script>
+
+{% endblock %}

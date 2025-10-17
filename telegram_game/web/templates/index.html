@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="grid cards">
+    <div class="card">
+        <p class="h">👥 Total Players</p>
+        <div class="big mono">{{ total_users }}</div>
+        <p class="muted">Active Telegram players synced to DB.</p>
+    </div>
+    <div class="card">
+        <p class="h">💠 Total QC</p>
+        <div class="big mono">{{ "%.3f"|format(total_qc or 0) }}</div>
+        <p class="muted">Cumulative mined QC across all players.</p>
+    </div>
+    <div class="card">
+        <p class="h">🪙 Total TGWT</p>
+        <div class="big mono">{{ total_tgwt }}</div>
+        <p class="muted">Claimed via socials (not mined).</p>
+    </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+    <p class="h">🎯 Daily TGWT Pool — <span class="badge">Day {{ pool_day }}</span></p>
+
+    {% if pool_cap %}
+    <div class="bar"><i class="bar-fill" data-width="{{ pool_pct }}"></i></div>
+    <p style="margin-top:8px">
+        <span class="mono">{{ pool_left }}</span> / <span class="mono">{{ pool_cap }}</span> left
+        <span class="muted">({{ pool_pct }}%)</span>
+    </p>
+    {% else %}
+    <p class="muted">Pool info unavailable. It will appear after first claims today.</p>
+    {% endif %}
+</div>
+
+<div class="grid cards" style="margin-top:16px">
+    <div class="card">
+        <p class="h">🏆 Leaderboard</p>
+        <p class="muted">Top miners ranked by total QC.</p>
+        <a class="btn" href="/leaderboard">Open Leaderboard</a>
+    </div>
+    <div class="card">
+        <p class="h">👤 Player Detail</p>
+        <p class="muted">Open a player page: /player/&lt;user_id&gt; (see IDs in leaderboard).</p>
+        <a class="btn" href="/api/leaderboard" target="_blank">JSON IDs</a>
+    </div>
+</div>
+
+<script>
+    // set widths for progress bars without inline CSS expressions
+    document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('.bar-fill[data-width]').forEach(function (el) {
+            var w = Number(el.getAttribute('data-width') || '0');
+            if (isNaN(w)) { w = 0; }
+            if (w < 0) w = 0; if (w > 100) w = 100;
+            el.style.width = w + '%';
+        });
+    });
+</script>
+
+{% endblock %}

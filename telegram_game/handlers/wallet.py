@@ -1,32 +1,12 @@
-# quantumcoin/telegram_game/handlers/wallet.py
+from telegram.ext import MessageHandler, CommandHandler, filters
+from utils.state import get_user, flood_guard
 
-from aiogram import Router, types
-from aiogram.filters import Command
-from blockchain.qc_chain_api import create_wallet_if_needed, get_balance
-from database.redis_store import save_user_if_not_exists
+async def _wallet(u, c):
+    usr = get_user(u)
+    if not flood_guard(usr):
+        return
+    await u.message.reply_text("Wallet: not linked yet.")
 
-router = Router()
-
-@router.message(Command("wallet"))
-async def handle_wallet(message: types.Message):
-    user_id = str(message.from_user.id)
-    name = message.from_user.first_name or "Madenci"
-
-    # Kullanıcıyı güncelle
-    save_user_if_not_exists(user_id, name)
-
-    # Cüzdan adresini al
-    address = create_wallet_if_needed(user_id)
-
-    # Bakiye sorgula
-    balance = get_balance(address)
-
-    # Mesaj oluştur
-    reply = (
-        f"👛 <b>Cüzdan Bilgilerin</b>\n"
-        f"🪙 Adres: <code>{address}</code>\n"
-        f"💰 Bakiye: <b>{balance:.2f} QC</b>\n\n"
-        f"⛏ Kazım yapmak için /mine komutunu kullanabilirsin!"
-    )
-
-    await message.answer(reply)
+def wire(app):
+    app.add_handler(MessageHandler(filters.Regex(r"^Wallet$"), _wallet), group=10)
+    app.add_handler(CommandHandler("wallet", _wallet), group=10)

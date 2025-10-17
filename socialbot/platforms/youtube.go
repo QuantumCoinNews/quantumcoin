@@ -1,9 +1,9 @@
-package platforms
+package main
 
-import "fmt"
+import "log"
 
-func PostYouTubeVideo(title, description, filePath string) error {
-	fmt.Printf("YouTube'a video gönderiliyor: %s | %s %s\n", title, description, filePath)
-	// YouTube API ile paylaşım (mock)
+// Şimdilik sadece log basıyor (stub)
+func PublishYouTube(item ContentItem) error {
+	log.Printf("[stub] YouTube paylaşımı: %s", item.Title)
 	return nil
 }

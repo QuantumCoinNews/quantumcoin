@@ -1,0 +1,56 @@
+### miner
+      adapter_qc_local.go
+      assemble_block.go
+      difficulty.go
+      helpers.go
+      metrics.go
+      miner_effect.go
+      miner.go
+      mock_backend.go
+      nft_miner.go
+      rewarder.go
+      scheduler.go
+      submit_external.go
+      web_job.go
+      worker_cmd.go
+      worker.go
+
+### wallet
+      ensure.go
+      import_key.go
+      io.go
+      keypair.go
+      signature.go
+      test_wallet.go
+      validate.go
+      wallet.go
+
+### webwallet
+      index.html
+      package-lock.json
+      package.json
+  [D] src
+        App.tsx
+        main.tsx
+      vite.config.ts
+
+### cmd\miner
+        main.go
+
+### cmd\wallet
+    [D] assets
+          icon.png
+    [D] bin
+          bonus_store.json
+          chain_data.dat
+          quantumcoin.exe
+    [D] build
+      [D] bin
+            qc-wallet.exe
+        icon.go
+        main_fyne.go
+
+### telegram_game\miniapp
+        game.js
+        index.html
+

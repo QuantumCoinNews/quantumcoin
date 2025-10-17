@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>QuantumCoin • Space Mining</title>
+  <link rel="stylesheet" href="/src/styles.css" />
+</head>
+<body>
+  <div class="hud">
+    <!-- ÜST BAR -->
+    <header class="topbar">
+      <div class="left">
+        <div class="chip"><span>🪙</span><b id="qc">0.00</b> QC</div>
+        <div class="chip"><span>⚡</span><b id="energy">100</b>/<span id="energyMax">100</span></div>
+      </div>
+      <div class="center">
+        <div class="chip solid"><span>🚀</span> <span>Ship:</span> <b id="shipName">Basic Miner</b> <small id="mult">x1</small></div>
+      </div>
+      <div class="right">
+        <div class="chip"><span>🏅</span> Lv <b id="level">1</b></div>
+        <div class="chip"><span>⌛</span> <b id="timer">00:00</b></div>
+        <div class="chip"><span>▯</span> TGWT: <b id="tgwt">0</b></div>
+      </div>
+    </header>
+
+    <!-- CÜZDAN BAR -->
+    <div class="walletbar">
+      <button id="btnConnect">🦊 MetaMask Bağla</button>
+      <div class="sep"></div>
+      <button id="btnReceive">⬇️ QC Al</button>
+      <button id="btnSend">⬆️ QC Gönder</button>
+      <button id="btnWithdrawTGWT">⏍ TGWT Çek</button>
+    </div>
+
+    <!-- OYUN ALANI -->
+    <div id="gameArea">
+      <canvas id="mapCanvas"></canvas>
+    </div>
+
+    <!-- ALT DOCK: START + GRUP -->
+    <footer class="dock">
+      <button id="btnStart" class="btn primary">▶️ Start (60s)</button>
+      <div class="group">
+        <button id="btnEnergy" class="btn">⚡ +50</button>
+        <button id="btnDaily" class="btn">🎁 Daily</button>
+        <button id="btnTGWT" class="btn">⏍ TGWT Talep (+1)</button>
+        <button id="btnStore" class="btn">🛒 Store</button>
+        <button id="btnMore" class="btn">⋯</button>
+      </div>
+      <div class="status" id="status">READY</div>
+    </footer>
+
+    <!-- ALT SEKME MENÜSÜ -->
+    <nav class="tabs">
+      <button data-tab="mine" class="active">⛏️ Kazım Yap</button>
+      <button data-tab="ships">🚀 Gemi Satın Al</button>
+      <button data-tab="power">⚡ Güç Barı</button>
+      <button data-tab="friends">👥 Arkadaş Öner</button>
+      <button data-tab="social">📣 Sosyal Takip</button>
+      <button data-tab="daily">🗓️ Günlük Görevler</button>
+    </nav>
+
+    <!-- TAB PANELLERİ -->
+    <section id="tab-mine" class="tab active"></section>
+    <section id="tab-ships" class="tab">
+      <div class="shop" id="shopList"></div>
+    </section>
+    <section id="tab-power" class="tab">
+      <div class="power">
+        <p>Gücün <b id="energyNow">100</b>/<b id="energyMax2">100</b></p>
+        <button class="btn" id="powerRefill">⚡ +50 (reklam/puan)</button>
+      </div>
+    </section>
+    <section id="tab-friends" class="tab">
+      <p>Davet linkin:</p>
+      <code id="refLink"></code>
+      <p>Arkadaşların: <b id="refCount">0</b></p>
+    </section>
+    <section id="tab-social" class="tab">
+      <div class="social">
+        <button class="btn" onclick="claimSocial('twitter')">X Takip Ettim (+1 TGWT)</button>
+        <button class="btn" onclick="claimSocial('youtube')">YouTube Abone (+1 TGWT)</button>
+        <button class="btn" onclick="claimSocial('telegram')">Telegram Katıldım (+1 TGWT)</button>
+        <button class="btn" onclick="claimSocial('tiktok')">TikTok Takip Ettim (+1 TGWT)</button>
+      </div>
+    </section>
+    <section id="tab-daily" class="tab">
+      <button class="btn" id="btnDailyQuest">Günlük Giriş • +2 QC</button>
+    </section>
+  </div>
+
+  <!-- Basit modal & toast -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-content">
+      <div id="modalBody"></div>
+      <div class="modal-actions">
+        <button class="btn" id="modalClose">Kapat</button>
+      </div>
+    </div>
+  </div>
+  <div id="toast" class="toast"></div>
+
+  <script src="/src/app.js" type="module"></script>
+</body>
+</html>

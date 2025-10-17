@@ -1,0 +1,448 @@
+ROOT: C:\Projects\quantumcoin
+Excluded: node_modules, logs, tmp, .git, out, dist, .cache, .vscode, coverage, .DS_Store
+---
+    __debug_bin.exe
+[D] __qcdiag
+      block_around_141.txt
+      bom_check.txt
+      build_cmd.txt
+      build_errors.txt
+      build.log
+      go_env.txt
+      go_mods.txt
+      go_version.txt
+      symbols.txt
+      tree.txt
+    _build_errors.txt
+    _flat.txt
+    _goenv.txt
+    _gomod.txt
+    _tree.txt
+    .chain.json
+    .editorconfig
+    .env
+    .gitattributes
+    .gitignore
+    .golangci.yml
+    .wallet
+[D] ai
+      analyzer.go
+      bonuses.go
+      recommendation.go
+      reward_optimizer.go
+[D] api
+      http_server.go
+  [D] tx
+        send
+      wallet.go
+    apitest.exe
+[D] assets
+      quantum coin logo.png
+[D] autopublisher
+      .env
+      .env.bak
+      .env.example
+      .tmp-x-err.txt
+      .tmp-x-out.txt
+  [D] assets
+        bg.jpg.bad
+        bg.mp4
+        bg.mp4.bad
+        logo.png
+      autopublish-3platform.ps1
+      autopublish-simple.ps1
+      last.json
+      make-long-video.ps1
+      package-lock.json
+      package.json
+      PSScriptAnalyzerSettings.psd1
+      publish-all.ps1
+      publish-youtube.mjs
+      run-daily.cmd
+      run-daily.ps1
+  [D] scripts
+        gen-content.mjs
+        make-shorts.mjs
+        post-x.mjs
+        x-oauth2-init.mjs
+        x-post-oauth2.mjs
+  [D] secrets
+        client_secret.json
+        youtube_token.json
+  [D] src
+    [D] content
+      [D] prompts
+            telegram.html
+            x.txt
+          templates.txt
+          topics.json
+        index.ts
+    [D] pipeline
+          imageGen.ts
+          runDaily.ts
+          scriptWriter.ts
+          topicSelector.ts
+          tts.ts
+          videoAssembler.ts
+    [D] platforms
+          instagram.ts
+          telegram.ts
+          tiktok.ts
+          x.ts
+          youtube.ts
+        scheduler.ts
+    [D] utils
+          files.ts
+          limits.ts
+          logger.ts
+          telegramTest.ts
+          timing.ts
+      tsconfig.json
+      upload-direct.mjs
+      youtube-auth.mjs
+      youtube-public.mjs
+      youtube-upload.mjs
+[D] bin
+      bonus_store.json
+      chain_data.dat
+      quantumcoin.exe
+      quantumminer.exe
+[D] blockchain
+      block.go
+  [D] blockchain
+      blockchain.go
+        tx.go
+      coinbase.go
+      errors.go
+      metadata.go
+      mined_balance.go
+      nft.go
+      pow.go
+      reward_bridge.go
+      transaction.go
+    bonus_store.json
+[D] build
+    build_errors.txt
+      qc-wallet.exe
+    chain_data_backup.dat
+    chain_data.dat
+[D] cmd
+  [D] apitest
+        main.go
+    [D] quantumcoin-gui
+          main.go
+  [D] miner
+        main.go
+  [D] quantumcoin-gui
+        main.go
+        quantumcoin-gui.exe
+  [D] wallet
+    [D] assets
+          icon.png
+    [D] bin
+          bonus_store.json
+          chain_data.dat
+          quantumcoin.exe
+    [D] build
+      [D] bin
+            qc-wallet.exe
+        icon.go
+        main_fyne.go
+[D] config
+    config.json
+      config.go
+      constants.go
+      economics.go
+      economy.json
+      params.go
+[D] consolefx
+      spin.go
+    cspell.json
+[D] docs
+      whitepaper.md
+[D] game
+      game_engine.go
+      leaderboard.go
+      reward_system.go
+      telegram_adapter.go
+    go.mod
+    go.sum
+[D] gui
+      startup.go.disabled
+[D] i18n
+  [D] bin
+        bonus_store.json
+        chain_data.dat
+        quantumcoin.exe
+        quantumminer.exe
+      en.json
+      es.json
+      i18n.go
+      tr.json
+      zh.json
+    index.html
+[D] internal
+      bonus_compat.go
+      bonus_core.go
+      fee.go
+      mempool.go
+      reward_system.go
+      reward.go
+      utxo.go
+    lint_report.txt
+    main.go
+[D] miner
+    miner_address.txt
+      adapter_qc_local.go
+      assemble_block.go
+      difficulty.go
+      helpers.go
+      metrics.go
+      miner_effect.go
+      miner.go
+      mock_backend.go
+      nft_miner.go
+      rewarder.go
+      scheduler.go
+      submit_external.go
+      web_job.go
+      worker_cmd.go
+      worker.go
+[D] nft
+      nft.go
+[D] p2p
+      message.go
+      network.go
+      node.go
+    package-lock.json
+    package.json
+    project_structure.txt
+    qc_blockchain.db
+    qc_blockchain.db.lock
+[D] qc-desktop
+  [D] bin
+        bonus_store.json
+        chain_data.dat
+        quantumcoin.exe
+  [D] frontend
+    quantumcoin.exe
+    README.md
+    README.md.rtf
+[D] release
+      bonus_store.json
+      chain_data.dat
+      mined_balance.json
+      miner_address.txt
+      quantumcoin.exe
+      wallet_address.txt
+      wallet-gui.exe
+[D] socialbot
+      .env.example
+      auth.go
+      bot.go
+  [D] content
+      content.go
+    [D] queue
+          sample.yaml
+      go.mod
+      main.go
+  [D] platforms
+        instagram.go
+        publish.go
+        telegram.go
+        tiktok.go
+        x.go
+        youtube.go
+      scheduler.go
+[D] src
+      app.js
+      styles.css
+    staticcheck.conf
+[D] telegram_game
+  [D] __pycache__
+        config.cpython-311.pyc
+        config.cpython-313.pyc
+        constants.cpython-313.pyc
+  [D] assets
+        mining_gif.gif
+        nft_templates
+  [D] blockchain
+    [D] __pycache__
+          qc_chain_api.cpython-311.pyc
+        qc_chain_api.py
+      config.py
+      constants.py
+  [D] database
+    [D] __pycache__
+          redis_store.cpython-311.pyc
+          sqlite_store.cpython-313.pyc
+        redis_store.py
+        sqlite_store.py
+      game.db
+      game.db-shm
+      game.db-wal
+      game.go
+  [D] handlers
+        __init__.py
+    [D] __pycache__
+          __init__.cpython-311.pyc
+          __init__.cpython-313.pyc
+          claim.cpython-311.pyc
+          claim.cpython-313.pyc
+          core.cpython-313.pyc
+          leaderboard.cpython-311.pyc
+          leaderboard.cpython-313.pyc
+          mining.cpython-311.pyc
+          mining.cpython-313.pyc
+          moon.cpython-313.pyc
+          profile.cpython-311.pyc
+          profile.cpython-313.pyc
+          referral.cpython-311.pyc
+          referral.cpython-313.pyc
+          shop.cpython-313.pyc
+          social.cpython-313.pyc
+          start.cpython-311.pyc
+          start.cpython-313.pyc
+          wallet.cpython-311.pyc
+          wallet.cpython-313.pyc
+        claim.py
+        core.py
+        leaderboard.py
+        mining.py
+        moon.py
+        profile.py
+        referral.py
+        shop.py
+        social.py
+        start.py
+        wallet.py
+      main_bot.py
+  [D] miniapp
+        game.js
+        index.html
+      project_tree.txt
+      requirements.txt
+  [D] utils
+        __init__.py
+    [D] __pycache__
+          __init__.cpython-313.pyc
+          reward_engine.cpython-311.pyc
+          state.cpython-313.pyc
+          stats.cpython-311.pyc
+          tgwt_pool.cpython-313.pyc
+        nft_utils.py
+        reward_engine.py
+        state.py
+        stats.py
+        tgwt_pool.py
+  [D] web
+    [D] __pycache__
+          app.cpython-313.pyc
+        app.py
+    [D] frontend
+          .env.local
+          index.html
+          package.json
+      [D] public
+        [D] assets
+          [D] backgrounds
+                PUT_MOON_BG_HERE.txt
+          [D] ship
+                PUT_SHIP_GLB_HERE.txt
+                ship.glb
+          vite.config.js
+    [D] src
+      [D] api
+            client.js
+            mining.js
+            wallet.js
+          App.jsx
+      [D] components
+            NavBar.jsx
+      [D] game
+            constants.js
+            state.js
+          main.jsx
+      [D] pages
+            Inventory.jsx
+            Leaderboard.jsx
+            Links.jsx
+            Mining.jsx
+            Settings.jsx
+            Tasks.jsx
+      [D] three
+            LunarSurface.js
+            MoonWorld.js
+            Scene3D.js
+            zones.js
+    [D] static
+          app.js
+      [D] img
+            moon_bg.jpg
+            ship1.svg
+        [D] ships
+      [D] models
+          scene3d.js
+          styles.css
+      [D] three
+    [D] templates
+          base.html
+          game.html
+          index.html
+          leaderboard.ht
+          player.html
+      [D] static
+            app.js
+            styles.css
+    test_ui.go
+[D] testnet
+      faucet.json
+      genesis.json
+      peers.txt
+      README.md
+[D] tests
+      faucet.go
+      test_signature.go
+      testnet.go
+[D] token
+      miner.go
+      qc20.go
+      qc721.go
+      storage.go
+      token.go
+[D] ui
+      dashboard_ui.go.disabled
+      explorer_ui.go.disabled
+      explorer.go.disabled
+      main_ui.go.bak
+      mine_ui.go.disabled
+      send_ui.go.disabled
+      settings_ui.go.disabled
+      wallet_ui.go.disabled
+[D] utils
+      base58.go
+      crypto.go
+      hash.go
+      helpers.go
+      utils.go
+    vt_windows.go
+[D] wallet
+      ensure.go
+      import_key.go
+      io.go
+      keypair.go
+      signature.go
+      test_wallet.go
+      validate.go
+      wallet.go
+[D] webui
+      embed.go
+      handler.go
+[D] webwallet
+      index.html
+      package-lock.json
+      package.json
+  [D] src
+        App.tsx
+        main.tsx
+      vite.config.ts
