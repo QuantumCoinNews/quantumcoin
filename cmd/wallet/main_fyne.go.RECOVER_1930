@@ -48,7 +48,7 @@ func isSharingViolation(err error) bool {
 
 /* ================== Versiyon & Renkler ================== */
 
-var appVersion = "wallet-gui v1.7"
+var appVersion = "wallet-gui v1.6"
 
 var (
 	colSuccess = color.NRGBA{R: 46, G: 204, B: 113, A: 255} // yeşil
