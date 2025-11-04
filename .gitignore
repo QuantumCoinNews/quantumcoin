@@ -1,57 +1,70 @@
-﻿# Go build artifacts
+﻿# ================= Go build artifacts =================
 /bin/
 /dist/
 /build/
 /coverage/
-*.exe
 *.test
 *.out
+*.exe
 
-# IDE / Editor
+# ================= IDE / Editor =================
 .vscode/
-*.code-workspace
 .idea/
+*.code-workspace
 *.swp
 *.swo
 
-# Project local data
-chain_data*.dat
-qc_blockchain.db*
+# ================= OS junk =================
+Thumbs.db
+.DS_Store
+
+# ================= Project runtime data =================
+# veritabanı / zincir dosyaları
+/chain_data*.dat
+/qc_blockchain.db*
 *.db
 *.db.lock
 *.dat
+
+# cüzdan / cache / log
 .wallet
 wallet_data.json
+wallet_priv.hex
+wallet_address.txt
+miner_address.txt
+wallet_balance.cache.json
+mined_balance.json
 bonus_store.json
 .quantumcoin_tmp/
 *.log
+api_out.log
+miner_out.log
+wallet_gui_console.log
 
-# OS
-Thumbs.db
-.DS_Store
-# --- keep repo clean: don't commit built artifacts from release ---
+# yedek/ara dosyalar
+*.bak
+*.RECOVER_*
+
+# Node (varsa)
+node_modules/
+
+# ================= Release klasörü: sadece scriptler takipte =================
 /release/*.exe
 /release/*.dll
 /release/*.pdb
 /release/*.db
-/release/*.db*
 /release/*.dat
 /release/qc_blockchain.db*
 /release/*.log
-# --- keep repo clean: don't commit built artifacts or runtime data ---
-/release/*.exe
-/release/*.dll
-/release/*.pdb
-/release/*.db
-/release/*.db*
-/release/*.dat
-/release/qc_blockchain.db*
-/release/*.log
-/chain_data*.dat
-*.log
-node_modules
+/release/*.json
+/release/*.txt
+# allow-list: bu dosyaları YİNE DE TAKİP ET
+!/release/run_miner.cmd
+# (istersen bunları da takipte bırakabilirsin)
+!/release/run_miner.ps1
+!/release/stop_miner.ps1
 
-# === secrets/logs/cache (auto) ===
+# ================= Secrets / keys =================
 .env
 *.env
 .env.*
@@ -65,15 +78,4 @@ env.local
 credentials.*
 id_rsa*
 id_ecdsa*
-appsettings.Development.json
-appsettings.*.Local.json
-config.local.json
-wallet_priv.hex
-wallet_address.txt
-miner_address.txt
-wallet_balance.cache.json
-mined_balance.json
-miner_out.log
-api_out.log
-
 ssh_private_key*
