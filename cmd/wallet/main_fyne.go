@@ -1,3 +1,6 @@
+//go:build windows
+// +build windows
+
 // cmd/wallet/main_fyne.go
 package main
 
@@ -35,6 +38,81 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
+var ansiRegexp = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+func stripANSI(s string) string {
+	return ansiRegexp.ReplaceAllString(s, "")
+}
+
+// ----------------------------------------------------------
+// Windows'ta açılışta kendi konsolumuzu bırak (GUI siyah pencere göstermesin)
+// --- Windows helper'ları ---
+func hideConsoleOnStartup() {
+	// sadece Windows
+	if runtime.GOOS != "windows" {
+		return
+	}
+	// mevcut konsolu bırak
+	mod := syscall.NewLazyDLL("kernel32.dll")
+	proc := mod.NewProc("FreeConsole")
+	_, _, _ = proc.Call()
+}
+
+// GUI'den miner'ı TEK bir görünen CMD penceresinde başlatır.
+// GUI'den miner'ı tek bir görünen CMD penceresinde başlatır.
+func startMinerVisible() error {
+	exePath, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	releaseDir := filepath.Dir(exePath)
+	bat := filepath.Join(releaseDir, "run_miner.cmd")
+
+	// dosya yoksa net hata dön
+	if _, err := os.Stat(bat); err != nil {
+		return fmt.Errorf("run_miner.cmd not found: %w", err)
+	}
+
+	// TEK cmd: cmd /c start "QuantumCoin Miner" <tam_yol\run_miner.cmd>
+	cmd := exec.Command("cmd", "/c", "start", "QuantumCoin Miner", bat)
+	cmd.Dir = releaseDir
+
+	// küçük başlatıcı pencereyi gizle
+	if runtime.GOOS == "windows" {
+		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	}
+
+	return cmd.Start()
+}
+
+// GUI'den miner'ı durdur
+func stopMinerVisible() error {
+	exePath, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	releaseDir := filepath.Dir(exePath)
+
+	_ = os.WriteFile(filepath.Join(releaseDir, "miner_stop.flag"), []byte("stop"), 0644)
+
+	if runtime.GOOS == "windows" {
+		cmd1 := exec.Command("taskkill", "/IM", "quantumcoin.exe", "/F")
+		cmd1.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		_ = cmd1.Run()
+
+		cmd2 := exec.Command("taskkill", "/F", "/FI", `WINDOWTITLE eq QuantumCoin Miner`)
+		cmd2.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		_ = cmd2.Run()
+	} else {
+		_ = exec.Command("pkill", "-f", "quantumcoin").Run()
+	}
+
+	// <<< bu fonksiyon boşa durmasın
+	clearMinerPID()
+
+	return nil
+}
+
 // Windows paylaşım kilidi metnini yakalamak için basit helper
 func isSharingViolation(err error) bool {
 	if err == nil {
@@ -48,7 +126,7 @@ func isSharingViolation(err error) bool {
 
 /* ================== Versiyon & Renkler ================== */
 
-var appVersion = "wallet-gui v1.7"
+var appVersion = "wallet-gui v1.8"
 
 var (
 	colSuccess = color.NRGBA{R: 46, G: 204, B: 113, A: 255} // yeşil
@@ -74,8 +152,6 @@ var (
 	// Loga bağlı otomatik bakiye yenileme için throttle
 	minerRefreshMu   sync.Mutex
 	minerLastRefresh time.Time
-
-	langSelect *widget.Select
 )
 
 // ---- Miner komut sabitleri ----
@@ -99,6 +175,7 @@ func exeDir() string {
 func isWalletTabActive(w fyne.Window) bool {
 	if w == nil {
 		return true
+
 	}
 	// buildUI() içinde AppTabs kullanılıyor; seçili sekmeyi bulalım
 	if root, ok := w.Content().(*fyne.Container); ok {
@@ -118,6 +195,7 @@ func isWalletTabActive(w fyne.Window) bool {
 
 // Lint: bazı buildlerde kullanılmayabilir; referansla sustur (top-level)
 var _ = isWalletTabActive
+var _ = startMinerInCmd
 
 /* ============ Tema ============ */
 
@@ -127,7 +205,23 @@ var themeValue = "auto" // "auto" | "light" | "dark"
 // Tema Select'i (dil değişince etiketleri yenilemek için)
 var themeSel *widget.Select
 
-// i18n sözlüğünde tema anahtarları yoksa ekle (TR/EN/ES/ZH)
+// Dil Select'i (global — makeLangSelect bunu kullanıyor)
+var langSelect *widget.Select
+
+// Programatik güncellemelerde OnChanged’i tetiklememek için guard
+var themeSelUpdating int
+
+// SetSelected'i callback tetiklemeden yapmak için yardımcı
+func setThemeSelectSilently(label string) {
+	if themeSel == nil {
+		return
+	}
+	themeSelUpdating++
+	themeSel.SetSelected(label)
+	themeSelUpdating--
+}
+
+// i18n sözlüğünde tema anahtarlarını garanti altına al
 func ensureThemeI18nKeys() {
 	need := func(lang, k, v string) {
 		if i18n[lang] == nil {
@@ -137,22 +231,34 @@ func ensureThemeI18nKeys() {
 			i18n[lang][k] = v
 		}
 	}
+
 	// TR
 	need("tr", "theme_auto", "Otomatik")
 	need("tr", "theme_light", "Aydınlık")
 	need("tr", "theme_dark", "Karanlık")
+
 	// EN
 	need("en", "theme_auto", "Auto")
 	need("en", "theme_light", "Light")
 	need("en", "theme_dark", "Dark")
+
 	// ES
 	need("es", "theme_auto", "Automático")
 	need("es", "theme_light", "Claro")
 	need("es", "theme_dark", "Oscuro")
+
 	// ZH
 	need("zh", "theme_auto", "自动")
 	need("zh", "theme_light", "浅色")
 	need("zh", "theme_dark", "深色")
+}
+
+// --- Kalıcı ayar kayıt helper'ı ---
+func persistUISettings() {
+	if a := fyne.CurrentApp(); a != nil {
+		a.Preferences().SetString("lang", curLang)
+		a.Preferences().SetString("theme_value", themeValue)
+	}
 }
 
 // Girilen isimden temayı uygula (TR/EN/ES/ZH etiketlerini anlar)
@@ -160,36 +266,20 @@ func applyTheme(name string) {
 	s := strings.ToLower(strings.TrimSpace(name))
 
 	switch {
-	// — DARK — (TR/EN/ES/ZH)
-	case s == "dark" || s == "karanlık" || s == "oscuro" ||
-		s == "深色" || s == "深色模式":
+	case s == "dark" || s == "karanlık" || s == "oscuro" || s == "深色" || s == "深色模式":
 		themeValue = "dark"
 		fyne.CurrentApp().Settings().SetTheme(theme.DarkTheme())
-
-	// — LIGHT — (TR/EN/ES/ZH)
-	case s == "light" || s == "aydınlık" || s == "claro" ||
-		s == "浅色" || s == "亮色" || s == "浅色模式":
+	case s == "light" || s == "aydınlık" || s == "claro" || s == "浅色" || s == "亮色" || s == "浅色模式":
 		themeValue = "light"
 		fyne.CurrentApp().Settings().SetTheme(theme.LightTheme())
-
-	// — AUTO/DEFAULT — (TR/EN/ES/ZH)
-	case s == "auto" || s == "automatic" || s == "otomatik" ||
-		s == "automático" || s == "automatico" || s == "自动" || s == "自動":
-		themeValue = "auto"
-		fyne.CurrentApp().Settings().SetTheme(theme.DefaultTheme())
-
-	// — fallback —
-	default:
+	default: // auto
 		themeValue = "auto"
 		fyne.CurrentApp().Settings().SetTheme(theme.DefaultTheme())
 	}
-}
-if a := fyne.CurrentApp(); a != nil {
-    a.Preferences().SetString("lang", curLang)
-}
-refreshThemeSelectLabels() // tema seçenekleri yeni dile anında çevirinsin
 
-    a.Preferences().SetString("theme_value", themeValue)
+	// Seçimi kalıcı kaydet + menü etiketini güncelle
+	persistUISettings()
+	refreshThemeSelectLabels()
 }
 
 // Dil değişiminde Select etiketlerini güncelle
@@ -200,21 +290,25 @@ func refreshThemeSelectLabels() {
 	themeSel.Options = []string{T("theme_auto"), T("theme_light"), T("theme_dark")}
 	switch themeValue {
 	case "light":
-		themeSel.SetSelected(T("theme_light"))
+		setThemeSelectSilently(T("theme_light"))
 	case "dark":
-		themeSel.SetSelected(T("theme_dark"))
+		setThemeSelectSilently(T("theme_dark"))
 	default:
-		themeSel.SetSelected(T("theme_auto"))
+		setThemeSelectSilently(T("theme_auto"))
 	}
 	themeSel.Refresh()
 }
 
-// Tema Select oluşturucu (yerelleştirilmiş)
+// Tema Select oluşturucu (yerelleştirilmiş) — **GUARD UYGULANDI**
 func makeThemeSelect() *widget.Select {
-	ensureThemeI18nKeys() // etiketleri garanti altına al
+	ensureThemeI18nKeys()
 	themeSel = widget.NewSelect(
 		[]string{T("theme_auto"), T("theme_light"), T("theme_dark")},
 		func(label string) {
+			// kritik: sessiz SetSelected çağrılarında geri çağrıyı yut
+			if themeSelUpdating > 0 {
+				return
+			}
 			l := strings.ToLower(strings.TrimSpace(label))
 			switch l {
 			case strings.ToLower(T("theme_dark")):
@@ -230,61 +324,147 @@ func makeThemeSelect() *widget.Select {
 	return themeSel
 }
 
-/* === Entegrasyon notları (tek satırlık değişiklikler) ===
+/* ============ Backup/Restore i18n anahtarları (garanti) ============ */
+func ensureBackupRestoreI18nKeys() {
+	need := func(lang, k, v string) {
+		if i18n[lang] == nil {
+			i18n[lang] = dict{}
+		}
+		if _, ok := i18n[lang][k]; !ok || strings.TrimSpace(i18n[lang][k]) == "" {
+			i18n[lang][k] = v
+		}
+	}
+	// --- Düğmeler / menü ---
+	need("tr", "backup", "Cüzdanı Yedekle")
+	need("tr", "restore", "Geri Yükle")
+	need("en", "backup", "Backup Wallet")
+	need("en", "restore", "Restore")
+	need("es", "backup", "Respaldar monedero")
+	need("es", "restore", "Restaurar")
+	need("zh", "backup", "备份钱包")
+	need("zh", "restore", "恢复")
 
-1) buildUI(...) içinde, ESKİ tema select satırını kaldır:
-   // ESKİ:
-   // themeSel := widget.NewSelect([]string{"Otomatik", "Aydınlık", "Karanlık"}, func(s string){ applyTheme(s) })
+	// --- Backup diyalogları ---
+	need("tr", "backup_title", "Yedekleme")
+	need("tr", "backup_select_folder", "Yedek klasörünü seçin")
+	need("tr", "backup_success", "Yedekleme tamamlandı")
+	need("tr", "backup_failed", "Yedekleme başarısız")
+	need("en", "backup_title", "Backup")
+	need("en", "backup_select_folder", "Select backup folder")
+	need("en", "backup_success", "Backup completed")
+	need("en", "backup_failed", "Backup failed")
+	need("es", "backup_title", "Copia de seguridad")
+	need("es", "backup_select_folder", "Selecciona carpeta de copia")
+	need("es", "backup_success", "Copia completada")
+	need("es", "backup_failed", "Copia fallida")
+	need("zh", "backup_title", "备份")
+	need("zh", "backup_select_folder", "选择备份文件夹")
+	need("zh", "backup_success", "备份完成")
+	need("zh", "backup_failed", "备份失败")
 
-   // YENİ:
-   themeSel = makeThemeSelect()
+	// --- Restore diyalogları ---
+	need("tr", "restore_title", "Geri Yükleme")
+	need("tr", "restore_pick_file", "Yedek dosyasını seçin")
+	need("tr", "restore_success", "Geri yükleme tamamlandı")
+	need("tr", "restore_failed", "Geri yükleme başarısız")
+	need("en", "restore_title", "Restore")
+	need("en", "restore_pick_file", "Pick backup file")
+	need("en", "restore_success", "Restore completed")
+	need("en", "restore_failed", "Restore failed")
+	need("es", "restore_title", "Restaurar")
+	need("es", "restore_pick_file", "Selecciona archivo de copia")
+	need("es", "restore_success", "Restauración completada")
+	need("es", "restore_failed", "Fallo al restaurar")
+	need("zh", "restore_title", "恢复")
+	need("zh", "restore_pick_file", "选择备份文件")
+	need("zh", "restore_success", "恢复完成")
+	need("zh", "restore_failed", "恢复失败")
+}
 
-2) Header kurulumunda global themeSel’i kullanmaya devam edin:
-   header := container.NewBorder(
-       nil, nil,
-       widget.NewLabelWithStyle(T("title"), fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-       container.NewHBox(themeSel, makeLangSelect(w)),
-   )
+/* ============ Dil değiştirme yardımcıları (i18n) ============ */
 
-3) Dil select’inin onChange'inde (dil değiştirince) buildUI(...) çağırmıyorsanız,
-   şu satırı ekleyin ki tema menüsü yeni dile çevrilsin:
-   refreshThemeSelectLabels()
+// Uygulama dilini değiştir, tercihleri kaydet ve UI'yı yeniden kur
+func changeLanguage(newLang string, w fyne.Window) {
+	newLang = strings.TrimSpace(newLang)
+	if newLang == "" || newLang == curLang {
+		return
+	}
+	curLang = newLang
+	persistUISettings()
 
-*/
-/* ============ mined_balance.json path (esnek) ============ */
+	// Cüzdan auto-refresh loop'u temizle (yeniden kurulacak)
+	if walletAutoRefreshStop != nil {
+		close(walletAutoRefreshStop)
+		walletAutoRefreshStop = nil
+	}
+
+	// Başlık ve tema menüsü etiketleri yeni dile göre güncellensin
+	w.SetTitle(T("title") + " — " + appVersion)
+	refreshThemeSelectLabels()
+
+	// Tüm UI'ı yeni dilde yeniden inşa et
+	buildUI(w)
+}
+
+/* ============ mined_balance.json path (esnek & sıralı) ============ */
 
 func minedJSONPath() string {
-	candidates := []string{}
+	// küçük yardımcı: yineleneni ekleme
+	appendUniq := func(list *[]string, p string) {
+		if p == "" {
+			return
+		}
+		cp := filepath.Clean(p)
+		for _, s := range *list {
+			if strings.EqualFold(filepath.Clean(s), cp) {
+				return
+			}
+		}
+		*list = append(*list, cp)
+	}
+
+	candidates := make([]string, 0, 32)
+
+	// 0) Manuel override en üstte
 	if v := strings.TrimSpace(os.Getenv("QC_MINED_PATH")); v != "" {
-		candidates = append(candidates, v)
+		appendUniq(&candidates, v)
 	}
+
+	// 1) QC_NODE_DIR verildiyse orası
 	if v := strings.TrimSpace(os.Getenv("QC_NODE_DIR")); v != "" {
-		candidates = append(candidates,
-			filepath.Join(v, "mined_balance.json"),
-			filepath.Join(v, "miner", "mined_balance.json"),
-			filepath.Join(v, "data", "mined_balance.json"),
-		)
+		appendUniq(&candidates, filepath.Join(v, "mined_balance.json"))
+		appendUniq(&candidates, filepath.Join(v, "miner", "mined_balance.json"))
+		appendUniq(&candidates, filepath.Join(v, "data", "mined_balance.json"))
 	}
+
+	// 2) nodeDir() (çoğu zaman gerçek node klasörü)
+	if nd := nodeDir(); nd != "" {
+		appendUniq(&candidates, filepath.Join(nd, "mined_balance.json"))
+		appendUniq(&candidates, filepath.Join(nd, "miner", "mined_balance.json"))
+		appendUniq(&candidates, filepath.Join(nd, "data", "mined_balance.json"))
+	}
+
+	// 3) Windows sabitleri (sizin listedeki gibi)
 	if runtime.GOOS == "windows" {
-		candidates = append(candidates,
-			`C:\QuantumMiner\mined_balance.json`,
-			`C:\QuantumMiner\miner\mined_balance.json`,
-			`C:\QuantumMiner\data\mined_balance.json`,
-		)
+		appendUniq(&candidates, `C:\QuantumMiner\mined_balance.json`)
+		appendUniq(&candidates, `C:\QuantumMiner\miner\mined_balance.json`)
+		appendUniq(&candidates, `C:\QuantumMiner\data\mined_balance.json`)
 	}
-	d := exeDir()
-	candidates = append(candidates,
-		filepath.Join(d, "mined_balance.json"),
-		filepath.Join(d, "miner", "mined_balance.json"),
-	)
+
+	// 4) exeDir() (wallet-gui’nin durduğu yer)
+	ed := exeDir()
+	appendUniq(&candidates, filepath.Join(ed, "mined_balance.json"))
+	appendUniq(&candidates, filepath.Join(ed, "miner", "mined_balance.json"))
+
+	// 5) Çalışma dizini
 	if wd, err := os.Getwd(); err == nil {
-		candidates = append(candidates,
-			filepath.Join(wd, "mined_balance.json"),
-			filepath.Join(wd, "miner", "mined_balance.json"),
-		)
+		appendUniq(&candidates, filepath.Join(wd, "mined_balance.json"))
+		appendUniq(&candidates, filepath.Join(wd, "miner", "mined_balance.json"))
 	}
+
+	// 6) Alternatif isimler – aynı baz dizinlerde dene
 	altNames := []string{"mined.json", "mining_balance.json", "rewards.json", "miner_balance.json"}
-	baseDirs := []string{d}
+	baseDirs := []string{ed, nodeDir()}
 	if v := strings.TrimSpace(os.Getenv("QC_NODE_DIR")); v != "" {
 		baseDirs = append(baseDirs, v)
 	}
@@ -292,16 +472,156 @@ func minedJSONPath() string {
 		baseDirs = append(baseDirs, `C:\QuantumMiner`, `C:\QuantumMiner\data`, `C:\QuantumMiner\miner`)
 	}
 	for _, bd := range baseDirs {
+		if bd == "" {
+			continue
+		}
 		for _, name := range altNames {
-			candidates = append(candidates, filepath.Join(bd, name))
+			appendUniq(&candidates, filepath.Join(bd, name))
 		}
 	}
+
+	// 7) İlk mevcut dosyayı seç
 	for _, p := range candidates {
-		if _, err := os.Stat(p); err == nil {
+		if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
 			return p
 		}
 	}
-	return filepath.Join(exeDir(), "mined_balance.json")
+
+	// 8) Fallback: nodeDir() varsa orası, yoksa exeDir()
+	if nd := nodeDir(); nd != "" {
+		return filepath.Join(nd, "mined_balance.json")
+	}
+	return filepath.Join(ed, "mined_balance.json")
+}
+
+// ================= Preferences & Startup Load =================
+
+func loadPrefsAtStartup() {
+	// i18n anahtarlarını tek seferde garanti et
+	ensureThemeI18nKeys()
+	ensureBackupRestoreI18nKeys()
+
+	// ---- Dil (QC_LANG > Prefs > "en") ----
+	lang := strings.TrimSpace(os.Getenv("QC_LANG"))
+	if lang == "" {
+		if a := fyne.CurrentApp(); a != nil {
+			lang = strings.TrimSpace(a.Preferences().String("lang"))
+		}
+	}
+	switch strings.ToLower(lang) {
+	case "tr", "en", "es", "zh":
+		curLang = strings.ToLower(lang)
+	default:
+		curLang = "en"
+	}
+
+	// ---- Tema (QC_THEME / QC_THEME_VALUE > Prefs > "auto") ----
+	t := strings.TrimSpace(os.Getenv("QC_THEME"))
+	if t == "" {
+		t = strings.TrimSpace(os.Getenv("QC_THEME_VALUE"))
+	}
+	if t == "" {
+		if a := fyne.CurrentApp(); a != nil {
+			t = a.Preferences().StringWithFallback("theme_value", "auto")
+		} else {
+			t = "auto"
+		}
+	}
+
+	// Uygula (applyTheme TR/EN/ES/ZH eşanlamlılarını da anlar)
+	applyTheme(t)
+
+	// Seçimleri kalıcı yaz (dil + tema)
+	persistUISettings()
+}
+
+// quantumcoin.exe/quantumcoin ikilisini akıllıca bulur (QC_NODE_DIR, exe dir, WD, sabit yollar, PATH)
+func findNodeExe() string {
+	// OS'e göre isim önceliği
+	exeNames := []string{"quantumcoin"}
+	if runtime.GOOS == "windows" {
+		exeNames = []string{"quantumcoin.exe", "quantumcoin"} // .exe ve uzantısız ikisini de dene
+	}
+
+	candidates := []string{}
+
+	// 0) PATH üzerinde varsa en üste koy
+	for _, n := range exeNames {
+		if p, err := exec.LookPath(n); err == nil && strings.TrimSpace(p) != "" {
+			candidates = append(candidates, p)
+			break
+		}
+	}
+
+	// 1) QC_NODE_DIR (öncelikli)
+	if v := strings.TrimSpace(os.Getenv("QC_NODE_DIR")); v != "" {
+		for _, n := range exeNames {
+			candidates = append(candidates,
+				filepath.Join(v, n),
+				filepath.Join(v, "release", n),
+				filepath.Join(v, "bin", n),
+				filepath.Join(v, "node", n),
+				filepath.Join(v, "miner", n),
+			)
+		}
+	}
+
+	// 2) GUI exe klasörü
+	d := exeDir()
+	for _, n := range exeNames {
+		candidates = append(candidates,
+			filepath.Join(d, n),
+			filepath.Join(d, "release", n),
+			filepath.Join(d, "bin", n),
+			filepath.Join(d, "node", n),
+			filepath.Join(d, "miner", n),
+		)
+	}
+
+	// 3) Çalışma dizini
+	if wd, err := os.Getwd(); err == nil {
+		for _, n := range exeNames {
+			candidates = append(candidates,
+				filepath.Join(wd, n),
+				filepath.Join(wd, "release", n),
+				filepath.Join(wd, "bin", n),
+				filepath.Join(wd, "node", n),
+				filepath.Join(wd, "miner", n),
+			)
+		}
+	}
+
+	// 4) Bilinen kurulum yolları
+	if runtime.GOOS == "windows" {
+		for _, base := range []string{`C:\QuantumMiner`, `C:\QuantumMiner\bin`} {
+			candidates = append(candidates, filepath.Join(base, exeNames[0]))
+		}
+	} else {
+		for _, n := range exeNames {
+			candidates = append(candidates,
+				filepath.Join("/usr/local/bin", n),
+				filepath.Join("/usr/bin", n),
+				filepath.Join("/opt/quantumcoin", n),
+				filepath.Join("/opt/quantumcoin/bin", n),
+			)
+		}
+	}
+
+	// İlk geçerli dosyayı döndür
+	for _, c := range candidates {
+		if c == "" {
+			continue
+		}
+		if st, err := os.Stat(c); err == nil && !st.IsDir() {
+			return c
+		}
+	}
+
+	// Son çare: exeDir + isim
+	if runtime.GOOS == "windows" {
+		return filepath.Join(d, "quantumcoin.exe")
+	}
+	return filepath.Join(d, "quantumcoin")
 }
 
 /* ============ Miner status helpers ============ */
@@ -374,10 +694,11 @@ func minerActiveHeuristic() bool {
 
 /* ============ Node dir & adres dosyaları ============ */
 
-// quantumcoin.exe’nin bulunduğu klasörü bul
+// quantumcoin.exe’nin bulunabileceği klasörü belirle
 func nodeDir() string {
 	d := exeDir()
-	// 1) GUI ile aynı klasörde miner varsa doğrudan kullan
+
+	// 1) GUI ile aynı klasörde node varsa
 	if _, err := os.Stat(filepath.Join(d, "quantumcoin.exe")); err == nil {
 		return d
 	}
@@ -387,7 +708,7 @@ func nodeDir() string {
 			return v
 		}
 	}
-	// 3) Windows sabit konum
+	// 3) Windows sabit kurulum klasörü
 	if runtime.GOOS == "windows" {
 		if _, err := os.Stat(`C:\QuantumMiner\quantumcoin.exe`); err == nil {
 			return `C:\QuantumMiner`
@@ -399,7 +720,7 @@ func nodeDir() string {
 			return wd
 		}
 	}
-	// fallback (GUI klasörü)
+	// fallback: GUI exe klasörü
 	return d
 }
 
@@ -417,7 +738,7 @@ func loadText(path string) string {
 	return strings.TrimSpace(string(b))
 }
 
-// Mevcut (ilk geçerli) adresi bulur: txt -> APPDATA\wallet.json -> regex fallback
+// Mevcut (ilk geçerli) adresi bulur: txt -> APPDATA\QuantumCoin\wallet.json -> regex
 func detectExistingAddress() string {
 	// 1) Yerel txt dosyaları (temizle + doğrula)
 	if v := loadText(walletAddressPath()); v != "" {
@@ -433,7 +754,7 @@ func detectExistingAddress() string {
 		}
 	}
 
-	// 2) Windows: %APPDATA%\QuantumCoin\wallet.json (tolerant)
+	// 2) Windows: %APPDATA%\QuantumCoin\wallet.json (tolerant okuma)
 	if runtime.GOOS == "windows" {
 		if app := strings.TrimSpace(os.Getenv("APPDATA")); app != "" {
 			p := filepath.Join(app, "QuantumCoin", "wallet.json")
@@ -448,24 +769,19 @@ func detectExistingAddress() string {
 					Addresses     []string `json:"addresses"`
 				}
 				if json.Unmarshal(b, &w) == nil {
-					cands := []string{
-						w.Address, w.Addr, w.WalletAddress, w.Reward, w.RewardAddress,
-					}
+					cands := []string{w.Address, w.Addr, w.WalletAddress, w.Reward, w.RewardAddress}
 					cands = append(cands, w.Addresses...)
-					for _, cand := range cands {
-						a := cleanBase58(strings.TrimSpace(cand))
+					for _, c := range cands {
+						a := cleanBase58(strings.TrimSpace(c))
 						if a != "" && isLikelyBase58Address(a) {
 							return a
 						}
 					}
 				}
-
 				// 2b) Genel map içinden olası anahtarlar
 				var m map[string]interface{}
 				if json.Unmarshal(b, &m) == nil {
-					for _, k := range []string{
-						"address", "addr", "wallet", "wallet_address", "reward", "reward_address",
-					} {
+					for _, k := range []string{"address", "addr", "wallet", "wallet_address", "reward", "reward_address"} {
 						if s, ok := m[k].(string); ok {
 							a := cleanBase58(strings.TrimSpace(s))
 							if a != "" && isLikelyBase58Address(a) {
@@ -474,7 +790,6 @@ func detectExistingAddress() string {
 						}
 					}
 				}
-
 				// 2c) Regex fallback (Base58 26..50)
 				re := regexp.MustCompile(`[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{26,50}`)
 				if m := re.FindString(string(b)); m != "" {
@@ -491,33 +806,72 @@ func detectExistingAddress() string {
 	return ""
 }
 
-// Sadece adres üretir (quantumcoin.exe newaddr)
+// Sadece adres üretir (quantumcoin.exe newaddr) — kayıt yan etkisi yok
 func genAddressViaNode() (string, error) {
-	exe := filepath.Join(nodeDir(), "quantumcoin.exe")
+	exe := findNodeExe()
 	if _, err := os.Stat(exe); err != nil {
-		return "", fmt.Errorf("quantumcoin.exe not found: %w", err)
+		return "", fmt.Errorf("quantumcoin executable not found: %w", err)
 	}
-	cmd := exec.Command(exe, "newaddr")
-	cmd.Dir = nodeDir()
+
+	cmd := exec.Command(exe, "newaddr") // <-- DÜZGÜN KOMUT BU
+	cmd.Dir = filepath.Dir(exe)
+	if runtime.GOOS == "windows" {
+		// küçük cmd penceresini sakla
+		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	}
+	if os.Getenv("QC_NODE_DIR") == "" {
+		cmd.Env = append(os.Environ(), "QC_NODE_DIR="+filepath.Dir(exe))
+	}
+
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("newaddr error: %w (out=%s)", err, string(out))
 	}
-	s := string(out)
+	s := strings.TrimSpace(string(out))
 
-	// Önce bilinen biçimi tara
-	if i := strings.Index(s, "New Wallet Address:"); i >= 0 {
-		part := strings.TrimSpace(s[i+len("New Wallet Address:"):])
-		if j := strings.IndexByte(part, '\n'); j >= 0 {
-			part = part[:j]
-		}
-		part = cleanBase58(part)
-		if isLikelyBase58Address(part) {
-			return part, nil
+	// 1) Etiketli çıktılar
+	for _, marker := range []string{
+		"New Wallet Address:", "Wallet Address:", "New Address:", "Address:",
+	} {
+		if i := strings.Index(s, marker); i >= 0 {
+			part := strings.TrimSpace(s[i+len(marker):])
+			if j := strings.IndexByte(part, '\n'); j >= 0 {
+				part = part[:j]
+			}
+			part = cleanBase58(part)
+			if isLikelyBase58Address(part) {
+				return part, nil
+			}
 		}
 	}
 
-	// Regex fallback (Base58 26..50)
+	// 2) JSON olasılıkları
+	var obj struct {
+		Address       string `json:"address"`
+		WalletAddress string `json:"wallet_address"`
+		Addr          string `json:"addr"`
+	}
+	if json.Unmarshal([]byte(s), &obj) == nil {
+		for _, c := range []string{obj.Address, obj.WalletAddress, obj.Addr} {
+			a := cleanBase58(strings.TrimSpace(c))
+			if a != "" && isLikelyBase58Address(a) {
+				return a, nil
+			}
+		}
+	}
+	var any map[string]interface{}
+	if json.Unmarshal([]byte(s), &any) == nil {
+		for _, k := range []string{"address", "wallet_address", "addr"} {
+			if v, ok := any[k].(string); ok {
+				a := cleanBase58(strings.TrimSpace(v))
+				if a != "" && isLikelyBase58Address(a) {
+					return a, nil
+				}
+			}
+		}
+	}
+
+	// 3) Regex fallback
 	re := regexp.MustCompile(`[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{26,50}`)
 	if m := re.FindString(s); m != "" {
 		m = cleanBase58(m)
@@ -525,62 +879,152 @@ func genAddressViaNode() (string, error) {
 			return m, nil
 		}
 	}
-	return "", fmt.Errorf("address not found in newaddr output")
+	return "", fmt.Errorf("could not parse address from newaddr output: %q", s)
 }
 
 // Adres + private key (hex) birlikte üretir (quantumcoin.exe newaddr-priv)
 func genAddressPrivViaNode() (addr, privHex string, err error) {
-	exe := filepath.Join(nodeDir(), "quantumcoin.exe")
+	exe := findNodeExe()
 	if _, e := os.Stat(exe); e != nil {
-		err = fmt.Errorf("quantumcoin.exe not found: %w", e)
-		return
+		return "", "", fmt.Errorf("quantumcoin executable not found: %w", e)
 	}
+
 	cmd := exec.Command(exe, "newaddr-priv")
-	cmd.Dir = nodeDir()
+	cmd.Dir = filepath.Dir(exe)
+	if runtime.GOOS == "windows" {
+		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	}
+	if os.Getenv("QC_NODE_DIR") == "" {
+		cmd.Env = append(os.Environ(), "QC_NODE_DIR="+filepath.Dir(exe))
+	}
+
 	out, e := cmd.CombinedOutput()
 	if e != nil {
-		err = fmt.Errorf("newaddr-priv error: %w (out=%s)", e, string(out))
-		return
+		return "", "", fmt.Errorf("newaddr-priv error: %w (out=%s)", e, string(out))
 	}
-	s := string(out)
+	s := strings.TrimSpace(string(out))
 
-	// Address (etiketli kısım)
-	if i := strings.Index(s, "New Wallet Address:"); i >= 0 {
-		part := strings.TrimSpace(s[i+len("New Wallet Address:"):])
-		if j := strings.IndexByte(part, '\n'); j >= 0 {
-			part = part[:j]
+	// ---- 1) Etiketli satırlar (Address / PrivateKey) ----
+	for _, marker := range []string{"New Wallet Address:", "Wallet Address:", "New Address:", "Address:"} {
+		if i := strings.Index(s, marker); i >= 0 {
+			part := strings.TrimSpace(s[i+len(marker):])
+			if j := strings.IndexByte(part, '\n'); j >= 0 {
+				part = part[:j]
+			}
+			part = cleanBase58(part)
+			if isLikelyBase58Address(part) {
+				addr = part
+				break
+			}
 		}
-		part = cleanBase58(part)
-		if isLikelyBase58Address(part) {
-			addr = part
+	}
+	for _, marker := range []string{
+		"PrivateKey (hex):", "Private Key (hex):", "PrivateKey:", "Private Key:", "Priv:", "Secret:",
+	} {
+		if i := strings.Index(s, marker); i >= 0 {
+			part := strings.TrimSpace(s[i+len(marker):])
+			if j := strings.IndexByte(part, '\n'); j >= 0 {
+				part = part[:j]
+			}
+			part = strings.Trim(part, "\"' ")
+			part = strings.TrimPrefix(part, "0x")
+			privHex = part
+			break
 		}
 	}
 
-	// Private key hex (etiketli kısım)
-	if i := strings.Index(s, "PrivateKey (hex):"); i >= 0 {
-		part := strings.TrimSpace(s[i+len("PrivateKey (hex):"):])
-		if j := strings.IndexByte(part, '\n'); j >= 0 {
-			part = part[:j]
+	// ---- 2) JSON olasılıkları ----
+	if addr == "" || privHex == "" {
+		var obj struct {
+			Address       string `json:"address"`
+			WalletAddress string `json:"wallet_address"`
+			Addr          string `json:"addr"`
+
+			Private       string `json:"private"`
+			Priv          string `json:"priv"`
+			PrivKey       string `json:"privkey"`
+			PrivateKey    string `json:"private_key"`
+			PrivateKeyHex string `json:"privateKeyHex"`
 		}
-		privHex = strings.TrimSpace(part)
+		if json.Unmarshal([]byte(s), &obj) == nil {
+			if addr == "" {
+				for _, c := range []string{obj.Address, obj.WalletAddress, obj.Addr} {
+					a := cleanBase58(strings.TrimSpace(c))
+					if a != "" && isLikelyBase58Address(a) {
+						addr = a
+						break
+					}
+				}
+			}
+			if privHex == "" {
+				for _, c := range []string{obj.Private, obj.Priv, obj.PrivKey, obj.PrivateKey, obj.PrivateKeyHex} {
+					h := strings.TrimSpace(c)
+					h = strings.Trim(h, "\"' ")
+					h = strings.TrimPrefix(h, "0x")
+					if h != "" {
+						privHex = h
+						break
+					}
+				}
+			}
+		}
 	}
 
-	// Address fallback (regex)
+	// Generic map (anahtar adları farklıysa)
+	if (addr == "" || privHex == "") && json.Valid([]byte(s)) {
+		var any map[string]interface{}
+		if json.Unmarshal([]byte(s), &any) == nil {
+			// address
+			if addr == "" {
+				for _, k := range []string{"address", "wallet_address", "addr"} {
+					if v, ok := any[k].(string); ok {
+						a := cleanBase58(strings.TrimSpace(v))
+						if a != "" && isLikelyBase58Address(a) {
+							addr = a
+							break
+						}
+					}
+				}
+			}
+			// priv
+			if privHex == "" {
+				for _, k := range []string{"private", "priv", "privkey", "private_key", "privatekeyhex"} {
+					if v, ok := any[k].(string); ok {
+						h := strings.TrimSpace(v)
+						h = strings.Trim(h, "\"' ")
+						h = strings.TrimPrefix(h, "0x")
+						if h != "" {
+							privHex = h
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// ---- 3) Regex fallbacks ----
 	if addr == "" {
-		re := regexp.MustCompile(`[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{26,50}`)
-		if m := re.FindString(s); m != "" {
+		reB58 := regexp.MustCompile(`[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{26,50}`)
+		if m := reB58.FindString(s); m != "" {
 			m = cleanBase58(m)
 			if isLikelyBase58Address(m) {
 				addr = m
 			}
 		}
 	}
-
-	if addr == "" || privHex == "" {
-		err = fmt.Errorf("could not parse address/private key")
-		return
+	if privHex == "" {
+		reHex := regexp.MustCompile(`(?i)(?:0x)?[0-9a-f]{32,128}`)
+		if m := reHex.FindString(s); m != "" {
+			privHex = strings.TrimPrefix(m, "0x")
+		}
 	}
-	return
+
+	// ---- doğrula & dön ----
+	if addr == "" || !isLikelyBase58Address(addr) || strings.TrimSpace(privHex) == "" {
+		return "", "", fmt.Errorf("could not parse address/private key from newaddr-priv output")
+	}
+	return addr, privHex, nil
 }
 
 /* ================== API utils ================== */
@@ -705,16 +1149,26 @@ var i18n = map[string]dict{
 		"auto_refresh_on": "Otomatik Yenileme (3 sn)",
 		"generate_wallet": "Yeni Cüzdan Oluştur",
 
-		"miner_status":    "Durum",
-		"running":         "Çalışıyor",
-		"stopped":         "Durdu",
-		"logs":            "Kayıtlar",
-		"theme_auto":      "Otomatik",
-		"theme_light":     "Aydınlık",
-		"theme_dark":      "Karanlık",
-		"open_log_folder": "Log Klasörünü Aç",
-		"open_cmd_manual": "CMD (manuel) aç",
-		"miner_stopped":   "Madenci durduruldu.",
+		"miner_status":            "Durum",
+		"running":                 "Çalışıyor",
+		"stopped":                 "Durdu",
+		"logs":                    "Kayıtlar",
+		"theme_auto":              "Otomatik",
+		"theme_light":             "Aydınlık",
+		"theme_dark":              "Karanlık",
+		"open_log_folder":         "Log Klasörünü Aç",
+		"open_cmd_manual":         "CMD (manuel) aç",
+		"miner_stopped":           "Madenci durduruldu.",
+		"backup_wallet":           "Cüzdanı Yedekle",
+		"restore_wallet":          "Cüzdanı Geri Yükle",
+		"backup_password_title":   "Yedek Parolası",
+		"backup_password_prompt":  "Yedek parolasını girin:",
+		"restore_password_title":  "Yedek Parolası",
+		"restore_password_prompt": "Parolayı girin:",
+		"password_empty_error":    "Parola boş olamaz",
+		"backup_created":          "Yedek oluşturuldu.",
+		"restore_done_restart":    "Geri yüklendi (uygulamayı yeniden başlatın).",
+		"cancel":                  "İptal",
 	},
 	"en": {
 		"title":           "QuantumCoin Wallet & Miner",
@@ -749,16 +1203,26 @@ var i18n = map[string]dict{
 		"auto_refresh_on": "Auto Refresh (3s)",
 		"generate_wallet": "Generate New Wallet",
 
-		"miner_status":    "Status",
-		"running":         "Running",
-		"stopped":         "Stopped",
-		"logs":            "Logs",
-		"theme_auto":      "Auto",
-		"theme_light":     "Light",
-		"theme_dark":      "Dark",
-		"open_log_folder": "Open Log Folder",
-		"open_cmd_manual": "Open CMD (manual)",
-		"miner_stopped":   "Miner stopped.",
+		"miner_status":            "Status",
+		"running":                 "Running",
+		"stopped":                 "Stopped",
+		"logs":                    "Logs",
+		"theme_auto":              "Auto",
+		"theme_light":             "Light",
+		"theme_dark":              "Dark",
+		"open_log_folder":         "Open Log Folder",
+		"open_cmd_manual":         "Open CMD (manual)",
+		"miner_stopped":           "Miner stopped.",
+		"backup_wallet":           "Backup Wallet",
+		"restore_wallet":          "Restore Wallet",
+		"backup_password_title":   "Backup Password",
+		"backup_password_prompt":  "Enter a password for the backup:",
+		"restore_password_title":  "Backup Password",
+		"restore_password_prompt": "Enter the password:",
+		"password_empty_error":    "Password cannot be empty",
+		"backup_created":          "Backup created.",
+		"restore_done_restart":    "Restored (please restart the application).",
+		"cancel":                  "Cancel",
 	},
 	"es": {
 		"title":           "QuantumCoin Billetera & Minero",
@@ -793,16 +1257,26 @@ var i18n = map[string]dict{
 		"auto_refresh_on": "Actualización Automática (3s)",
 		"generate_wallet": "Generar Nueva Billetera",
 
-		"miner_status":    "Estado",
-		"running":         "En ejecución",
-		"stopped":         "Detenido",
-		"logs":            "Registros",
-		"theme_auto":      "Automático",
-		"theme_light":     "Claro",
-		"theme_dark":      "Oscuro",
-		"open_log_folder": "Abrir carpeta de logs",
-		"open_cmd_manual": "Abrir CMD (manual)",
-		"miner_stopped":   "Minero detenido.",
+		"miner_status":            "Estado",
+		"running":                 "En ejecución",
+		"stopped":                 "Detenido",
+		"logs":                    "Registros",
+		"theme_auto":              "Automático",
+		"theme_light":             "Claro",
+		"theme_dark":              "Oscuro",
+		"open_log_folder":         "Abrir carpeta de logs",
+		"open_cmd_manual":         "Abrir CMD (manual)",
+		"miner_stopped":           "Minero detenido.",
+		"backup_wallet":           "Respaldar Billetera",
+		"restore_wallet":          "Restaurar Billetera",
+		"backup_password_title":   "Contraseña de Respaldo",
+		"backup_password_prompt":  "Ingresa una contraseña para el respaldo:",
+		"restore_password_title":  "Contraseña de Respaldo",
+		"restore_password_prompt": "Ingresa la contraseña:",
+		"password_empty_error":    "La contraseña no puede estar vacía",
+		"backup_created":          "Respaldo creado.",
+		"restore_done_restart":    "Restaurado (reinicia la aplicación).",
+		"cancel":                  "Cancelar",
 	},
 	"zh": {
 		"title":           "QuantumCoin 钱包与矿工",
@@ -837,16 +1311,26 @@ var i18n = map[string]dict{
 		"auto_refresh_on": "自动刷新（3秒）",
 		"generate_wallet": "生成新钱包",
 
-		"miner_status":    "状态",
-		"running":         "运行中",
-		"stopped":         "已停止",
-		"logs":            "日志",
-		"theme_auto":      "自动",
-		"theme_light":     "浅色",
-		"theme_dark":      "深色",
-		"open_log_folder": "打开日志文件夹",
-		"open_cmd_manual": "打开 CMD（手动）",
-		"miner_stopped":   "矿工已停止。",
+		"miner_status":            "状态",
+		"running":                 "运行中",
+		"stopped":                 "已停止",
+		"logs":                    "日志",
+		"theme_auto":              "自动",
+		"theme_light":             "浅色",
+		"theme_dark":              "深色",
+		"open_log_folder":         "打开日志文件夹",
+		"open_cmd_manual":         "打开 CMD（手动）",
+		"miner_stopped":           "矿工已停止。",
+		"backup_wallet":           "备份钱包",
+		"restore_wallet":          "恢复钱包",
+		"backup_password_title":   "备份密码",
+		"backup_password_prompt":  "请输入备份密码：",
+		"restore_password_title":  "备份密码",
+		"restore_password_prompt": "请输入密码：",
+		"password_empty_error":    "密码不能为空",
+		"backup_created":          "备份已创建。",
+		"restore_done_restart":    "已恢复（请重启应用）。",
+		"cancel":                  "取消",
 	},
 }
 
@@ -1440,7 +1924,7 @@ func makeWalletTab(w fyne.Window, myAddrEntry, fromEntry *widget.Entry) fyne.Can
 	)
 
 	// ----- Cüzdan Yedek / Geri Yükle -----
-	backupBtn := widget.NewButton("Cüzdanı Yedekle", func() {
+	backupBtn := widget.NewButton(T("backup_wallet"), func() {
 		fs := dialog.NewFileSave(func(uc fyne.URIWriteCloser, err error) {
 			if err != nil || uc == nil {
 				return
@@ -1450,28 +1934,33 @@ func makeWalletTab(w fyne.Window, myAddrEntry, fromEntry *widget.Entry) fyne.Can
 
 			pass := widget.NewEntry()
 			pass.Password = true
-			dialog.NewCustomConfirm("Yedek Parolası", "Tamam", "İptal",
-				container.NewVBox(widget.NewLabel("Yedek parolasını girin:"), pass),
+			dialog.NewCustomConfirm(
+				T("backup_password_title"),
+				T("ok"),
+				T("cancel"),
+				container.NewVBox(widget.NewLabel(T("backup_password_prompt")), pass),
 				func(ok bool) {
 					if !ok {
 						return
 					}
 					if strings.TrimSpace(pass.Text) == "" {
-						dialog.ShowError(fmt.Errorf("Parola boş olamaz"), w)
+						dialog.ShowError(fmt.Errorf(T("password_empty_error")), w)
 						return
 					}
 					if err := createWalletBackup(path, pass.Text); err != nil {
 						dialog.ShowError(err, w)
 						return
 					}
-					dialog.ShowInformation("Tamam", "Yedek oluşturuldu.", w)
-				}, w).Show()
+					dialog.ShowInformation(T("ok"), T("backup_created"), w)
+				},
+				w,
+			).Show()
 		}, w)
 		fs.SetFileName("qc_wallet_backup.qcbak")
 		fs.Show()
 	})
 
-	restoreBtn := widget.NewButton("Cüzdanı Geri Yükle", func() {
+	restoreBtn := widget.NewButton(T("restore_wallet"), func() {
 		fo := dialog.NewFileOpen(func(ur fyne.URIReadCloser, err error) {
 			if err != nil || ur == nil {
 				return
@@ -1481,8 +1970,11 @@ func makeWalletTab(w fyne.Window, myAddrEntry, fromEntry *widget.Entry) fyne.Can
 
 			pass := widget.NewEntry()
 			pass.Password = true
-			dialog.NewCustomConfirm("Yedek Parolası", "Tamam", "İptal",
-				container.NewVBox(widget.NewLabel("Parolayı girin:"), pass),
+			dialog.NewCustomConfirm(
+				T("restore_password_title"),
+				T("ok"),
+				T("cancel"),
+				container.NewVBox(widget.NewLabel(T("restore_password_prompt")), pass),
 				func(ok bool) {
 					if !ok {
 						return
@@ -1491,8 +1983,10 @@ func makeWalletTab(w fyne.Window, myAddrEntry, fromEntry *widget.Entry) fyne.Can
 						dialog.ShowError(err, w)
 						return
 					}
-					dialog.ShowInformation("Tamam", "Geri yüklendi (uygulamayı yeniden başlatın).", w)
-				}, w).Show()
+					dialog.ShowInformation(T("ok"), T("restore_done_restart"), w)
+				},
+				w,
+			).Show()
 		}, w)
 		fo.Show()
 	})
@@ -1536,12 +2030,34 @@ func makeWalletTab(w fyne.Window, myAddrEntry, fromEntry *widget.Entry) fyne.Can
 			}
 		}()
 	})
+	// üstte sadece balance
+	headerRow := container.NewHBox(balanceText)
 
-	return container.NewVBox(
-		container.NewHBox(balanceText, refreshBtn, startAPIbtn, receiveBtn),
+	// butonları ayrı satıra al
+	refreshBtn.SetText("Refresh")
+	startAPIbtn.SetText("Start API")
+	receiveBtn.SetText("Receive")
+
+	buttonsRow := container.NewHBox(
+		refreshBtn,
+		startAPIbtn,
+		receiveBtn,
+	)
+
+	// asıl içerik artık iki satır + form + alt butonlar
+	content := container.NewVBox(
+		headerRow,
+		buttonsRow,
 		form,
 		container.NewHBox(sendBtn, backupBtn, restoreBtn),
 	)
+
+	// scroll'a sar ki pencere küçük kalabilsin
+	sc := container.NewVScroll(content)
+	sc.SetMinSize(fyne.NewSize(0, 0))
+
+	return sc
+
 }
 
 /* ================== AES-GCM Yedek/Geri Yükle helpers ================== */
@@ -1817,10 +2333,13 @@ func stopMinerTail() {
 
 // Log satırı renklendirme
 func appendColoredLog(rt *widget.RichText, line string) {
+	// önce ANSI kaçışlarını temizle
+	cleaned := stripANSI(line)
+
 	// panic/invalid base58 => kırmızı
-	if rePanic.MatchString(line) {
+	if rePanic.MatchString(cleaned) {
 		rt.Segments = append(rt.Segments, &widget.TextSegment{
-			Text: line,
+			Text: cleaned + "\n",
 			Style: widget.RichTextStyle{
 				ColorName: theme.ColorNameError,
 			},
@@ -1828,7 +2347,6 @@ func appendColoredLog(rt *widget.RichText, line string) {
 		rt.Refresh()
 		return
 	}
-
 	// "block found/mined" kısımlarını yeşil yap (tema success)
 	segs := []widget.RichTextSegment{}
 	idx := 0
@@ -1915,6 +2433,7 @@ func startAPIBackground() error {
 
 	cmd := exec.Command(exe, "api")
 	cmd.Dir = dir
+
 	// QC_* adreslerini burada set etmiyoruz; sadece node-dir
 	cmd.Env = append(os.Environ(), "QC_NODE_DIR="+dir)
 	cmd.Stdout = f
@@ -1990,116 +2509,161 @@ func startMinerInCmd(addr string) error {
 		return fmt.Errorf("invalid reward address (Base58)")
 	}
 
+	// Varsayılan node dizini + exe
 	dir := nodeDir()
-	exe := filepath.Join(dir, "quantumcoin.exe")
-	if _, err := os.Stat(exe); err != nil {
+	winExe := filepath.Join(dir, "quantumcoin.exe")
+	if _, err := os.Stat(winExe); err != nil && runtime.GOOS == "windows" {
 		return fmt.Errorf("quantumcoin.exe not found: %w", err)
 	}
 
-	// Tek-adres env’leri ve yapı
+	// Tek-adres env’leri ve yapı (Windows dışı için de anlamlı)
 	_ = os.Setenv("QC_NODE_DIR", dir)
 	_ = os.Setenv("QC_COMMUNITY_ADDRESS", addr)
 	_ = os.Setenv("QC_DEV_FUND_ADDRESS", addr)
 	_ = os.Setenv("QC_PREMINE_ADDRESS", addr)
 	ensureBonusStore(addr)
-
 	// --- WINDOWS ---
 	if runtime.GOOS == "windows" {
-		// POZİSYONEL argüman: mine "ADDR"  ( -addr kullanma )
+		// POZİSYONEL argüman: mine "ADDR"
 		argLine := fmt.Sprintf(`%s "%s"`, minerSubcommand, addr)
 
 		runBat := filepath.Join(dir, "run_miner.cmd")
-		bat := fmt.Sprintf(`@echo off
-setlocal
+
+		// Eğer klasörde zaten run_miner.cmd varsa onu EZME.
+		// (Senin release klasörüne koyduğun sade dosya böylece korunacak.)
+		if _, err := os.Stat(runBat); os.IsNotExist(err) {
+
+			// >>> hazır değilse eski uzun scripti yazmaya devam ediyoruz
+			logPath := filepath.Join(dir, "miner_out.log")
+			if _, err := os.Stat(logPath); os.IsNotExist(err) {
+				// UTF-8 BOM
+				_ = os.WriteFile(logPath, []byte{0xEF, 0xBB, 0xBF}, 0644)
+			}
+
+			bat := fmt.Sprintf(`@echo off
+setlocal enableextensions enabledelayedexpansion
 chcp 65001 >NUL
 cd /d "%s"
+
+REM --- Tek-adres env'leri ---
 set "QC_NODE_DIR=%s"
 set "QC_COMMUNITY_ADDRESS=%s"
 set "QC_DEV_FUND_ADDRESS=%s"
 set "QC_PREMINE_ADDRESS=%s"
 set "QC_MINED_PATH=%%CD%%\mined_balance.json"
 set "ADDR=%s"
+set "LOG=miner_out.log"
+set "QC_LANG=en"
+set "LANG=en_US.UTF-8"
+set "LANGUAGE=en"
+set "LC_ALL=C"
 
-REM PowerShell var mı? (tee için)
-where powershell >NUL 2>&1
-if %%ERRORLEVEL%% EQU 0 (set "HAS_PS=1") else (set "HAS_PS=0")
-
-REM Eski stop bayrağını temizle
+REM --- Eski stop bayrağını temizle ---
 del /q "miner_stop.flag" 2>NUL
 
-echo ===============================
-echo Mining to: %%ADDR%%
-echo Folder    : %%CD%%
-echo ===============================
+REM --- Basit log rotasyonu (~10MB) ---
+if exist "%%LOG%%" (
+  for %%%%A in ("%%LOG%%") do if %%%%~zA GTR 10485760 (
+    if exist "%%LOG%%.1" del /q "%%LOG%%.1" 2>NUL
+    ren "%%LOG%%" "%%LOG%%.1"
+  )
+)
+
+REM --- Bilgi başlığı ---
+title QuantumCoin Miner
+echo ===============================>>"%%LOG%%"
+echo Mining to: %%ADDR%%>>"%%LOG%%"
+echo Folder    : %%CD%%>>"%%LOG%%"
+echo Started   : %%date%% %%time%%>>"%%LOG%%"
+echo ===============================>>"%%LOG%%"
+
+REM --- PowerShell var mı? (tee için) ---
+where powershell >NUL 2>&1 && set "HAS_PS=1"
+if not defined HAS_PS set "HAS_PS=0"
 
 :loop
 if exist "miner_stop.flag" goto :done
 
 if "%%HAS_PS%%"=="1" (
   powershell -NoLogo -ExecutionPolicy Bypass -Command ^
-    "& { & '.\\quantumcoin.exe' %s 2>&1 | Tee-Object -File 'miner_out.log' -Append }"
+    "& { & '.\\quantumcoin.exe' %s 2>&1 | Tee-Object -File '%%LOG%%' -Append }"
 ) else (
-  ".\\quantumcoin.exe" %s >> "miner_out.log" 2>&1
+  ".\\quantumcoin.exe" %s >> "%%LOG%%" 2>&1
 )
 
-REM Kısa nefes
+REM Kısa nefes; crash sonrası döngü devam eder
 timeout /t 1 /nobreak >NUL
 goto :loop
 
 :done
-echo Stopped by miner_stop.flag
+echo Stopped by miner_stop.flag>>"%%LOG%%"
+endlocal
 `, dir, dir, addr, addr, addr, addr, argLine, argLine)
 
-		if err := os.WriteFile(runBat, []byte(bat), 0644); err != nil {
-			return fmt.Errorf("could not write run_miner.cmd: %w", err)
-		}
-		// CRLF zorlama
-		batCRLF := strings.ReplaceAll(bat, "\n", "\r\n")
-		if err := os.WriteFile(runBat, []byte(batCRLF), 0644); err != nil {
-			return fmt.Errorf("could not rewrite run_miner.cmd (CRLF): %w", err)
+			// CRLF ile yaz
+			batCRLF := strings.ReplaceAll(bat, "\n", "\r\n")
+			if err := os.WriteFile(runBat, []byte(batCRLF), 0644); err != nil {
+				return fmt.Errorf("could not write run_miner.cmd: %w", err)
+			}
 		}
 
+		// Buraya geldiğimizde dosya kesin var; sadece ÇALIŞTIR
 		cmd := exec.Command("cmd", "/c", "start", "QuantumCoin Miner", runBat)
 		cmd.Dir = dir
 		if err := cmd.Start(); err != nil {
 			return fmt.Errorf("could not start CMD: %w", err)
 		}
 
-		// GUI’nin tail’leyebilmesi için
+		// GUI tarafına "çalışıyor" bilgisini yansıt
 		minerLogPath = filepath.Join(dir, "miner_out.log")
 		minerRunningState = true
 		if onMinerStateUpdate != nil {
 			onMinerStateUpdate(true)
 		}
-		// İlk kısa gecikmeli yenile
+
+		// CMD kullanıcı kapatırsa yakala
+		go windowsMinerWatchdog()
+
+		// Kısa gecikmeli/periodik refresh (senin orijinal kodundaki gibi kalabilir)
 		if walletRefreshHook != nil {
-			go func() { time.Sleep(3 * time.Second); walletRefreshHook() }()
-			// Periyodik (5 sn) ~10 dk boyunca — miner kapanırsa döngü doğal olarak biter
 			go func() {
-				for i := 0; i < 120 && minerRunningState; i++ {
-					time.Sleep(5 * time.Second)
-					walletRefreshHook()
-				}
+				time.Sleep(3 * time.Second)
+				walletRefreshHook()
 			}()
 		}
+
 		return nil
 	}
 
 	// --- macOS / LINUX ---
+	exe := findNodeExe()
+	if exe == "" {
+		// Emniyetli geri dönüş
+		exe = filepath.Join(dir, "quantumcoin")
+	}
+	if _, err := os.Stat(exe); err != nil {
+		return fmt.Errorf("quantumcoin executable not found: %w", err)
+	}
+	dir = filepath.Dir(exe)
+
 	args := []string{minerSubcommand, addr} // pozisyonel
 	minerLogPath = filepath.Join(dir, "miner_out.log")
 	lf, _ := os.OpenFile(minerLogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 
 	cmd := exec.Command(exe, args...)
-	cmd.Dir = dir
-	// Çevre değişkenleri (mined_balance.json yolu dahil)
-	cmd.Env = append(os.Environ(),
+
+	// env ve çalışma dizini
+	env := append(os.Environ(),
+		"QC_LANG=en", // loglar İngilizce
 		"QC_NODE_DIR="+dir,
 		"QC_COMMUNITY_ADDRESS="+addr,
 		"QC_DEV_FUND_ADDRESS="+addr,
 		"QC_PREMINE_ADDRESS="+addr,
 		"QC_MINED_PATH="+filepath.Join(dir, "mined_balance.json"),
 	)
+	cmd.Env = env
+	cmd.Dir = dir
+
 	if lf != nil {
 		cmd.Stdout = lf
 		cmd.Stderr = lf
@@ -2122,6 +2686,7 @@ echo Stopped by miner_stop.flag
 	if onMinerStateUpdate != nil {
 		onMinerStateUpdate(true)
 	}
+
 	// İlk kısa gecikmeli yenile + periyodik 5 sn (Linux/macOS)
 	if walletRefreshHook != nil {
 		go func() { time.Sleep(3 * time.Second); walletRefreshHook() }()
@@ -2135,6 +2700,8 @@ echo Stopped by miner_stop.flag
 	return nil
 }
 
+// Kullanıcıdan/yerelden ödül adresini garanti altına alır;
+// yoksa node üzerinden (quantumcoin.exe newaddr-priv) üretir.
 func ensureRewardAddress(cur string) (string, error) {
 	// 1) Kullanıcı girdisi
 	a := cleanBase58(strings.TrimSpace(cur))
@@ -2142,6 +2709,7 @@ func ensureRewardAddress(cur string) (string, error) {
 		return a, nil
 	}
 
+	// 2) Mevcut dosyalardan yakala
 	if v := detectExistingAddress(); isLikelyBase58Address(v) {
 		_ = saveText(walletAddressPath(), v)
 		_ = saveText(minerAddressPath(), v)
@@ -2149,7 +2717,8 @@ func ensureRewardAddress(cur string) (string, error) {
 		return v, nil
 	}
 
-	addr, priv, err := genAddressPrivViaNode()
+	// 3) Node'dan yeni adres + priv.hex üret
+	addr, privHex, err := genAddressPrivViaNode()
 	if err != nil {
 		return "", err
 	}
@@ -2157,15 +2726,19 @@ func ensureRewardAddress(cur string) (string, error) {
 		return "", fmt.Errorf("üretilen adres geçersiz görünüyor")
 	}
 
+	// 4) Kalıcı kaydet
 	_ = saveText(walletAddressPath(), addr)
 	_ = saveText(minerAddressPath(), addr)
-	_ = saveText(walletPrivPath(), priv)
+	_ = saveText(walletPrivPath(), privHex) // sende yoksa bu satırı silebilirsin
 	ensureBonusStore(addr)
 
 	return addr, nil
 }
 
+// -------------------------------------------------------------
+// Miner tab UI
 func makeMinerTab(w fyne.Window, defaultAddr string) fyne.CanvasObject {
+	// --- adres girişi ---
 	addrEntry := widget.NewEntry()
 	addrEntry.SetPlaceHolder(T("reward_addr"))
 	if v := detectExistingAddress(); v != "" {
@@ -2174,100 +2747,100 @@ func makeMinerTab(w fyne.Window, defaultAddr string) fyne.CanvasObject {
 		addrEntry.SetText(defaultAddr)
 	}
 
+	// --- durum etiketi ---
 	statusLab := widget.NewLabel(T("stopped"))
+
+	// --- log alanı ---
 	logView := widget.NewRichText()
 	logView.Wrapping = fyne.TextWrapWord
-	logView.Segments = []widget.RichTextSegment{&widget.TextSegment{Text: T("logs") + ":\n"}}
+	logView.Segments = []widget.RichTextSegment{
+		&widget.TextSegment{Text: T("logs") + ":\n"},
+	}
 
-	// Sekme açılır açılmaz tail bağla
+	// log dosyası
 	minerLogPath = filepath.Join(nodeDir(), "miner_out.log")
-	startMinerTailInto(logView)
 
+	// === START butonu ===
 	startBtn := widget.NewButton(T("miner_start"), func() {
-		// Adresi garanti altına al (gerekirse otomatik üretir ve dosyaya yazar)
+		// 1) adresi garanti altına al
 		addr, err := ensureRewardAddress(addrEntry.Text)
 		if err != nil {
-			dialog.ShowError(fmt.Errorf("Adres bulunamadı/üretilemedi: %v", err), w)
+			dialog.ShowError(err, w)
 			return
 		}
 		addrEntry.SetText(addr)
 
-		// Miner'ı nodeDir() içindeki quantumcoin.exe ile başlat
-		if err := startMinerInCmd(addr); err != nil {
-			dialog.ShowError(fmt.Errorf("Miner could not start: %v", err), w)
+		// 2) miner'ı gerçekten başlat
+		if err := startMinerVisible(); err != nil {
+			dialog.ShowError(err, w)
 			return
 		}
-		_ = startAPIBackground() // API’yi kaldır, balance için lazım
-		dialog.ShowInformation(T("ok"), "Miner started.", w)
 
-		// Yeni süreç için tail'i tazele (idempotent)
+		// 3) API
+		_ = startAPIBackground()
+
+		// 4) log tail
 		minerLogPath = filepath.Join(nodeDir(), "miner_out.log")
 		startMinerTailInto(logView)
 
-		// Kısa süre sık yenile (bakiye/status)
-		if walletRefreshHook != nil {
-			go func() {
-				deadline := time.Now().Add(30 * time.Second)
-				for time.Now().Before(deadline) {
-					time.Sleep(2 * time.Second)
-					walletRefreshHook()
-					if onMinerStateUpdate != nil {
-						onMinerStateUpdate(true)
-					}
-				}
-			}()
+		// 5) UI
+		minerRunningState = true
+		if onMinerStateUpdate != nil {
+			onMinerStateUpdate(true)
+		} else {
+			statusLab.SetText(T("running"))
+			statusLab.Refresh()
 		}
-	})
-	// --- Stop + yardımcı butonlar (tam blok) ---
-	stopBtn := widget.NewButton(T("miner_stop"), func() {
-		// 0) Zarif durdurma bayrağı
-		_ = os.WriteFile(filepath.Join(nodeDir(), "miner_stop.flag"), []byte("stop"), 0644)
 
-		// 1) Kısa bekleme (döngüden çıkabilsin)
-		deadline := time.Now().Add(2 * time.Second)
+		// pencere X ile kapanırsa yakala
+		go windowsMinerWatchdog()
+	})
+
+	// === STOP butonu ===
+	stopBtn := widget.NewButton(T("miner_stop"), func() {
+		// 0) batch'e “kapan” de
+		writeMinerStopFlag()
+
+		// 1) bizim görünür stop'u dene
+		_ = stopMinerVisible()
+
+		// 2) kısa bekle
+		deadline := time.Now().Add(1 * time.Second)
 		for time.Now().Before(deadline) {
 			if !minerActiveHeuristic() {
 				break
 			}
-			time.Sleep(150 * time.Millisecond)
+			time.Sleep(120 * time.Millisecond)
 		}
 
-		// 2) API üstünden durdurmayı dene (sessiz)
-		_ = apiPost("/api/miner/stop", map[string]string{}, 800*time.Millisecond)
-
-		// 3) PID varsa PID’den indir; yoksa imajdan indir
-		if pid, err := readMinerPID(); err == nil && pid > 0 {
-			if runtime.GOOS == "windows" {
-				// Çalışan proses
-				_ = exec.Command("taskkill", "/PID", fmt.Sprint(pid), "/F").Run()
-				// Ayrı açılmış CMD penceresini başlığa göre kapat (wildcard ile)
-				_ = exec.Command("taskkill", "/F", "/T", "/FI", `WINDOWTITLE eq QuantumCoin Miner*`).Run()
-			} else {
-				_ = exec.Command("kill", "-9", fmt.Sprint(pid)).Run()
-			}
-			clearMinerPID()
-		} else {
+		// 3) hâlâ yaşıyorsa sert kapat
+		if minerActiveHeuristic() {
 			if runtime.GOOS == "windows" {
 				_ = exec.Command("taskkill", "/IM", "quantumcoin.exe", "/F").Run()
-				_ = exec.Command("taskkill", "/F", "/T", "/FI", `WINDOWTITLE eq QuantumCoin Miner*`).Run()
+				_ = exec.Command("taskkill", "/F", "/FI", `WINDOWTITLE eq QuantumCoin Miner`).Run()
 			} else {
 				_ = exec.Command("pkill", "-f", "quantumcoin").Run()
 			}
 		}
 
+		// 4) UI indir
 		minerRunningState = false
 		if onMinerStateUpdate != nil {
 			onMinerStateUpdate(false)
+		} else {
+			statusLab.SetText(T("stopped"))
+			statusLab.Refresh()
 		}
+
+		// 5) tail’i kapat
 		stopMinerTail()
+
 		dialog.ShowInformation(T("ok"), T("miner_stopped"), w)
 	})
 
+	// log klasörü
 	openLogBtn := widget.NewButton(T("open_log_folder"), func() {
 		dir := nodeDir()
-		if minerLogPath == "" {
-			minerLogPath = filepath.Join(dir, "miner_out.log")
-		}
 		if runtime.GOOS == "windows" {
 			_ = exec.Command("explorer.exe", dir).Start()
 		} else {
@@ -2275,59 +2848,22 @@ func makeMinerTab(w fyne.Window, defaultAddr string) fyne.CanvasObject {
 		}
 	})
 
+	// manuel cmd
 	openManualCmdBtn := widget.NewButton(T("open_cmd_manual"), func() {
 		dir := nodeDir()
 		runBat := filepath.Join(dir, "run_miner.cmd")
-		if _, err := os.Stat(runBat); err == nil {
+		if _, err := os.Stat(runBat); err == nil && runtime.GOOS == "windows" {
 			_ = exec.Command("cmd", "/c", "start", "QuantumCoin Miner", runBat).Start()
 		}
 	})
 
-	// adres toparla
-	addr := strings.TrimSpace(addrEntry.Text)
-	if addr == "" {
-		addr = loadText(minerAddressPath())
-	}
-	if addr == "" {
-		addr = loadText(walletAddressPath())
-	}
-	if addr == "" {
-		if v, err := genAddressViaNode(); err == nil && v != "" {
-			addr = v
-			_ = saveText(walletAddressPath(), addr)
-			_ = saveText(minerAddressPath(), addr)
-		}
-	}
-	addr = cleanBase58(addr)
-	addrEntry.SetText(addr)
-
-	// Adres geçersizse UI'yi kurmayı kesmeyelim; sadece uyarı verelim.
-	// (Start butonu zaten ensureRewardAddress ile üretip kaydedecek.)
-	if addr == "" || !isLikelyBase58Address(addr) {
-		dialog.ShowError(fmt.Errorf("Geçersiz ödül adresi (Base58)"), w)
-	} else {
-		_ = saveText(minerAddressPath(), addr)
-	}
-
-	// --- Miner durum etiketini güncelleyen callback ---
-	onMinerStateUpdate = func(running bool) {
-		ui(func() {
-			if running {
-				statusLab.SetText(T("running"))
-			} else {
-				statusLab.SetText(T("stopped"))
-			}
-			statusLab.Refresh()
-		})
-	}
-	onMinerStateUpdate(minerActiveHeuristic())
-
-	// Üst form ve buton bar
+	// üst form
 	top := widget.NewForm(
 		widget.NewFormItem(T("reward_addr"), addrEntry),
 		widget.NewFormItem(T("miner_status"), statusLab),
 	)
 
+	// buton bar
 	btnBar := container.NewHBox(
 		startBtn,
 		stopBtn,
@@ -2335,13 +2871,64 @@ func makeMinerTab(w fyne.Window, defaultAddr string) fyne.CanvasObject {
 		openManualCmdBtn,
 	)
 
-	// >>> DÖNÜŞ <<<  — makeMinerTab mutlaka bir CanvasObject döndürmeli
+	// log scroll
+	logScroll := container.NewVScroll(logView)
+	logScroll.SetMinSize(fyne.NewSize(0, 160))
+
 	return container.NewVBox(
 		top,
 		btnBar,
 		widget.NewSeparator(),
-		container.NewVScroll(logView),
+		logScroll,
 	)
+}
+func writeMinerStopFlag() {
+	f := filepath.Join(nodeDir(), "miner_stop.flag")
+	_ = os.WriteFile(f, []byte("stop"), 0644)
+}
+
+// ===== Windows miner watchdog =====
+
+// Miner CMD penceresi kapanırsa UI'ı "Stopped" yapar.
+func windowsMinerWatchdog() {
+	if runtime.GOOS != "windows" {
+		return
+	}
+	for minerRunningState {
+		time.Sleep(2 * time.Second)
+		if !minerWindowAlive() { // pencere kapandı mı?
+			minerRunningState = false
+			if onMinerStateUpdate != nil {
+				onMinerStateUpdate(false) // GUI “Stopped”
+			}
+			if walletRefreshHook != nil {
+				walletRefreshHook()
+			}
+			return
+		}
+	}
+}
+
+// "QuantumCoin Miner" başlıklı CMD penceresi var mı?
+func minerWindowAlive() bool {
+	if runtime.GOOS != "windows" {
+		return false
+	}
+
+	// cmd açıp tasklist çalıştıracağız ama pencereyi GİZLEYECEĞİZ
+	cmd := exec.Command("tasklist", "/v", "/fi", "WINDOWTITLE eq QuantumCoin Miner")
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+
+	s := strings.ToLower(string(out))
+	if strings.Contains(s, "no tasks are running") {
+		return false
+	}
+	return strings.Contains(s, "cmd.exe")
 }
 
 /* ================== Web Wallet & API bootstrap ================== */
@@ -2386,123 +2973,145 @@ func makeLangSelect(w fyne.Window) *widget.Select {
 	if langSelect != nil {
 		return langSelect
 	}
-	langSelect = widget.NewSelect([]string{
-		"Türkçe (tr)", "English (en)", "Español (es)", "中文 (zh)",
-	}, func(s string) {
+
+	options := []string{
+		"🇹🇷 Türkçe (tr)",
+		"🇺🇸 English (en)",
+		"🇪🇸 Español (es)",
+		"🇨🇳 中文 (zh)",
+	}
+
+	langSelect = widget.NewSelect(options, func(s string) {
+		var code string
 		switch {
 		case strings.Contains(s, "(tr)"):
-			curLang = "tr"
+			code = "tr"
 		case strings.Contains(s, "(en)"):
-			curLang = "en"
+			code = "en"
 		case strings.Contains(s, "(es)"):
-			curLang = "es"
+			code = "es"
 		case strings.Contains(s, "(zh)"):
-			curLang = "zh"
+			code = "zh"
+		default:
+			code = "en"
 		}
-		// Otomatik yenilemeyi sıfırla ve UI'ı yeniden kur
-		if walletAutoRefreshStop != nil {
-			close(walletAutoRefreshStop)
-			walletAutoRefreshStop = nil
-		}
-		w.SetTitle(T("title") + " — " + appVersion)
-		buildUI(w)
+
+		// burada artık o eski fonksiyonu kullanıyoruz
+		changeLanguage(code, w)
 	})
-	langSelect.SetSelected("Türkçe (tr)")
+
+	// Açılışta seçili olanı mevcut dile göre ayarla
+	switch curLang {
+	case "tr":
+		langSelect.SetSelected("🇹🇷 Türkçe (tr)")
+	case "es":
+		langSelect.SetSelected("🇪🇸 Español (es)")
+	case "zh":
+		langSelect.SetSelected("🇨🇳 中文 (zh)")
+	default:
+		langSelect.SetSelected("🇺🇸 English (en)")
+	}
+
 	return langSelect
 }
 
 func buildUI(w fyne.Window) {
+	// i18n anahtarlarını garanti altına al
+	ensureThemeI18nKeys()
+	ensureBackupRestoreI18nKeys()
+
+	// Giriş kutuları
 	myAddrEntry := widget.NewEntry()
 	fromEntry := widget.NewEntry()
 	myAddrEntry.SetPlaceHolder(T("my_address"))
 	fromEntry.SetPlaceHolder(T("from"))
-	// ---- Tek-adres politikası & env sabitleme (async) ----
-	go func() {
-		addr := detectExistingAddress()
-		if strings.TrimSpace(addr) == "" {
-			if a, err := genAddressViaNode(); err == nil && strings.TrimSpace(a) != "" {
+
+	// ---- Tek seferlik adres çözümü (senkron) ----
+	addr := strings.TrimSpace(detectExistingAddress())
+	if addr == "" {
+		if a, err := genAddressViaNode(); err == nil {
+			a = cleanBase58(a)
+			if a != "" {
 				_ = saveText(walletAddressPath(), a)
 				_ = saveText(minerAddressPath(), a)
 				addr = a
 			}
 		}
-		addr = cleanBase58(addr)
-		if addr != "" {
-			_ = os.Setenv("QC_COMMUNITY_ADDRESS", addr)
-			_ = os.Setenv("QC_DEV_FUND_ADDRESS", addr)
-			_ = os.Setenv("QC_PREMINE_ADDRESS", addr)
-			_ = os.Setenv("QC_NODE_DIR", nodeDir())
-
-			// >>> EKLE: GUI hangi mined_balance.json'ı okuyacağını sabitle
-			_ = os.Setenv("QC_MINED_PATH", filepath.Join(nodeDir(), "mined_balance.json"))
-
-			ensureBonusStore(addr)
-		}
-	}()
-
-	// Var olan adresleri otomatik doldur
-	if addr := detectExistingAddress(); addr != "" {
+	}
+	if addr != "" {
 		myAddrEntry.SetText(addr)
 		fromEntry.SetText(addr)
+
+		// Ortam değişkenleri
+		_ = os.Setenv("QC_COMMUNITY_ADDRESS", addr)
+		_ = os.Setenv("QC_DEV_FUND_ADDRESS", addr)
+		_ = os.Setenv("QC_PREMINE_ADDRESS", addr)
+		_ = os.Setenv("QC_NODE_DIR", nodeDir())
+		_ = os.Setenv("QC_MINED_PATH", filepath.Join(nodeDir(), "mined_balance.json"))
+
+		// bonus/NFT store hazırlanması
+		go ensureBonusStore(addr)
 	}
 
-	// Adres boşsa node üzerinden üret ve dosyaya yaz
-	if strings.TrimSpace(myAddrEntry.Text) == "" {
-		if addr, err := genAddressViaNode(); err == nil && strings.TrimSpace(addr) != "" {
-			_ = saveText(walletAddressPath(), addr)
-			_ = saveText(minerAddressPath(), addr)
-			myAddrEntry.SetText(addr)
-			fromEntry.SetText(addr)
-		}
-	}
-
-	themeSel := widget.NewSelect(
-		[]string{T("theme_auto"), T("theme_light"), T("theme_dark")},
-		func(s string) {
-			switch s {
-			case T("theme_light"):
-				fyne.CurrentApp().Settings().SetTheme(theme.LightTheme())
-			case T("theme_dark"):
-				fyne.CurrentApp().Settings().SetTheme(theme.DarkTheme())
-			default: // T("theme_auto")
-				fyne.CurrentApp().Settings().SetTheme(nil) // sistem/varsayılan
-			}
-		},
-	)
-	themeSel.SetSelected(T("theme_auto"))
-
+	// --- Sekmeler ---
 	tabs := container.NewAppTabs(
 		container.NewTabItem(T("tab_wallet"), makeWalletTab(w, myAddrEntry, fromEntry)),
-		container.NewTabItem(T("tab_mine"), makeMinerTab(w, myAddrEntry.Text)),
+		container.NewTabItem(T("tab_mine"), makeMinerTab(w, addr)),
 		container.NewTabItem(T("tab_web"), makeWebWalletTab(w)),
+	)
+
+	// --- Header (sadece tema + dil) ---
+	themeSel = makeThemeSelect()
+
+	title := widget.NewLabelWithStyle(
+		T("title")+" — "+appVersion,
+		fyne.TextAlignLeading,
+		fyne.TextStyle{Bold: true},
+	)
+
+	right := container.NewHBox(
+		themeSel,
+		makeLangSelect(w), // burada zaten TR / EN / ES / ZH var
 	)
 
 	header := container.NewBorder(
 		nil, nil,
-		widget.NewLabelWithStyle(T("title"), fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-		container.NewHBox(themeSel, makeLangSelect(w)),
+		title, // sol
+		right, // sağ
 	)
 
 	w.SetContent(container.NewBorder(header, nil, nil, nil, tabs))
 }
 
 func main() {
+	// Fyne kendi kendine büyümesin
+	_ = os.Setenv("FYNE_SCALE", "0.85")
+
+	// açılışta siyah konsol gözükmesin
+	hideConsoleOnStartup()
 	runtime.LockOSThread()
-a := app.NewWithID("quantumcoin.gui")
+	defer runtime.UnlockOSThread()
 
-// son dil (opsiyonel)
-if lang := a.Preferences().String("lang"); lang != "" {
-    curLang = lang
-}
+	// eski büyük boyutları okumak istemiyoruz, o yüzden ID'siz
+	a := app.New()
 
-// son tema
-applyTheme(a.Preferences().StringWithFallback("theme_value", "auto"))
+	loadPrefsAtStartup()
 
-w := a.NewWindow(T("title") + " — " + appVersion)
+	title := T("title")
+	if appVersion != "" {
+		title += " — " + appVersion
+	}
 
-	w.Resize(fyne.NewSize(1000, 700))
-	makeLangSelect(w) // default TR selected
+	w := a.NewWindow(title)
+
+	// daha küçük sabit pencere
+	w.Resize(fyne.NewSize(760, 480))
+	w.SetFixedSize(true)
+	w.CenterOnScreen()
+
+	// mevcut UI'nı kur
 	buildUI(w)
+
 	w.Show()
 	a.Run()
 }
