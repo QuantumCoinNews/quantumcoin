@@ -1,0 +1,124 @@
+[
+  {
+    "id": "QC-SH-001",
+    "title": "3 rules for surviving crypto volatility",
+    "script": "Crypto swings are normal. Rule one: position size small enough to sleep. Rule two: plan entries and exits before you buy. Rule three: protect downside with a stop or a hedge. If you can’t explain your plan in one sentence, you’re gambling.",
+    "hashtags": ["#crypto", "#risk", "#trading"],
+    "telegram": "3 rules for surviving crypto volatility: size small, pre-plan, protect downside. Stay consistent.",
+    "x": "3 rules for surviving crypto volatility: 1) size small 2) plan entry/exit 3) protect downside. Discipline > prediction. #crypto #risk",
+    "youtube_description": "Short risk rules for volatile markets. Educational only."
+  },
+  {
+    "id": "QC-SH-002",
+    "title": "Why most traders lose in bull markets",
+    "script": "In bull markets, people confuse luck with skill. They increase leverage, chase green candles, and ignore risk. The market rewards patience, not FOMO. The moment you feel “it can’t go down,” that’s when a sharp pullback usually happens.",
+    "hashtags": ["#crypto", "#market", "#psychology"],
+    "telegram": "Bull markets trick people into overconfidence. Avoid leverage + FOMO.",
+    "x": "Bull markets make people overconfident: leverage + FOMO + no risk plan. Patience wins. #crypto",
+    "youtube_description": "Market psychology basics. Educational only."
+  },
+  {
+    "id": "QC-SH-003",
+    "title": "The simplest portfolio rule",
+    "script": "If one position can wipe your month, it’s too big. A simple rule: no single idea should decide your future. Diversify across time, not just coins—use staggered entries and take partial profits. Consistency beats one lucky trade.",
+    "hashtags": ["#crypto", "#portfolio", "#discipline"],
+    "telegram": "One position shouldn’t decide your future. Size + stagger entries.",
+    "x": "Simple portfolio rule: if one position can wipe your month, it’s too big. #crypto #risk",
+    "youtube_description": "Portfolio sizing and consistency. Educational only."
+  },
+  {
+    "id": "QC-SH-004",
+    "title": "Stop-loss isn’t weakness",
+    "script": "A stop-loss is not admitting defeat—it’s paying a small fee to avoid a large disaster. Professionals cut losses quickly and keep capital for the next setup. Refusing to exit doesn’t make you strong; it makes you exposed.",
+    "hashtags": ["#trading", "#risk", "#crypto"],
+    "telegram": "Stop-loss is a tool, not weakness. Protect capital.",
+    "x": "Stop-loss isn’t weakness. It’s protection. Pros cut losses fast. #trading #crypto",
+    "youtube_description": "Risk management mindset. Educational only."
+  },
+  {
+    "id": "QC-SH-005",
+    "title": "The 10-minute security checklist",
+    "script": "Quick security: enable 2FA, use a password manager, verify URLs, and never sign unknown transactions. Keep long-term funds on cold storage, and separate your daily wallet from your main wallet. Security is profit you don’t lose.",
+    "hashtags": ["#security", "#crypto", "#wallet"],
+    "telegram": "10-minute security checklist: 2FA, password manager, verify URLs, cold storage.",
+    "x": "10-min crypto security: 2FA + password manager + verify URLs + cold storage. #security",
+    "youtube_description": "Basic security habits. Educational only."
+  },
+  {
+    "id": "QC-SH-006",
+    "title": "Why DCA works when emotions fail",
+    "script": "Dollar-cost averaging works because it removes your ego. You buy on a schedule, not on feelings. When price drops, you accumulate more; when it rises, your average improves over time. It’s boring—and that’s why it works.",
+    "hashtags": ["#DCA", "#investing", "#crypto"],
+    "telegram": "DCA removes emotions. Schedule beats feelings.",
+    "x": "DCA works because it removes emotions. Boring is powerful. #DCA #crypto",
+    "youtube_description": "DCA basics. Educational only."
+  },
+  {
+    "id": "QC-SH-007",
+    "title": "Liquidity: the hidden driver",
+    "script": "Liquidity moves markets. When liquidity is abundant, risk assets breathe. When liquidity tightens, volatility spikes. Don’t watch only charts—watch the environment. Trend strength often follows liquidity conditions, not your favorite indicator.",
+    "hashtags": ["#macro", "#liquidity", "#crypto"],
+    "telegram": "Liquidity often drives trend strength more than indicators.",
+    "x": "Liquidity is the hidden driver: abundant liquidity = easier trends, tight liquidity = volatility. #macro",
+    "youtube_description": "Macro + liquidity simplified. Educational only."
+  },
+  {
+    "id": "QC-SH-008",
+    "title": "The ‘two-wallet’ rule",
+    "script": "Use two wallets: one for daily activity, one for long-term storage. Your daily wallet connects to apps; your vault wallet stays offline and untouched. This single habit reduces the blast radius if something goes wrong.",
+    "hashtags": ["#wallet", "#security", "#crypto"],
+    "telegram": "Two-wallet rule: daily wallet + vault wallet. Reduce risk.",
+    "x": "Two-wallet rule: one for apps, one for long-term storage. Reduce blast radius. #security",
+    "youtube_description": "Wallet separation best practice. Educational only."
+  },
+  {
+    "id": "QC-SH-009",
+    "title": "Why ‘free’ airdrops aren’t free",
+    "script": "Many airdrops cost you privacy or security. Fake claim sites steal signatures. Real airdrops rarely require you to ‘approve’ unlimited spending. If a link is rushed, brand-new, or asks for strange permissions—walk away.",
+    "hashtags": ["#airdrop", "#security", "#crypto"],
+    "telegram": "Airdrops can cost privacy/security. Don’t sign unknown approvals.",
+    "x": "‘Free’ airdrops aren’t free. Beware fake claim sites & unlimited approvals. #security",
+    "youtube_description": "Airdrop safety tips. Educational only."
+  },
+  {
+    "id": "QC-SH-010",
+    "title": "The real meaning of ‘DYOR’",
+    "script": "DYOR isn’t scrolling hype. It’s reading docs, checking token distribution, understanding revenue, and verifying teams and contracts. If you can’t explain what the project does, how it captures value, and what can fail—pause.",
+    "hashtags": ["#DYOR", "#crypto", "#research"],
+    "telegram": "DYOR = docs + tokenomics + risks. Not hype scrolling.",
+    "x": "DYOR isn’t hype scrolling. Docs + tokenomics + risks. #crypto",
+    "youtube_description": "Research basics. Educational only."
+  },
+
+  { "id":"QC-SH-011","title":"Why memecoins pump fast","script":"Memecoins move on attention, not fundamentals. Attention is scarce, so pumps are violent, and dumps are faster. If you play them, treat it like entertainment money, take profits quickly, and never confuse a lucky trade with a strategy.","hashtags":["#memecoin","#crypto","#risk"],"telegram":"Memecoins run on attention. Treat them as high risk.","x":"Memecoins run on attention, not fundamentals. Pumps are fast, dumps faster. #memecoin","#youtube_description":"High-risk dynamics explained. Educational only."},
+  { "id":"QC-SH-012","title":"The trap of ‘all-in’ thinking","script":"All-in thinking feels heroic, but it’s fragile. One bad event and you’re done. Real builders survive by staying liquid, keeping options open, and letting probability work over time. You don’t need perfect timing—just survival.","hashtags":["#mindset","#risk","#crypto"],"telegram":"All-in is fragile. Survivability matters.","x":"All-in feels heroic but it’s fragile. Survival > perfect timing. #crypto","#youtube_description":"Risk mindset. Educational only."},
+  { "id":"QC-SH-013","title":"How to avoid scam tokens","script":"Check contract address from official sources, scan holders and liquidity lock, and avoid tokens with extreme taxes or owner privileges. If the team can freeze transfers or mint endlessly, you’re not early—you’re exit liquidity.","hashtags":["#scam","#security","#crypto"],"telegram":"Avoid scam tokens: verify contract, liquidity, permissions.","x":"Avoid scam tokens: verify contract, holders, liquidity lock, owner powers. #security","#youtube_description":"Basic token safety. Educational only."},
+  { "id":"QC-SH-014","title":"Why sideways markets are a gift","script":"Sideways markets feel boring, but they’re where you build positions without panic. You can DCA, study projects, and plan entries calmly. Most people quit in boredom and return at the top. Don’t be most people.","hashtags":["#markets","#DCA","#crypto"],"telegram":"Sideways = building time. Don’t quit in boredom.","x":"Sideways markets are a gift: build positions calmly, plan entries. #crypto","#youtube_description":"Market phases. Educational only."},
+  { "id":"QC-SH-015","title":"The ‘one risk metric’ to respect","script":"Respect drawdown. If you’re down 30%, you need a 43% gain just to break even. That’s why risk control matters more than upside fantasies. Protect capital first, then compound.","hashtags":["#risk","#trading","#crypto"],"telegram":"Drawdown math is brutal. Protect capital first.","x":"Drawdown math: -30% needs +43% to recover. Protect capital. #risk","#youtube_description":"Drawdown math. Educational only."},
+
+  { "id":"QC-SH-016","title":"Hot vs cold wallets in 15 seconds","script":"Hot wallets are connected—fast but exposed. Cold wallets are offline—slower but safer. Use hot wallets for small daily amounts, and cold wallets for long-term storage. Treat it like cash versus a safe.","hashtags":["#wallet","#security","#crypto"],"telegram":"Hot = connected, Cold = offline. Use both.","x":"Hot vs cold: hot is connected, cold is offline. Use both. #security","#youtube_description":"Wallet types explained. Educational only."},
+  { "id":"QC-SH-017","title":"Why fees spike suddenly","script":"Fees spike when blockspace demand jumps—NFT mints, memecoin mania, or big news. Don’t panic-send during congestion. Use off-peak hours, set max fee limits, or choose a cheaper network when possible.","hashtags":["#fees","#blockchain","#crypto"],"telegram":"Fees spike with congestion. Time your transactions.","x":"Fees spike when blockspace demand jumps. Don’t panic-send during congestion. #blockchain","#youtube_description":"Transaction fees explained. Educational only."},
+  { "id":"QC-SH-018","title":"The easiest way to lose coins","script":"The easiest way to lose coins is signing the wrong message or approving unlimited spending. Always read the approval, revoke old permissions, and use a separate wallet for new apps. One bad signature can drain everything.","hashtags":["#security","#wallet","#crypto"],"telegram":"Bad approvals drain wallets. Revoke old permissions.","x":"Most common loss: wrong signature/unlimited approvals. Revoke permissions. #security","#youtube_description":"Signature safety. Educational only."},
+  { "id":"QC-SH-019","title":"Why patience is a strategy","script":"Patience is not doing nothing. It’s waiting for your setup, your price, your confirmation. Overtrading turns small mistakes into big losses. The market pays you for being selective, not for being busy.","hashtags":["#trading","#discipline","#crypto"],"telegram":"Patience = selectivity. Overtrading kills.","x":"Patience is a strategy. Overtrading turns small mistakes into big losses. #trading","#youtube_description":"Trading discipline. Educational only."},
+  { "id":"QC-SH-020","title":"Stablecoins: what to watch","script":"Stablecoins aren’t risk-free. Watch reserves, transparency reports, and depeg history. Spread risk across reputable stables, and don’t park life savings in a single issuer. Stability is a goal, not a guarantee.","hashtags":["#stablecoin","#risk","#crypto"],"telegram":"Stablecoins carry issuer risk. Watch reserves + depegs.","x":"Stablecoins aren’t risk-free: watch reserves, transparency, depegs. #crypto","#youtube_description":"Stablecoin risk basics. Educational only."},
+
+  { "id":"QC-SH-021","title":"The difference between hype and adoption","script":"Hype is clicks. Adoption is daily users who pay fees because the product solves a problem. When judging projects, ask: who uses this, why, and what would make them stop? Adoption compounds—hype expires.","hashtags":["#web3","#adoption","#crypto"],"telegram":"Hype expires. Adoption compounds. Look for real users.","x":"Hype is clicks; adoption is daily users who pay to use it. #web3","#youtube_description":"Adoption vs hype. Educational only."},
+  { "id":"QC-SH-022","title":"How to spot a healthy trend","script":"A healthy trend has higher highs, higher lows, and pullbacks that hold key levels. If every bounce gets weaker and volume dries up, be careful. Trends end quietly before they end loudly.","hashtags":["#technicalanalysis","#crypto","#trading"],"telegram":"Healthy trend: higher highs/lows + pullbacks that hold levels.","x":"Healthy trend = higher highs/lows + pullbacks that hold. Trends end quietly first. #trading","#youtube_description":"Trend basics. Educational only."},
+  { "id":"QC-SH-023","title":"Why ‘news trading’ is dangerous","script":"By the time news hits your feed, pros already positioned. Chasing headlines makes you late and emotional. Focus on risk, structure, and liquidity. Let the chart confirm, not your timeline.","hashtags":["#trading","#news","#crypto"],"telegram":"News trading often makes you late. Use structure + risk.","x":"News trading is dangerous: by the time you see it, pros positioned. #trading","#youtube_description":"News vs structure. Educational only."},
+  { "id":"QC-SH-024","title":"One habit to reduce mistakes","script":"Write your plan before you click buy: entry, exit, invalidation, and size. If you can’t write it, you don’t know it. This habit alone cuts impulsive trades and protects you from emotional decisions.","hashtags":["#discipline","#trading","#crypto"],"telegram":"Write the plan first: entry, exit, invalidation, size.","x":"One habit: write your plan BEFORE you buy. Entry, exit, invalidation, size. #trading","#youtube_description":"Process > impulse. Educational only."},
+  { "id":"QC-SH-025","title":"Why long-term wins feel boring","script":"Long-term wins feel boring because compounding is quiet. Small edges repeated over months beat dramatic moves that blow accounts. Build habits, manage risk, and let time do the heavy lifting.","hashtags":["#investing","#mindset","#crypto"],"telegram":"Compounding is quiet. Habits beat drama.","x":"Long-term wins feel boring because compounding is quiet. Habits beat drama. #investing","#youtube_description":"Compounding mindset. Educational only."},
+
+  { "id":"QC-SH-026","title":"The ‘verify then trust’ rule","script":"In crypto, trust comes after verification. Verify links, verify addresses, verify contracts, verify permissions. If something pressures you to act fast, it’s often a trap. Slow is smooth, smooth is safe.","hashtags":["#security","#crypto","#safety"],"telegram":"Verify then trust. Fast pressure is a red flag.","x":"Verify then trust: links, addresses, contracts, permissions. Pressure = red flag. #security","#youtube_description":"Safety mindset. Educational only."},
+  { "id":"QC-SH-027","title":"Why leverage is a silent killer","script":"Leverage magnifies both gains and tiny mistakes. A normal pullback can liquidate you, even if your long-term idea is right. If you use leverage, use it small, with a hard stop, and never when emotional.","hashtags":["#leverage","#risk","#crypto"],"telegram":"Leverage liquidates on normal pullbacks. Use small or avoid.","x":"Leverage is a silent killer: normal pullbacks can liquidate you. #risk","#youtube_description":"Leverage risks. Educational only."},
+  { "id":"QC-SH-028","title":"How to avoid topic repetition","script":"Use a content pool: 30 titles, 30 scripts, 30 voice files, and rotate 7 visuals. Track an index so every run picks the next item. That’s how you stay consistent without repeating when AI is offline.","hashtags":["#content","#automation","#creator"],"telegram":"Content pool prevents repetition: rotate topics, voices, visuals.","x":"Avoid repetition: rotate a pool of topics + voices + visuals with an index. #automation","#youtube_description":"Content automation tip. Educational only."},
+  { "id":"QC-SH-029","title":"The fastest way to improve results","script":"Stop chasing perfect setups and start measuring. Track what you post, what performs, and what fails. Improve one variable at a time—hook, pacing, visuals, or timing. Iteration beats guessing.","hashtags":["#growth","#content","#metrics"],"telegram":"Measure, iterate, improve one variable at a time.","x":"Fastest improvement: measure results, iterate one variable at a time. #growth","#youtube_description":"Iteration mindset. Educational only."},
+  {
+    "id": "QC-SH-030",
+    "title": "Consistency beats intensity",
+    "script": "Posting daily isn’t about motivation, it’s about systems. A simple pipeline—topic pool, voice pool, visual pool—keeps you shipping even when credits or tools fail. Consistency compounds attention like interest.",
+    "hashtags": ["#consistency", "#automation", "#creator"],
+    "telegram": "Consistency is systems: topic + voice + visual pools keep you shipping.",
+    "x": "Consistency beats intensity. Systems > motivation. Pools keep you shipping. #automation",
+    "youtube_description": "Systems and consistency. Educational only."
+  }
+]

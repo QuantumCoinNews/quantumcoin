@@ -1,9 +1,12 @@
+// internal/mempool.go
 package internal
 
 import (
 	"bytes"
+	"encoding/hex"
 	"sync"
 
+	"quantumcoin/ai"
 	"quantumcoin/blockchain"
 )
 
@@ -11,7 +14,7 @@ import (
 type Mempool struct {
 	mu           sync.Mutex
 	transactions []*blockchain.Transaction
-	index        map[string]struct{} // hızlı "var mı?" kontrolü için (txID hex veya raw)
+	index        map[string]struct{} // hızlı "var mı?" kontrolü için (txID raw)
 	capacity     int                 // 0 veya negatifse sınırsız
 }
 
@@ -20,7 +23,7 @@ func NewMempool() *Mempool {
 	return &Mempool{
 		transactions: []*blockchain.Transaction{},
 		index:        make(map[string]struct{}),
-		capacity:     0, // sınırsız
+		capacity:     0, // sınırsız (istersen dışarıdan SetCapacity ile kısıtlayabilirsin)
 	}
 }
 
@@ -46,24 +49,50 @@ func (mp *Mempool) Has(txID []byte) bool {
 	return ok
 }
 
-// Add: Yeni işlem ekle (tekrarları engeller, kapasiteyi uygular)
+// Add: Yeni işlem ekle (tekrarları engeller, kapasiteyi uygular, imza + AI filtresi uygular)
 func (mp *Mempool) Add(tx *blockchain.Transaction) bool {
 	if tx == nil || len(tx.ID) == 0 {
 		return false
 	}
+
+	// 1) İmza doğrulama (coinbase hariç her şey imzalı olsun)
+	if !tx.IsCoinbase() && !tx.Verify() {
+		return false
+	}
+
 	key := string(tx.ID)
 
 	mp.mu.Lock()
 	defer mp.mu.Unlock()
 
-	// kapasite kontrolü
+	// 2) kapasite kontrolü
 	if mp.capacity > 0 && len(mp.transactions) >= mp.capacity {
 		return false
 	}
-	// tekrar kontrolü
+
+	// 3) tekrar kontrolü
 	if _, ok := mp.index[key]; ok {
 		return false
 	}
+
+	// 4) === AI PREFILTER ===
+	if ai.Enabled() && tx.Sender != "" {
+		lite := []ai.TxLite{{
+			TxID:          hex.EncodeToString(tx.ID),
+			WalletAddress: tx.Sender,
+			Sender:        tx.Sender,
+			Amount:        tx.Amount,
+			Timestamp:     tx.Timestamp,
+		}}
+
+		// ai/analyzer.go: func AnalyzeTransactions(txs []TxLite) []AnomalyReport
+		reports := ai.AnalyzeTransactions(lite)
+		if len(reports) > 0 && reports[0].Suspicious {
+			// şüpheli işlem mempool'a alınmaz
+			return false
+		}
+	}
+	// === /AI PREFILTER ===
 
 	mp.transactions = append(mp.transactions, tx)
 	mp.index[key] = struct{}{}
@@ -91,14 +120,17 @@ func (mp *Mempool) PopBatch(n int) []*blockchain.Transaction {
 		n = len(mp.transactions)
 	}
 	batch := mp.transactions[:n]
+
 	// index'ten sil
 	for _, tx := range batch {
 		delete(mp.index, string(tx.ID))
 	}
+
 	// geri kalan
 	rest := make([]*blockchain.Transaction, len(mp.transactions)-n)
 	copy(rest, mp.transactions[n:])
 	mp.transactions = rest
+
 	return batch
 }
 

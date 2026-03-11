@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"quantumcoin/ai"
 	"quantumcoin/config"
 	"quantumcoin/wallet"
 )
@@ -30,6 +31,7 @@ const (
 	InitialRewardDefault   = 50
 )
 
+// UYARISIZ ve doğru hal
 func GetCurrentReward() int {
 	p := config.Current()
 	now := time.Now().Unix()
@@ -57,6 +59,7 @@ func GetCurrentReward() int {
 	if r < 1 {
 		r = 1
 	}
+
 	miningSecs := p.MiningPeriodSecs
 	if miningSecs <= 0 {
 		miningSecs = MiningPeriodDefault
@@ -107,6 +110,12 @@ func NewBlockchain(initialReward, totalSupply int) *Blockchain {
 		pendingTxs:  []*Transaction{},
 	}
 	bc.UpdateUTXOSet()
+
+	// AI'ye genesis’i bildir
+	if ai.Enabled() {
+		ai.OnBlockAdded(genesis)
+	}
+
 	return bc
 }
 
@@ -128,26 +137,52 @@ func (bc *Blockchain) AddBlock(txs []*Transaction, miner string, difficulty int)
 	nb := NewBlock(prev.Index+1, txs, prev.Hash, miner, difficulty)
 	bc.Blocks = append(bc.Blocks, nb)
 	bc.UpdateUTXOSet()
+
+	// AI'ye haber ver
+	if ai.Enabled() {
+		ai.OnBlockAdded(nb)
+	}
+
 	return nb
 }
 
 func (bc *Blockchain) AddBlockFromPeer(blk *Block) error {
+	if blk == nil {
+		return ErrNilBlock
+	}
+
+	// 1) Temel blok güvenliği (timestamp, tx sayısı, outputs vb.)
+	if err := ValidateBlockBasic(blk); err != nil {
+		return fmt.Errorf("peer block basic validation failed: %w", err)
+	}
+
+	// 2) PoW doğrulaması
 	if !blk.ValidatePoW() {
 		return ErrInvalidPoW
 	}
+
+	// 3) Zincire bağlanırlık kontrolü
 	if len(bc.Blocks) > 0 {
 		last := bc.Blocks[len(bc.Blocks)-1]
 		if !bytes.Equal(blk.PrevHash, last.Hash) {
 			return ErrPrevHashMismatch
 		}
 	}
-	// Peer'den gelen bloğun işlemlerini doğrula
+
+	// 4) İşlem imzaları / yapısı
 	if err := bc.validateBlockTxs(blk.Transactions); err != nil {
-		return err
+		return fmt.Errorf("peer block tx validation failed: %w", err)
 	}
 
+	// 5) Bloku zincire ekle
 	bc.Blocks = append(bc.Blocks, blk)
 	bc.UpdateUTXOSet()
+
+	// 6) AI'ye haber ver
+	if ai.Enabled() {
+		ai.OnBlockAdded(blk)
+	}
+
 	return nil
 }
 
@@ -177,6 +212,12 @@ func (bc *Blockchain) ReplaceChain(blocks []*Block) error {
 	}
 	bc.Blocks = blocks
 	bc.UpdateUTXOSet()
+
+	// AI'ye bütün zincirin değiştiğini bildir
+	if ai.Enabled() {
+		ai.OnChainReplaced(blocks)
+	}
+
 	return nil
 }
 
@@ -236,11 +277,19 @@ func (bc *Blockchain) AddTransaction(tx *Transaction) error {
 	if tx == nil {
 		return ErrNilTransaction
 	}
+
+	// --- Temel güvenlik kontrolleri (security.go) ---
+	if err := ValidateTransactionBasic(tx); err != nil {
+		return err
+	}
+
 	// coinbase dışındaki işlemler imzalı ve doğrulanmış olmalı
 	if !tx.IsCoinbase() && !tx.Verify() {
 		return fmt.Errorf("invalid tx signature")
 	}
-	// basit kurallar
+
+	// Eski basit kurallar (ValidateTransactionBasic zaten outputs>0 kontrolü yapıyor ama
+	// mevcut davranışı bozmamak için bırakıyoruz)
 	if len(tx.Outputs) == 0 {
 		return fmt.Errorf("empty outputs")
 	}
@@ -308,7 +357,7 @@ func (bc *Blockchain) MineBlock(miner string, difficulty int) (*Block, error) {
 		return nil, ErrChainNotInitialized
 	}
 
-	// >>> EKLENDİ: yalnız başarılı kazımda mined_balance.json yaz (defer ile güvenli)
+	// yalnız başarılı kazımdan sonra mined_balance.json yaz
 	var _minedOK bool
 	_minedReward := GetCurrentReward()
 	defer func() {
@@ -319,7 +368,7 @@ func (bc *Blockchain) MineBlock(miner string, difficulty int) (*Block, error) {
 
 	cbTx, err := newCoinbaseTx(miner)
 	if err != nil {
-		return nil, fmt.Errorf("coinbase tx: %w", err) // wrapcheck
+		return nil, fmt.Errorf("coinbase tx: %w", err)
 	}
 
 	// pending kopyasını al, coinbase ile birleştir ve doğrula
@@ -335,8 +384,36 @@ func (bc *Blockchain) MineBlock(miner string, difficulty int) (*Block, error) {
 	bc.UpdateUTXOSet()
 	bc.pendingTxs = []*Transaction{} // mempool’u boşalt
 
-	// >>> EKLENDİ: başarı bayrağı
 	_minedOK = true
+
+	// AI: bizim node kazdı, haber ver
+	if ai.Enabled() {
+		ai.OnBlockAdded(nb)
+
+		// === BURASI YENİ: bloktan AI bonusu üret ve dosyaya yaz ===
+		lites := make([]ai.TxLite, 0, len(nb.Transactions))
+		for _, tx := range nb.Transactions {
+			if tx == nil {
+				continue
+			}
+			lites = append(lites, ai.TxLite{
+				TxID:          hex.EncodeToString(tx.ID),
+				WalletAddress: tx.Sender,
+				Sender:        tx.Sender,
+				Amount:        tx.Amount,
+				Timestamp:     tx.Timestamp,
+			})
+		}
+		bon := ai.BuildAIBonuses(lites)
+
+		nodeDir := strings.TrimSpace(os.Getenv("QC_NODE_DIR"))
+		if nodeDir == "" {
+			nodeDir = "."
+		}
+		_ = ai.WriteAIBonusesTo(nodeDir, bon)
+		// === /YENİ ===
+	}
+
 	return nb, nil
 }
 
@@ -366,7 +443,7 @@ func (bc *Blockchain) SaveToFile(filename string) error {
 func LoadBlockchainFromFile(filename string) (*Blockchain, error) {
 	data, err := os.ReadFile(filename)
 	if err != nil {
-		return nil, fmt.Errorf("read blockchain file: %w", err) // wrapcheck
+		return nil, fmt.Errorf("read blockchain file: %w", err)
 	}
 	return DeserializeBlockchain(data), nil
 }
@@ -420,18 +497,29 @@ func (bc *Blockchain) isOutputSpent(txid []byte, outIdx int) bool {
 
 // ---- Eklenen yardımcılar ----
 
-// Blok içindeki tüm işlemleri doğrula (coinbase için sadece output kuralı)
+// Blok içindeki tüm işlemleri doğrula.
+// Coinbase için: temel security + en az 1 output.
+// Normal tx için: temel security + imza doğrulaması.
 func (bc *Blockchain) validateBlockTxs(txs []*Transaction) error {
 	for _, tx := range txs {
 		if tx == nil {
 			return fmt.Errorf("nil tx")
 		}
+
+		// Temel güvenlik kuralları (ID, timestamp, outputs, amount overflow vs.)
+		if err := ValidateTransactionBasic(tx); err != nil {
+			return err
+		}
+
+		// Coinbase için ekstra imza zorunlu değil
 		if tx.IsCoinbase() {
 			if len(tx.Outputs) == 0 {
 				return fmt.Errorf("invalid coinbase (no outputs)")
 			}
 			continue
 		}
+
+		// Normal tx: imza doğrulaması
 		if !tx.Verify() {
 			return fmt.Errorf("invalid tx signature")
 		}

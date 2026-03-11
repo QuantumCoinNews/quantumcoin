@@ -21,6 +21,7 @@ import (
 	"quantumcoin/miner"  // pasif; endpoint'ler duruyor
 	"quantumcoin/wallet" // address decode/utxo filtre
 	"quantumcoin/webui"  // gömülü web arayüz
+	// 👈 YENİ: telemetry snapshot buradan okunacak
 )
 
 var (
@@ -607,6 +608,8 @@ func StartHTTP(addr string) error {
 
 	// API route'lar
 	mux.HandleFunc("/health", health)
+	mux.HandleFunc("/api/telemetry", HandleTelemetry) // 👈 YENİ satır
+	mux.HandleFunc("/api/ai/alerts", HandleAIAlerts)  // 👈 YENİ SATIR
 	mux.HandleFunc("/api/blocks", listBlocks)
 	mux.HandleFunc("/api/block", getBlock)
 	mux.HandleFunc("/api/mempool", listMempool)

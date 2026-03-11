@@ -48,6 +48,7 @@ wallet_gui_console.log
 # Node (varsa)
 node_modules/
 
+
 # ================= Release klasörü: sadece scriptler takipte =================
 /release/*.exe
 /release/*.dll
@@ -70,12 +71,24 @@ node_modules/
 .env.*
 .env.local
 env.local
+
 *.key
 *.pem
 *.p12
-*secret*
-*secrets*
+
 credentials.*
 id_rsa*
 id_ecdsa*
 ssh_private_key*
+
+# App secrets
+secrets/
+secrets/*.json
+**/youtube_token.json
+**/client_secret.json
+
+# Runtime artifacts
+logs/
+out/
+src/content/out/
+ai_cache/

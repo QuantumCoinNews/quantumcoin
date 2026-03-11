@@ -1,3 +1,4 @@
+// internal/utxo.go
 package internal
 
 import (
@@ -18,7 +19,13 @@ func NewUTXOSet() *UTXOSet {
 
 // Reindex: Zinciri baştan tarar ve UTXO'ları günceller
 func (set *UTXOSet) Reindex(chain *blockchain.Blockchain) {
+	// Her çağrıda temiz bir map ile başla
 	set.UTXOs = make(map[string][]blockchain.TransactionOutput)
+
+	// Güvenlik: nil veya boş zincirde panic olmasın
+	if chain == nil || len(chain.Blocks) == 0 {
+		return
+	}
 
 	// 1) Tüm çıktıları ekle
 	for _, b := range chain.Blocks {

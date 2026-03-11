@@ -1,46 +1,46 @@
 id: 2025-10-02-sample
-title: "Bitcoin’in Gizemli Hikâyesi"
-caption: "Bugünün postu. #Bitcoin #Crypto"
-text: ""                        # Telegram/X uzun metin
+title: "Bitcoins Mysterious Story"
+caption: "Todays post. #Bitcoin #Crypto"
+text: ""                        # Telegram/X long text
 tags: ["Bitcoin","Crypto","Blockchain"]
 
-# Ortak medya (fallback)
+# Shared media (fallback)
 image: content/media/post01.jpg
 video: content/media/short01.mp4
 album:
   - content/media/post01_a.jpg
   - content/media/post01_b.jpg
 
-# Platform bazlı override (isteğe bağlı)
+# Per-platform override (optional)
 platforms:
   youtube:
     enabled: true
     title: "Bitcoin Documentary | Satoshi"
-    description: "Kısa açıklama + hashtag"
+    description: "Short description + hashtag"
     tags: ["bitcoin","crypto","documentary"]
-    video: content/media/yt_video.mp4   # yoksa üstteki video
+    video: content/media/yt_video.mp4   # if empty, use shared video above
     privacy: public                     # public|unlisted|private
-    shorts: true                        # 60s/dikey ise
+    shorts: true                        # if vertical/<=60s
   x:
     enabled: true
-    text: "Bugün #Bitcoin hakkında ilginç bir gerçek…"
+    text: "Today a cool fact about #Bitcoin..."
     images:
       - content/media/x_1.jpg
       - content/media/x_2.jpg
-    video: ""                           # varsa tek video
+    video: ""                           # single video if provided
   instagram:
     enabled: true
     type: "image"                       # image|reel
-    caption: "IG alt yazı"
+    caption: "IG caption"
     media:
-      - content/media/ig_1.jpg          # image için
-    reel: content/media/reel01.mp4      # reel için
+      - content/media/ig_1.jpg          # for image
+    reel: content/media/reel01.mp4      # for reel
   telegram:
     enabled: true
-    text: ""                            # boşsa caption+title kullanır
-    image: ""                           # boşsa ortak image
-    video: ""                           # boşsa ortak video
+    text: ""                            # if empty, uses caption+title
+    image: ""                           # if empty, uses shared image
+    video: ""                           # if empty, uses shared video
   tiktok:
     enabled: true
-    caption: "TikTok kısa açıklama"
+    caption: "TikTok short caption"
     video: content/media/tk_short.mp4

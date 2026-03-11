@@ -4,27 +4,30 @@ import (
 	"log"
 	"sync"
 	"time"
+
+	"socialbot/content"
+	"socialbot/core"
+	"socialbot/platforms"
 )
 
 type SocialBot struct {
-	auth       *Auth
-	publishers *Publishers
+	auth       *core.Auth
+	publishers *platforms.Publishers
 	mu         sync.Mutex
 	running    bool
 }
 
-func NewSocialBot(a *Auth) *SocialBot {
+func NewSocialBot(a *core.Auth) *SocialBot {
 	return &SocialBot{
 		auth:       a,
-		publishers: NewPublishers(a),
+		publishers: platforms.NewPublishers(a),
 	}
 }
 
-// DoAutoShare -> günlük otomatik paylaşım akışı
 func (b *SocialBot) DoAutoShare() {
 	b.mu.Lock()
 	if b.running {
-		log.Printf("DoAutoShare atlandı: zaten çalışıyor")
+		log.Printf("DoAutoShare skipped: already running")
 		b.mu.Unlock()
 		return
 	}
@@ -36,17 +39,17 @@ func (b *SocialBot) DoAutoShare() {
 		b.mu.Lock()
 		b.running = false
 		b.mu.Unlock()
-		log.Printf("DoAutoShare bitti (%.1fs)", time.Since(start).Seconds())
+		log.Printf("DoAutoShare done (%.1fs)", time.Since(start).Seconds())
 	}()
 
-	item, err := PickToday()
+	item, err := content.PickToday()
 	if err != nil {
-		log.Printf("İçerik seçilemedi: %v", err)
+		log.Printf("PickToday failed: %v", err)
 		return
 	}
-	log.Printf("Gönderim ID=%s Title=%q", item.ID, item.Title)
+	log.Printf("Selected content ID=%s Title=%q", item.ID, item.Title)
 
 	if err := b.publishers.PublishAll(item); err != nil {
-		log.Printf("Publish hatası: %v", err)
+		log.Printf("PublishAll error: %v", err)
 	}
 }
