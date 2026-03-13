@@ -101,3 +101,9 @@ release/miner_out.log
 release/api_out.log
 release/mined_balance.json
 
+
+# Large release artifacts (do not commit)
+release.zip
+release/*.zip
+*.zip
+
