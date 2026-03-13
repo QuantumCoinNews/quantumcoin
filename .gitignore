@@ -92,3 +92,12 @@ logs/
 out/
 src/content/out/
 ai_cache/
+
+# Runtime flags/logs
+release/miner_stop.flag
+release/*.log
+release/*_out.log
+release/miner_out.log
+release/api_out.log
+release/mined_balance.json
+
