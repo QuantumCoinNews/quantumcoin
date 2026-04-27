@@ -2,11 +2,25 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "HATA TARAMA: full",
+      "label": "HATA TARAMA: build all",
       "type": "shell",
-      "command": "go clean -cache -modcache && go fmt ./... && go vet ./... && go build ./...",
-      "options": { "cwd": "${workspaceFolder}" },
-      "group": { "kind": "build", "isDefault": true },
+      "command": "go build ./...",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": ["$go"]
+    },
+    {
+      "label": "HATA TARAMA: wallet gui",
+      "type": "shell",
+      "command": "go build ./cmd/wallet",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
       "problemMatcher": ["$go"]
     }
   ]

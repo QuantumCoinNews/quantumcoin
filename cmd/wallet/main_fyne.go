@@ -1,4 +1,3 @@
-
 package main
 
 import (
@@ -43,15 +42,10 @@ func stripANSI(s string) string {
 	return ansiRegexp.ReplaceAllString(s, "")
 }
 
-// ----------------------------------------------------------
-// Windows'ta açılışta kendi konsolumuzu bırak (GUI siyah pencere göstermesin)
-// --- Windows helper'ları ---
 func hideConsoleOnStartup() {
-	// sadece Windows
 	if runtime.GOOS != "windows" {
 		return
 	}
-	// mevcut konsolu bırak
 	mod := syscall.NewLazyDLL("kernel32.dll")
 	proc := mod.NewProc("FreeConsole")
 	_, _, _ = proc.Call()
@@ -68,12 +62,12 @@ func markMinerStoppedFromWatcher() {
 	// pid temizle
 	clearMinerPID()
 
-	// UI state indir
-	// ÖNEMLİ: onMinerStateUpdate zaten ui() içinde çalışıyor.
-	// Burada tekrar ui() sarmalama yapmayalım (double-ui bazı durumlarda güncellemeyi kaçırıyor).
-	if onMinerStateUpdate != nil {
-		onMinerStateUpdate(false)
-	}
+	// UI state indir (UI thread)
+	ui(func() {
+		if onMinerStateUpdate != nil {
+			onMinerStateUpdate(false)
+		}
+	})
 
 	// balance refresh
 	if walletRefreshHook != nil {
@@ -81,8 +75,6 @@ func markMinerStoppedFromWatcher() {
 	}
 }
 
-// GUI'den miner'ı TEK bir görünen CMD penceresinde başlatır.
-// CMD kapatılırsa (X) cmd.Wait() döner ve poller/watchdog STOP'a indirir.
 func startMinerVisible() error {
 	exePath, err := os.Executable()
 	if err != nil {
@@ -100,20 +92,21 @@ func startMinerVisible() error {
 	cmd := exec.Command("cmd.exe", "/K", cmdLine)
 	cmd.Dir = releaseDir
 
-	// Kritik: miner'ın data klasörü + pid dosyası + chain_data.dat hep releaseDir olsun.
-	// (Aksi halde farklı QC_NODE_DIR ile aynı yükseklikte döngü görürsün.)
+	// API base (env > auto-detect)
 	api := strings.TrimSpace(os.Getenv("QC_API_BASE"))
 	if api == "" {
-		api = apiBase() // sende var; port tespit eder
+		api = apiBase()
 	}
+
+	// run_miner.cmd için env
 	cmd.Env = append(os.Environ(),
 		"QC_NODE_DIR="+releaseDir,
 		"QC_MINED_PATH="+filepath.Join(releaseDir, "mined_balance.json"),
 		"QC_API_BASE="+api,
-		"QC_LANG=en", // loglar İngilizce kalsın
+		"QC_LANG=en",
 	)
 
-	// Görünür yeni console
+	// GUI console-less olsa bile CMD görünür açılsın
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		CreationFlags: 0x00000010, // CREATE_NEW_CONSOLE
 	}
@@ -122,15 +115,20 @@ func startMinerVisible() error {
 		return err
 	}
 
-	// cmd.exe PID kaydet (GUI watchdog bununla çalışacak)
+	// PID yaz (cmd.exe PID)
 	if cmd.Process != nil {
 		writeMinerPID(cmd.Process.Pid)
 	}
 
-	// Miner çalışıyor kabul et (poller'ın "hemen çıkmasını" engeller)
+	// GUI state: running
 	minerRunningState = true
+	ui(func() {
+		if onMinerStateUpdate != nil {
+			onMinerStateUpdate(true)
+		}
+	})
 
-	// X kapanışını garanti yakalamak için poller'ı başlat
+	// Poller (idempotent)
 	startMinerStatePoller()
 
 	// X ile kapanırsa -> Wait döner -> STOP
@@ -142,8 +140,6 @@ func startMinerVisible() error {
 	return nil
 }
 
-// GUI'den miner'ı durdur (görünür CMD + miner süreçleri)
-// NOT: quantumcoin.exe'yi (API dahil) öldürmeyiz. Sadece miner CMD ağacını kapatırız.
 func stopMinerVisible() error {
 	exePath, err := os.Executable()
 	if err != nil {
@@ -170,7 +166,7 @@ func stopMinerVisible() error {
 				_ = c2.Run()
 			}
 		} else {
-			// 2) PID yoksa fallback: başlığa göre (wildcard)
+			// 2) PID yoksa fallback: başlığa göre
 			c := exec.Command("taskkill", "/F", "/FI", `WINDOWTITLE eq QuantumCoin Miner*`)
 			c.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 			_ = c.Run()
@@ -301,12 +297,11 @@ func startMinerStatePoller() {
 	}()
 }
 
-// ---- UI helper: Cüzdan sekmesi aktif mi?
 func isWalletTabActive(w fyne.Window) bool {
 	if w == nil {
 		return true
 	}
-	// buildUI() içinde AppTabs kullanılıyor; seçili sekmeyi bulalım
+
 	if root, ok := w.Content().(*fyne.Container); ok {
 		for _, obj := range root.Objects {
 			if tabs, ok := obj.(*container.AppTabs); ok {
@@ -3002,7 +2997,7 @@ func makeMinerTab(w fyne.Window, defaultAddr string) fyne.CanvasObject {
 			onMinerStateUpdate(true)
 		}
 
-		// Watchdog: CMD X kapanınca otomatik stop
+		// Watchdog: CMD X ile kapanınca otomatik stop
 		go windowsMinerWatchdog()
 
 		// Ek garanti: poller varsa (idempotent)
@@ -3050,6 +3045,7 @@ func makeMinerTab(w fyne.Window, defaultAddr string) fyne.CanvasObject {
 
 	return container.NewVBox(top, btnBar, widget.NewSeparator(), logScroll)
 }
+
 func ensureRewardAddress(cur string) (string, error) {
 	// 1) Kullanıcı girdisi
 	a := cleanBase58(strings.TrimSpace(cur))
@@ -3086,11 +3082,11 @@ func ensureRewardAddress(cur string) (string, error) {
 	ensureBonusStore(addr)
 	return addr, nil
 }
+
 func writeMinerStopFlag() {
 	f := filepath.Join(nodeDir(), "miner_stop.flag")
 	_ = os.WriteFile(f, []byte("stop"), 0644)
 }
-
 
 // --- Windows: PID'nin hangi process olduğunu hızlıca anlamak için ---
 func firstCSVField(line string) string {
@@ -3098,15 +3094,18 @@ func firstCSVField(line string) string {
 	if line == "" {
 		return ""
 	}
+
 	// "cmd.exe","1234",...
 	if strings.HasPrefix(line, `"`) {
 		if j := strings.Index(line[1:], `"`); j >= 0 {
 			return line[1 : 1+j]
 		}
 	}
+
 	if j := strings.Index(line, ","); j >= 0 {
 		return strings.Trim(line[:j], `"`)
 	}
+
 	return strings.Trim(line, `"`)
 }
 
@@ -3114,6 +3113,7 @@ func processImageName(pid int) string {
 	if pid <= 0 || runtime.GOOS != "windows" {
 		return ""
 	}
+
 	out, err := exec.Command(
 		"tasklist", "/fo", "csv", "/nh",
 		"/fi", fmt.Sprintf("PID eq %d", pid),
@@ -3121,13 +3121,16 @@ func processImageName(pid int) string {
 	if err != nil {
 		return ""
 	}
+
 	line := strings.TrimSpace(string(out))
 	if line == "" {
 		return ""
 	}
+
 	if i := strings.IndexByte(line, '\n'); i >= 0 {
 		line = strings.TrimSpace(line[:i])
 	}
+
 	return strings.ToLower(firstCSVField(line))
 }
 
@@ -3160,10 +3163,12 @@ func killQuantumcoinMineOnly() {
 		if ln == "" {
 			continue
 		}
+
 		pid, e := strconv.Atoi(ln)
 		if e != nil || pid <= 0 {
 			continue
 		}
+
 		c := exec.Command("taskkill", "/PID", strconv.Itoa(pid), "/T", "/F")
 		c.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 		_ = c.Run()
@@ -3189,8 +3194,8 @@ func cmdWindowTitleByPID(pid int) (title string, ok bool) {
 		return "", false
 	}
 
-	line := strings.Split(s, "\n")[0]
-	low := strings.ToLower(strings.TrimSpace(line))
+	line := strings.TrimSpace(strings.Split(s, "\n")[0])
+	low := strings.ToLower(line)
 
 	if strings.HasPrefix(low, "info:") || strings.Contains(low, "no tasks are running") {
 		return "", false
@@ -3198,14 +3203,16 @@ func cmdWindowTitleByPID(pid int) (title string, ok bool) {
 
 	r := csv.NewReader(strings.NewReader(line))
 	r.FieldsPerRecord = -1
+
 	rec, err := r.Read()
 	if err != nil || len(rec) < 2 {
-		return "", true
+		return "", false
 	}
 
 	if len(rec) >= 9 {
 		return rec[8], true
 	}
+
 	return rec[len(rec)-1], true
 }
 
@@ -3231,27 +3238,33 @@ func findMinerCmdPIDByTitle() int {
 		if err != nil {
 			break
 		}
+
 		// Image Name, PID, ..., Window Title
 		if len(rec) < 2 {
 			continue
 		}
+
 		img := strings.ToLower(strings.TrimSpace(rec[0]))
 		if img != "cmd.exe" {
 			continue
 		}
+
 		pidStr := strings.TrimSpace(rec[1])
+
 		title := ""
 		if len(rec) >= 9 {
 			title = rec[8]
 		} else {
 			title = rec[len(rec)-1]
 		}
+
 		if strings.Contains(strings.ToLower(title), "quantumcoin miner") {
 			if pid, e := strconv.Atoi(pidStr); e == nil && pid > 0 {
 				return pid
 			}
 		}
 	}
+
 	return 0
 }
 
@@ -3263,7 +3276,8 @@ func minerWindowAlive() bool {
 
 	pid, _ := readMinerPID()
 
-	// PID yanlış yazıldıysa (cmd.exe değilse) title'dan doğru PID'yi bul ve düzelt
+	// PID yoksa veya yanlışlıkla cmd.exe dışında bir process yazıldıysa,
+	// pencere başlığından doğru CMD PID'sini bul ve düzelt.
 	if pid <= 0 || !isCmdPID(pid) {
 		if p2 := findMinerCmdPIDByTitle(); p2 > 0 {
 			pid = p2
@@ -3273,37 +3287,52 @@ func minerWindowAlive() bool {
 
 	if pid > 0 {
 		if !isProcessAlive(pid) {
+			// PID ölmüşse son fallback olarak başlıktan tekrar ara.
+			if p2 := findMinerCmdPIDByTitle(); p2 > 0 {
+				writeMinerPID(p2)
+				return true
+			}
 			return false
 		}
+
 		if title, ok := cmdWindowTitleByPID(pid); ok {
-			return strings.Contains(strings.ToLower(title), "quantumcoin miner")
+			title = strings.ToLower(strings.TrimSpace(title))
+			return strings.Contains(title, "quantumcoin miner")
 		}
-		// title okunamadı ama cmd yaşıyor -> alive say
+
+		// PID canlı ama title okunamadıysa cmd yaşıyor kabul et.
 		return true
 	}
 
-	// PID yoksa en son fallback: tarama
+	// PID hiç yoksa en son fallback: açık cmd.exe pencerelerinde başlığa bak.
 	if p2 := findMinerCmdPIDByTitle(); p2 > 0 {
 		writeMinerPID(p2)
 		return true
 	}
+
 	return false
 }
 
 // ===== Windows miner watchdog =====
-// CMD kapanırsa (X) UI'ı "Stopped" yapar + orphan "mine" süreçlerini temizler.
+// CMD penceresi X ile kapanırsa UI durumunu "Stopped" yapar
+// ve arkada kalmış quantumcoin.exe mine süreçlerini temizler.
 func windowsMinerWatchdog() {
 	if runtime.GOOS != "windows" {
 		return
 	}
 
 	misses := 0
+
 	for {
 		if !minerRunningState {
 			return
 		}
 
 		time.Sleep(900 * time.Millisecond)
+
+		if !minerRunningState {
+			return
+		}
 
 		if minerWindowAlive() {
 			misses = 0
@@ -3315,68 +3344,16 @@ func windowsMinerWatchdog() {
 			continue
 		}
 
-		// Kullanıcı X ile kapatmışsa: miner_stop.flag yaz + mine süreçlerini temizle
+		// Kullanıcı CMD penceresini X ile kapattıysa:
+		// 1) stop flag yaz
+		// 2) orphan mine süreçlerini temizle
+		// 3) GUI durumunu Stopped yap
 		writeMinerStopFlag()
 		killQuantumcoinMineOnly()
-
 		markMinerStoppedFromWatcher()
+
 		return
 	}
-}
-
-		// 3) Süreç yaşıyor ama pencere kapandıysa (X):
-		//    bazı durumlarda process orphan kalabiliyor. Bu durumda kesin stop uygula.
-		title, ok := cmdWindowTitleByPID(pid)
-		if !ok {
-			// PID görünmüyor => pratikte öldü kabul
-			misses++
-			if misses >= 2 {
-				markMinerStoppedFromWatcher()
-				return
-			}
-			continue
-		}
-
-		t := strings.ToLower(strings.TrimSpace(title))
-		// title boş / N/A => pencere yok => kullanıcı X ile kapattı (veya window gitti)
-		if t == "" || t == "n/a" || t == "yok" {
-			// Bu noktada: Stop button gibi davran -> stop flag yaz + PID tree kapat (gerekirse)
-			_ = stopMinerVisible() // bu zaten markMinerStoppedFromWatcher() çağırıyor
-			return
-		}
-
-		// normal: her şey canlı
-		misses = 0
-	}
-}
-
-func minerWindowAlive() bool {
-	if runtime.GOOS != "windows" {
-		return false
-	}
-
-	// 1) En sağlam: bizim başlattığımız cmd PID
-	if pid, err := readMinerPID(); err == nil && pid > 0 {
-		if !isProcessAlive(pid) {
-			return false
-		}
-		// PID var ama title okunamıyorsa yine de alive say (tasklist bazen title veremeyebilir)
-		if title, ok := cmdWindowTitleByPID(pid); ok {
-			return strings.Contains(strings.ToLower(title), "quantumcoin miner")
-		}
-		return true
-	}
-
-	// 2) PID yoksa fallback: tüm cmd.exe'lerde başlığa bak
-	out, err := exec.Command(
-		"tasklist", "/v", "/fo", "csv", "/nh",
-		"/fi", "IMAGENAME eq cmd.exe",
-	).Output()
-	if err != nil {
-		return false
-	}
-	s := strings.ToLower(string(out))
-	return strings.Contains(s, "quantumcoin miner")
 }
 
 /* ================== Web Wallet & API bootstrap ================== */
