@@ -414,6 +414,10 @@ func (bc *Blockchain) validateTransactionSpend(tx *Transaction) error {
 			return fmt.Errorf("spent or empty utxo: %s", outpoint)
 		}
 
+		if !bc.isCoinbaseOutputMature(in.TxID, in.OutIndex) {
+			return fmt.Errorf("coinbase output is not mature: %s", outpoint)
+		}
+
 		if len(in.PubKey) == 0 {
 			return fmt.Errorf("missing input pubkey: %s", outpoint)
 		}
@@ -645,6 +649,41 @@ func (bc *Blockchain) GetBlockByHash(hash []byte) *Block {
 	return nil
 }
 
+func (bc *Blockchain) isCoinbaseOutputMature(txid []byte, outIdx int) bool {
+	if bc == nil || bc.coinbaseMaturity <= 0 {
+		return true
+	}
+	if len(txid) == 0 || outIdx < 0 {
+		return false
+	}
+
+	best := bc.GetBestHeight()
+
+	for height, block := range bc.Blocks {
+		if block == nil {
+			continue
+		}
+
+		for _, tx := range block.Transactions {
+			if tx == nil || !bytes.Equal(tx.ID, txid) {
+				continue
+			}
+
+			if !tx.IsCoinbase() {
+				return true
+			}
+
+			if outIdx >= len(tx.Outputs) {
+				return false
+			}
+
+			age := best - height
+			return age >= bc.coinbaseMaturity
+		}
+	}
+
+	return false
+}
 func (bc *Blockchain) isOutputSpent(txid []byte, outIdx int) bool {
 	for _, blk := range bc.Blocks {
 		for _, tx := range blk.Transactions {
