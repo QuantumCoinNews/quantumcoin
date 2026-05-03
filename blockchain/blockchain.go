@@ -652,29 +652,53 @@ func (bc *Blockchain) isOutputSpent(txid []byte, outIdx int) bool {
 // Coinbase için: temel security + en az 1 output.
 // Normal tx için: temel security + imza doğrulaması.
 func (bc *Blockchain) validateBlockTxs(txs []*Transaction) error {
+	if bc == nil {
+		return fmt.Errorf("nil blockchain")
+	}
+	if len(txs) == 0 {
+		return fmt.Errorf("empty block transactions")
+	}
+
+	blockSpent := make(map[string]bool)
+	coinbaseCount := 0
+
 	for _, tx := range txs {
 		if tx == nil {
 			return fmt.Errorf("nil tx")
 		}
 
-		// Temel güvenlik kuralları (ID, timestamp, outputs, amount overflow vs.)
 		if err := ValidateTransactionBasic(tx); err != nil {
 			return err
 		}
 
-		// Coinbase için ekstra imza zorunlu değil
 		if tx.IsCoinbase() {
+			coinbaseCount++
+			if coinbaseCount > 1 {
+				return fmt.Errorf("multiple coinbase transactions in block")
+			}
 			if len(tx.Outputs) == 0 {
 				return fmt.Errorf("invalid coinbase (no outputs)")
 			}
 			continue
 		}
 
-		// Normal tx: imza doğrulaması
 		if !tx.Verify() {
 			return fmt.Errorf("invalid tx signature")
 		}
+
+		for _, in := range tx.Inputs {
+			if len(in.TxID) == 0 || in.OutIndex < 0 {
+				return fmt.Errorf("invalid input outpoint in block")
+			}
+
+			outpoint := fmt.Sprintf("%x:%d", in.TxID, in.OutIndex)
+			if blockSpent[outpoint] {
+				return fmt.Errorf("double spend inside block: %s", outpoint)
+			}
+			blockSpent[outpoint] = true
+		}
 	}
+
 	return nil
 }
 
