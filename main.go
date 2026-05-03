@@ -183,7 +183,7 @@ func startContinuousMining(miner string) {
 			return
 
 		default:
-			blk, err := bc.MineBlock(miner, cfg.DefaultDifficultyBits)
+			blk, err := bc.MineBlock(miner, bc.NextDifficulty(cfg.DefaultDifficultyBits))
 			if err != nil {
 				log.Printf("mine error: %v", err)
 				time.Sleep(500 * time.Millisecond)
@@ -485,7 +485,7 @@ func main() {
 			return
 		}
 		miner := os.Args[2]
-		difficulty := cfg.DefaultDifficultyBits
+		difficulty := bc.NextDifficulty(cfg.DefaultDifficultyBits)
 		block, err := bc.MineBlock(miner, difficulty)
 		if err != nil {
 			log.Println("mining failed:", err)
@@ -830,7 +830,7 @@ func handleMineBlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	block, err := bc.MineBlock(req.Address, cfg.DefaultDifficultyBits)
+	block, err := bc.MineBlock(req.Address, bc.NextDifficulty(cfg.DefaultDifficultyBits))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -986,7 +986,7 @@ func handleFastMine(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for i := 0; i < n; i++ {
-		if _, err := bc.MineBlock(addr, cfg.DefaultDifficultyBits); err != nil {
+		if _, err := bc.MineBlock(addr, bc.NextDifficulty(cfg.DefaultDifficultyBits)); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -1361,7 +1361,7 @@ func handleMineJob(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "address required")
 		return
 	}
-	diff := cfg.DefaultDifficultyBits
+	diff := bc.NextDifficulty(cfg.DefaultDifficultyBits)
 	j := makeWebJob(addr, diff)
 	jobMu.Lock()
 	curJob = j
@@ -1420,7 +1420,7 @@ func handleMineSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go func(miner string) {
-		if blk, err := bc.MineBlock(miner, cfg.DefaultDifficultyBits); err == nil {
+		if blk, err := bc.MineBlock(miner, bc.NextDifficulty(cfg.DefaultDifficultyBits)); err == nil {
 			p2p.BroadcastMessage(p2p.BlockMessage(blk))
 			processAIBonus()
 			_ = bc.SaveToFile(cfg.ChainFile)
