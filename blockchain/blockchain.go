@@ -226,54 +226,109 @@ func (bc *Blockchain) GetAllBlocks() []*Block { return bc.Blocks }
 func (bc *Blockchain) FindSpendableOutputs(pubKeyHash []byte, amount int) (map[string][]int, int) {
 	acc := 0
 	unspent := make(map[string][]int)
+
+	if bc == nil || amount <= 0 || len(pubKeyHash) == 0 {
+		return unspent, acc
+	}
+
 	for txID, outs := range bc.UTXO {
 		for idx, out := range outs {
+			// UpdateUTXOSet gerçek OutIndex'i korumak için harcanmış slotları
+			// zero-value bırakabilir. Bu slotları harcanabilir sayma.
+			if out.Amount <= 0 {
+				continue
+			}
+
 			if out.IsLockedWithKey(pubKeyHash) {
 				acc += out.Amount
 				unspent[txID] = append(unspent[txID], idx)
+
 				if acc >= amount {
 					return unspent, acc
 				}
 			}
 		}
 	}
+
 	return unspent, acc
 }
 
 func (bc *Blockchain) UpdateUTXOSet() {
 	utxo := make(map[string][]TransactionOutput)
+
+	if bc == nil {
+		return
+	}
+
+	// Önce zincirde harcanmış tüm OutPoint'leri topla.
+	// key: txID hex, value: harcanmış output index'leri
+	spent := make(map[string]map[int]bool)
+
 	for _, block := range bc.Blocks {
+		if block == nil {
+			continue
+		}
+
 		for _, tx := range block.Transactions {
-			txID := hex.EncodeToString(tx.ID)
-			for outIdx, out := range tx.Outputs {
-				spent := false
-				for _, ob := range bc.Blocks {
-					if spent {
-						break
-					}
-					for _, otx := range ob.Transactions {
-						if spent {
-							break
-						}
-						for _, in := range otx.Inputs {
-							if hex.EncodeToString(in.TxID) == txID && in.OutIndex == outIdx {
-								spent = true
-								break
-							}
-						}
-					}
+			if tx == nil || tx.IsCoinbase() {
+				continue
+			}
+
+			for _, in := range tx.Inputs {
+				if len(in.TxID) == 0 || in.OutIndex < 0 {
+					continue
 				}
-				if !spent {
-					utxo[txID] = append(utxo[txID], out)
+
+				txID := hex.EncodeToString(in.TxID)
+				if spent[txID] == nil {
+					spent[txID] = make(map[int]bool)
 				}
+				spent[txID][in.OutIndex] = true
 			}
 		}
 	}
+
+	// Sonra tüm output'ları gerçek outIdx pozisyonunu koruyarak ekle.
+	// Harcanmış output'lar zero-value kalır; FindSpendableOutputs bunları atlar.
+	for _, block := range bc.Blocks {
+		if block == nil {
+			continue
+		}
+
+		for _, tx := range block.Transactions {
+			if tx == nil || len(tx.Outputs) == 0 {
+				continue
+			}
+
+			txID := hex.EncodeToString(tx.ID)
+			outs := make([]TransactionOutput, len(tx.Outputs))
+			hasUnspent := false
+
+			for outIdx, out := range tx.Outputs {
+				if spent[txID] != nil && spent[txID][outIdx] {
+					continue
+				}
+
+				outs[outIdx] = out
+				if out.Amount > 0 {
+					hasUnspent = true
+				}
+			}
+
+			if hasUnspent {
+				utxo[txID] = outs
+			}
+		}
+	}
+
 	bc.UTXO = utxo
 }
 
 // --- İMZA ZORUNLULUĞU: mempool’a eklemeden önce doğrula ---
 func (bc *Blockchain) AddTransaction(tx *Transaction) error {
+	if bc == nil {
+		return fmt.Errorf("nil blockchain")
+	}
 	if tx == nil {
 		return ErrNilTransaction
 	}
@@ -283,24 +338,120 @@ func (bc *Blockchain) AddTransaction(tx *Transaction) error {
 		return err
 	}
 
-	// coinbase dışındaki işlemler imzalı ve doğrulanmış olmalı
-	if !tx.IsCoinbase() && !tx.Verify() {
-		return fmt.Errorf("invalid tx signature")
+	// Coinbase sadece blok üretiminde oluşturulmalı; mempool'a alınmaz.
+	if tx.IsCoinbase() {
+		return fmt.Errorf("coinbase tx cannot be added to mempool")
 	}
 
-	// Eski basit kurallar (ValidateTransactionBasic zaten outputs>0 kontrolü yapıyor ama
-	// mevcut davranışı bozmamak için bırakıyoruz)
+	if len(tx.Inputs) == 0 {
+		return fmt.Errorf("empty inputs")
+	}
 	if len(tx.Outputs) == 0 {
 		return fmt.Errorf("empty outputs")
 	}
-	if !tx.IsCoinbase() && len(tx.Inputs) == 0 {
-		return fmt.Errorf("empty inputs")
+
+	// Normal işlemler imzalı ve doğrulanmış olmalı.
+	if !tx.Verify() {
+		return fmt.Errorf("invalid tx signature")
+	}
+
+	if bc.UTXO == nil {
+		bc.UpdateUTXOSet()
+	}
+
+	if err := bc.validateTransactionSpend(tx); err != nil {
+		return err
 	}
 
 	bc.pendingTxs = append(bc.pendingTxs, tx)
 	return nil
 }
 
+// validateTransactionSpend normal transaction için UTXO, input/output toplamı
+// ve mempool double-spend kontrollerini yapar.
+func (bc *Blockchain) validateTransactionSpend(tx *Transaction) error {
+	if bc == nil || tx == nil {
+		return fmt.Errorf("nil blockchain or transaction")
+	}
+	if tx.IsCoinbase() {
+		return nil
+	}
+
+	inputTotal := 0
+	outputTotal := 0
+	seenInputs := make(map[string]bool)
+
+	for _, out := range tx.Outputs {
+		if out.Amount <= 0 {
+			return fmt.Errorf("invalid output amount")
+		}
+		outputTotal += out.Amount
+	}
+
+	for _, in := range tx.Inputs {
+		if len(in.TxID) == 0 || in.OutIndex < 0 {
+			return fmt.Errorf("invalid input outpoint")
+		}
+
+		outpoint := fmt.Sprintf("%x:%d", in.TxID, in.OutIndex)
+		if seenInputs[outpoint] {
+			return fmt.Errorf("double spend inside transaction: %s", outpoint)
+		}
+		seenInputs[outpoint] = true
+
+		if bc.pendingSpendsOutpoint(in.TxID, in.OutIndex) {
+			return fmt.Errorf("input already pending in mempool: %s", outpoint)
+		}
+
+		txID := hex.EncodeToString(in.TxID)
+		outs, ok := bc.UTXO[txID]
+		if !ok || in.OutIndex >= len(outs) {
+			return fmt.Errorf("missing utxo: %s", outpoint)
+		}
+
+		prevOut := outs[in.OutIndex]
+		if prevOut.Amount <= 0 {
+			return fmt.Errorf("spent or empty utxo: %s", outpoint)
+		}
+
+		if len(in.PubKey) == 0 {
+			return fmt.Errorf("missing input pubkey: %s", outpoint)
+		}
+
+		pubKeyHash := wallet.HashPubKey(in.PubKey)
+		if !prevOut.IsLockedWithKey(pubKeyHash) {
+			return fmt.Errorf("input pubkey does not unlock utxo: %s", outpoint)
+		}
+
+		inputTotal += prevOut.Amount
+	}
+
+	if inputTotal < outputTotal {
+		return fmt.Errorf("insufficient input amount: input=%d output=%d", inputTotal, outputTotal)
+	}
+
+	return nil
+}
+
+func (bc *Blockchain) pendingSpendsOutpoint(txID []byte, outIdx int) bool {
+	if bc == nil || len(txID) == 0 || outIdx < 0 {
+		return false
+	}
+
+	for _, pending := range bc.pendingTxs {
+		if pending == nil || pending.IsCoinbase() {
+			continue
+		}
+
+		for _, in := range pending.Inputs {
+			if in.OutIndex == outIdx && bytes.Equal(in.TxID, txID) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
 func (bc *Blockchain) GetSpendableBalance(address string) int {
 	pubKeyHash := wallet.Base58DecodeAddress(address)
 	best := bc.GetBestHeight()
