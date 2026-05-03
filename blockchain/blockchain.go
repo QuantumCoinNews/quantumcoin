@@ -84,10 +84,24 @@ func NewBlockchain(initialReward, totalSupply int) *Blockchain {
 	genesisCoinbase.ID = genesisCoinbase.Hash()
 	txs = append(txs, genesisCoinbase)
 
-	if mainAddr := strings.TrimSpace(os.Getenv("QC_MAIN_ADDRESS")); mainAddr != "" && totalSupply > 0 {
-		premine := int(float64(totalSupply) * 0.12)
+	p := config.Current()
+	premineAddr := strings.TrimSpace(p.PremineAddress)
+	if premineAddr == "" {
+		premineAddr = strings.TrimSpace(os.Getenv("QC_MAIN_ADDRESS"))
+	}
+
+	preminePercent := p.PreminePercent
+	if preminePercent < 0 {
+		preminePercent = 0
+	}
+	if preminePercent > 100 {
+		preminePercent = 100
+	}
+
+	if premineAddr != "" && totalSupply > 0 && preminePercent > 0 {
+		premine := totalSupply * preminePercent / 100
 		if premine > 0 {
-			pk := wallet.Base58DecodeAddress(mainAddr)
+			pk := wallet.Base58DecodeAddress(premineAddr)
 			premTx := &Transaction{
 				ID:        nil,
 				Inputs:    []TransactionInput{},
@@ -100,7 +114,6 @@ func NewBlockchain(initialReward, totalSupply int) *Blockchain {
 			txs = append(txs, premTx)
 		}
 	}
-
 	genesis := NewBlock(0, txs, []byte{}, "genesis", 1)
 
 	bc := &Blockchain{
