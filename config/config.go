@@ -76,8 +76,14 @@ type Config struct {
 	// --- Premine / Founder allocation ---
 	// Founder allocation target: 5% total.
 	// Planned split: 1% liquid for listing/operations, 4% locked/vesting.
-	PreminePercent int    `json:"premine_percent"` // varsayılan: 5
-	PremineAddress string `json:"premine_address"` // boşsa DevFundAddress kullanılır
+	PreminePercent               int    `json:"premine_percent"`        // default: 5
+	PremineLiquidPercent         int    `json:"premine_liquid_percent"` // default: 1
+	PremineLockedPercent         int    `json:"premine_locked_percent"` // default: 4
+	PremineAddress               string `json:"premine_address"`        // fallback founder address
+	PremineLiquidAddress         string `json:"premine_liquid_address"`
+	PremineLockedAddress         string `json:"premine_locked_address"`
+	FounderVestingCliffMonths    int    `json:"founder_vesting_cliff_months"`    // default: 6
+	FounderVestingDurationMonths int    `json:"founder_vesting_duration_months"` // default: 36
 
 	// --- Networking ---
 	HTTPPort  string   `json:"http_port"`
@@ -127,11 +133,17 @@ func Default() *Config {
 		RewardAddrCommunity: "",
 
 		// Premine / founder defaults
-		PreminePercent: 5,
-		PremineAddress: "",
-		HTTPPort:       ":8081",
-		P2PPort:        ":3001",
-		BootPeers:      []string{},
+		PreminePercent:               5,
+		PremineLiquidPercent:         1,
+		PremineLockedPercent:         4,
+		PremineAddress:               "",
+		PremineLiquidAddress:         "",
+		PremineLockedAddress:         "",
+		FounderVestingCliffMonths:    6,
+		FounderVestingDurationMonths: 36,
+		HTTPPort:                     ":8081",
+		P2PPort:                      ":3001",
+		BootPeers:                    []string{},
 
 		ChainFile:  "chain_data.dat",
 		BonusFile:  "bonus_store.json",
@@ -291,6 +303,21 @@ func (c *Config) Validate() error {
 	if c.PreminePercent < 0 || c.PreminePercent > 100 {
 		return errors.New("premine_percent must be 0..100")
 	}
+	if c.PremineLiquidPercent < 0 || c.PremineLiquidPercent > 100 {
+		return errors.New("premine_liquid_percent must be 0..100")
+	}
+	if c.PremineLockedPercent < 0 || c.PremineLockedPercent > 100 {
+		return errors.New("premine_locked_percent must be 0..100")
+	}
+	if c.PremineLiquidPercent+c.PremineLockedPercent != c.PreminePercent {
+		return errors.New("premine liquid+locked percent must equal premine_percent")
+	}
+	if c.FounderVestingCliffMonths < 0 {
+		return errors.New("founder_vesting_cliff_months cannot be negative")
+	}
+	if c.FounderVestingDurationMonths < 0 {
+		return errors.New("founder_vesting_duration_months cannot be negative")
+	}
 	if c.HTTPPort == "" || c.P2PPort == "" {
 		return errors.New("ports cannot be empty")
 	}
@@ -417,12 +444,30 @@ func merge(base, src *Config) {
 		base.RewardAddrCommunity = src.RewardAddrCommunity
 	}
 
-	// Premine
+	// Founder / Premine
 	if src.PreminePercent != 0 {
 		base.PreminePercent = src.PreminePercent
 	}
+	if src.PremineLiquidPercent != 0 {
+		base.PremineLiquidPercent = src.PremineLiquidPercent
+	}
+	if src.PremineLockedPercent != 0 {
+		base.PremineLockedPercent = src.PremineLockedPercent
+	}
 	if src.PremineAddress != "" {
 		base.PremineAddress = src.PremineAddress
+	}
+	if src.PremineLiquidAddress != "" {
+		base.PremineLiquidAddress = src.PremineLiquidAddress
+	}
+	if src.PremineLockedAddress != "" {
+		base.PremineLockedAddress = src.PremineLockedAddress
+	}
+	if src.FounderVestingCliffMonths != 0 {
+		base.FounderVestingCliffMonths = src.FounderVestingCliffMonths
+	}
+	if src.FounderVestingDurationMonths != 0 {
+		base.FounderVestingDurationMonths = src.FounderVestingDurationMonths
 	}
 
 	if src.HTTPPort != "" {
@@ -447,7 +492,6 @@ func merge(base, src *Config) {
 		base.LogLevel = src.LogLevel
 	}
 }
-
 func applyEnv(c *Config) {
 	// Helpers
 	envInt := func(key string, def int) int {
@@ -518,9 +562,15 @@ func applyEnv(c *Config) {
 	c.CommunityPoolAddress = envStr("QC_COMMUNITY_POOL_ADDRESS", c.CommunityPoolAddress)
 	c.BurnAddress = envStr("QC_BURN_ADDRESS", c.BurnAddress)
 
-	// Premine
+	// Founder / Premine
 	c.PreminePercent = envInt("QC_PREMINE_PERCENT", c.PreminePercent)
+	c.PremineLiquidPercent = envInt("QC_PREMINE_LIQUID_PERCENT", c.PremineLiquidPercent)
+	c.PremineLockedPercent = envInt("QC_PREMINE_LOCKED_PERCENT", c.PremineLockedPercent)
 	c.PremineAddress = envStr("QC_PREMINE_ADDRESS", c.PremineAddress)
+	c.PremineLiquidAddress = envStr("QC_PREMINE_LIQUID_ADDRESS", c.PremineLiquidAddress)
+	c.PremineLockedAddress = envStr("QC_PREMINE_LOCKED_ADDRESS", c.PremineLockedAddress)
+	c.FounderVestingCliffMonths = envInt("QC_FOUNDER_VESTING_CLIFF_MONTHS", c.FounderVestingCliffMonths)
+	c.FounderVestingDurationMonths = envInt("QC_FOUNDER_VESTING_DURATION_MONTHS", c.FounderVestingDurationMonths)
 
 	c.HTTPPort = envStr("QC_HTTP_PORT", c.HTTPPort)
 	c.P2PPort = envStr("QC_P2P_PORT", c.P2PPort)
@@ -531,7 +581,6 @@ func applyEnv(c *Config) {
 	c.WalletFile = envStr("QC_WALLET_FILE", c.WalletFile)
 
 	c.LogLevel = envStr("QC_LOG_LEVEL", c.LogLevel)
-
 	// Back-compat: yıllık bonus ENV override
 	if v := strings.TrimSpace(os.Getenv("QC_ANNUAL_BONUS_QC")); v != "" {
 		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n >= 0 {
@@ -557,6 +606,12 @@ func (c *Config) normalizeRewardAddresses() {
 	// Premine adresi boşsa DevFundAddress'tan devral
 	if c.PremineAddress == "" && c.DevFundAddress != "" {
 		c.PremineAddress = c.DevFundAddress
+	}
+	if c.PremineLiquidAddress == "" && c.PremineAddress != "" {
+		c.PremineLiquidAddress = c.PremineAddress
+	}
+	if c.PremineLockedAddress == "" && c.PremineAddress != "" {
+		c.PremineLockedAddress = c.PremineAddress
 	}
 	// ADDED: Community adresi yoksa ana cüzdana (premine) ya da dev fona bağla
 	if strings.TrimSpace(c.CommunityPoolAddress) == "" {
