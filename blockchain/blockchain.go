@@ -239,6 +239,14 @@ func (bc *Blockchain) FindSpendableOutputs(pubKeyHash []byte, amount int) (map[s
 				continue
 			}
 
+			rawTxID, err := hex.DecodeString(txID)
+			if err != nil {
+				continue
+			}
+			if !bc.isCoinbaseOutputMature(rawTxID, idx) {
+				continue
+			}
+
 			if out.IsLockedWithKey(pubKeyHash) {
 				acc += out.Amount
 				unspent[txID] = append(unspent[txID], idx)
