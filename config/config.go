@@ -73,9 +73,10 @@ type Config struct {
 	RewardAddrDev       string `json:"reward_addr_dev"`
 	RewardAddrBurn      string `json:"reward_addr_burn"`
 	RewardAddrCommunity string `json:"reward_addr_community"`
-
-	// --- Premine (ANA CÜZDAN) ---
-	PreminePercent int    `json:"premine_percent"` // varsayılan: 12
+	// --- Premine / Founder allocation ---
+	// Founder allocation target: 5% total.
+	// Planned split: 1% liquid for listing/operations, 4% locked/vesting.
+	PreminePercent int    `json:"premine_percent"` // varsayılan: 5
 	PremineAddress string `json:"premine_address"` // boşsa DevFundAddress kullanılır
 
 	// --- Networking ---
@@ -125,13 +126,12 @@ func Default() *Config {
 		RewardAddrBurn:      "",
 		RewardAddrCommunity: "",
 
-		// Premine defaults
-		PreminePercent: 12,
+		// Premine / founder defaults
+		PreminePercent: 5,
 		PremineAddress: "",
-
-		HTTPPort:  ":8081",
-		P2PPort:   ":3001",
-		BootPeers: []string{},
+		HTTPPort:       ":8081",
+		P2PPort:        ":3001",
+		BootPeers:      []string{},
 
 		ChainFile:  "chain_data.dat",
 		BonusFile:  "bonus_store.json",
