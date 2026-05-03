@@ -62,13 +62,21 @@ func (w *Wallet) ExportPrivateKeyHex() string {
 	return hex.EncodeToString(out)
 }
 
-// Adrese göre cüzdan yükle (depoda varsa onu döndür, yoksa yeni üret)
+// LoadWallet adrese göre cüzdan yükler.
+// Güvenlik notu:
+// - address boşsa varsayılan cüzdanı döndürür.
+// - address doluysa sadece depoda varsa döndürür.
+// - adres bulunamazsa sessizce yeni cüzdan üretmez; nil döndürür.
 func LoadWallet(address string) *Wallet {
-	w := LoadWalletFromFile()
-	if addr := w.GetAddress(); addr == address {
+	if address == "" {
+		return LoadWalletFromFile()
+	}
+
+	if w, ok := LoadWalletByAddress(address); ok {
 		return w
 	}
-	return NewWallet()
+
+	return nil
 }
 
 // Yardımcılar
