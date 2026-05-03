@@ -511,6 +511,18 @@ func (bc *Blockchain) MineBlock(miner string, difficulty int) (*Block, error) {
 	// yalnız başarılı kazımdan sonra mined_balance.json yaz
 	var _minedOK bool
 	_minedReward := GetCurrentReward()
+
+	if _minedReward <= 0 {
+
+		return nil, fmt.Errorf("mining reward is zero")
+
+	}
+
+	if bc.TotalSupply > 0 && bc.TotalMinted()+_minedReward > bc.TotalSupply {
+
+		return nil, fmt.Errorf("total supply cap exceeded: minted=%d reward=%d supply=%d", bc.TotalMinted(), _minedReward, bc.TotalSupply)
+
+	}
 	defer func() {
 		if _minedOK && _minedReward > 0 {
 			AddMinedBalance(miner, _minedReward)
