@@ -85,34 +85,73 @@ func NewBlockchain(initialReward, totalSupply int) *Blockchain {
 	txs = append(txs, genesisCoinbase)
 
 	p := config.Current()
-	premineAddr := strings.TrimSpace(p.PremineAddress)
-	if premineAddr == "" {
-		premineAddr = strings.TrimSpace(os.Getenv("QC_MAIN_ADDRESS"))
+	premineFallbackAddr := strings.TrimSpace(p.PremineAddress)
+	if premineFallbackAddr == "" {
+		premineFallbackAddr = strings.TrimSpace(os.Getenv("QC_MAIN_ADDRESS"))
 	}
 
-	preminePercent := p.PreminePercent
-	if preminePercent < 0 {
-		preminePercent = 0
-	}
-	if preminePercent > 100 {
-		preminePercent = 100
+	liquidAddr := strings.TrimSpace(p.PremineLiquidAddress)
+	if liquidAddr == "" {
+		liquidAddr = premineFallbackAddr
 	}
 
-	if premineAddr != "" && totalSupply > 0 && preminePercent > 0 {
-		premine := totalSupply * preminePercent / 100
-		if premine > 0 {
-			pk := wallet.Base58DecodeAddress(premineAddr)
-			premTx := &Transaction{
-				ID:        nil,
-				Inputs:    []TransactionInput{},
-				Outputs:   []TransactionOutput{{Amount: premine, PubKeyHash: pk}},
-				Timestamp: time.Now(),
-				Sender:    "COINBASE",
-				Amount:    float64(premine),
-			}
-			premTx.ID = premTx.Hash()
-			txs = append(txs, premTx)
+	lockedAddr := strings.TrimSpace(p.PremineLockedAddress)
+	if lockedAddr == "" {
+		lockedAddr = premineFallbackAddr
+	}
+
+	liquidPercent := p.PremineLiquidPercent
+	if liquidPercent < 0 {
+		liquidPercent = 0
+	}
+	if liquidPercent > 100 {
+		liquidPercent = 100
+	}
+
+	lockedPercent := p.PremineLockedPercent
+	if lockedPercent < 0 {
+		lockedPercent = 0
+	}
+	if lockedPercent > 100 {
+		lockedPercent = 100
+	}
+
+	var premineOutputs []TransactionOutput
+	premineAmount := 0
+
+	if totalSupply > 0 && liquidAddr != "" && liquidPercent > 0 {
+		liquidAmount := totalSupply * liquidPercent / 100
+		if liquidAmount > 0 {
+			premineOutputs = append(premineOutputs, TransactionOutput{
+				Amount:     liquidAmount,
+				PubKeyHash: wallet.Base58DecodeAddress(liquidAddr),
+			})
+			premineAmount += liquidAmount
 		}
+	}
+
+	if totalSupply > 0 && lockedAddr != "" && lockedPercent > 0 {
+		lockedAmount := totalSupply * lockedPercent / 100
+		if lockedAmount > 0 {
+			premineOutputs = append(premineOutputs, TransactionOutput{
+				Amount:     lockedAmount,
+				PubKeyHash: wallet.Base58DecodeAddress(lockedAddr),
+			})
+			premineAmount += lockedAmount
+		}
+	}
+
+	if len(premineOutputs) > 0 && premineAmount > 0 {
+		premTx := &Transaction{
+			ID:        nil,
+			Inputs:    []TransactionInput{},
+			Outputs:   premineOutputs,
+			Timestamp: time.Now(),
+			Sender:    "COINBASE",
+			Amount:    float64(premineAmount),
+		}
+		premTx.ID = premTx.Hash()
+		txs = append(txs, premTx)
 	}
 	genesis := NewBlock(0, txs, []byte{}, "genesis", 1)
 
