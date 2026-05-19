@@ -1,14 +1,14 @@
 {
   "InitialReward": 50,
-  "TotalSupply": 22500000,
+  "TotalSupply": 25500000,
   "HalvingIntervalSecs": 63072000,
   "MiningPeriodSecs": 315360000,
   "GenesisUnix": 1725158400,
   "CoinbaseMaturity": 10,
-  "DefaultDifficultyBits": 20,
-  "HTTPPort": ":8090",
+  "DefaultDifficultyBits": 8,
+  "HTTPPort": ":8082",
   "P2PPort": ":3001",
-  "ChainFile": ".chain.json",
-  "BonusFile": ".bonus.json",
+  "ChainFile": "chain_data.dat",
+  "BonusFile": "bonus_store.json",
   "BurnAddress": "QC_BURN_SINK"
 }

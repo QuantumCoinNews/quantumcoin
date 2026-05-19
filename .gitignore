@@ -1,79 +1,207 @@
-﻿# Go build artifacts
+# ================= Go build artifacts =================
 /bin/
 /dist/
 /build/
 /coverage/
-*.exe
 *.test
 *.out
+*.exe
+*.dll
+*.pdb
 
-# IDE / Editor
+# ================= IDE / Editor =================
 .vscode/
-*.code-workspace
 .idea/
+*.code-workspace
 *.swp
 *.swo
 
-# Project local data
-chain_data*.dat
-qc_blockchain.db*
-*.db
-*.db.lock
-*.dat
-.wallet
-wallet_data.json
-bonus_store.json
-.quantumcoin_tmp/
-*.log
-
-# OS
+# ================= OS junk =================
 Thumbs.db
 .DS_Store
-# --- keep repo clean: don't commit built artifacts from release ---
-/release/*.exe
-/release/*.dll
-/release/*.pdb
-/release/*.db
-/release/*.db*
-/release/*.dat
-/release/qc_blockchain.db*
-/release/*.log
-# --- keep repo clean: don't commit built artifacts or runtime data ---
-/release/*.exe
-/release/*.dll
-/release/*.pdb
-/release/*.db
-/release/*.db*
-/release/*.dat
-/release/qc_blockchain.db*
-/release/*.log
-/chain_data*.dat
-*.log
-node_modules
 
-# === secrets/logs/cache (auto) ===
+# ================= Project runtime data =================
+# Blockchain / database files
+/chain_data*.dat
+/.chain.json
+/.bonus.json
+/qc_blockchain.db*
+*.db
+*.db-shm
+*.db-wal
+*.db.lock
+*.sqlite
+*.sqlite3
+*.dat
+
+# Wallet / cache / local state
+.wallet
+wallet_data.json
+wallet_priv.hex
+wallet_address.txt
+miner_address.txt
+miner_pid.txt
+miner_stop.flag
+miner_heartbeat.txt
+wallet_balance.cache.json
+mined_balance.json
+bonus_store.json
+.quantumcoin_tmp/
+
+# Logs
+*.log
+api_out.log
+miner_out.log
+wallet_gui_console.log
+logs/
+out/
+tmp/
+
+# Backups / recovery files
+*.bak
+*.backup
+*.RECOVER_*
+*.old
+*.tmp
+
+# ================= Node / Python =================
+node_modules/
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Autopublisher generated outputs
+src/content/out/
+src/content/queue/
+src/content/archive/
+src/content/pool/pool_state.json
+src/content/pool/topics_pool.json
+ai_cache/
+
+# Telegram game runtime files
+telegram_game/.env
+telegram_game/**/.env
+telegram_game/**/*.db
+telegram_game/**/*.db-shm
+telegram_game/**/*.db-wal
+telegram_game/**/__pycache__/
+telegram_game/**/.venv/
+
+# ================= Release folder =================
+# Do not commit runtime/build outputs from release.
+release/*.exe
+release/*.dll
+release/*.pdb
+release/*.db
+release/*.db-shm
+release/*.db-wal
+release/*.dat
+release/*.log
+release/*.json
+release/*.txt
+release/*.zip
+release/qc_blockchain.db*
+release/miner_stop.flag
+release/miner_pid.txt
+release/miner_heartbeat.txt
+release/wallet_priv.hex
+release/wallet_address.txt
+release/miner_address.txt
+release/wallet_balance.cache.json
+release/mined_balance.json
+release/quantumcoin.exe~
+release/*_out.log
+release/miner_out.log
+release/api_out.log
+
+# Allow-list release scripts that should stay versioned.
+!/release/run_miner.cmd
+!/release/run_miner.ps1
+!/release/stop_miner.ps1
+!/release/_qc_miner_stream.ps1
+
+# ================= Secrets / keys =================
 .env
 *.env
 .env.*
 .env.local
 env.local
+
 *.key
 *.pem
 *.p12
-*secret*
-*secrets*
+*.pfx
+
 credentials.*
+credentials.json
+token.json
+secrets.json
 id_rsa*
 id_ecdsa*
-appsettings.Development.json
-appsettings.*.Local.json
-config.local.json
+ssh_private_key*
+
+# App / OAuth secrets
+secrets/
+secrets/*.json
+**/youtube_token.json
+**/client_secret.json
+**/credentials.json
+**/x_oauth2_tokens.json
+
+# ================= Diagnostic / review / generated folders =================
+__qcdiag/
+_wm_review/
+.gocache/
+.gotmp/
+
+# ================= Archives / large files =================
+release.zip
+*.zip
+*.tar
+*.gz
+*.7z
+
+# Allow safe example env files
+!.env.example
+!**/.env.example
+
+# === QuantumCoin local/runtime secrets ===
 wallet_priv.hex
 wallet_address.txt
 miner_address.txt
-wallet_balance.cache.json
-mined_balance.json
+wallet_recovery_words.txt
+wallet_recovery_manifest.json
+*.log
 miner_out.log
-api_out.log
+miner_pid.txt
+miner_cmd_pid.txt
+miner_stop.flag
+chain_data.dat
+chain_data*.dat
+bonus_store.json
+mined_balance.json
+wallet_balance.cache.json
 
-ssh_private_key*
+# === Runtime/test/build junk ===
+_root_exe_quarantine/
+_legacy_runtime_*/
+release_clean_test*/
+release_clean_test_old_*/
+*.bak_*
+*.exe~
+powershell
+fallback
+
+# === Large/generated binaries ===
+*.exe
+*.dll
+*.syso
+
+# === OS/editor ===
+.DS_Store
+Thumbs.db
+

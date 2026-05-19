@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/gob"
 	"log"
+	"os"
+	"strings"
 
 	"quantumcoin/blockchain"
 )
@@ -19,7 +21,36 @@ const (
 	MsgPong     MessageType = "pong"
 	MsgPeerList MessageType = "peerlist"
 	MsgError    MessageType = "error"
+	MsgHello    MessageType = "hello" // handshake mesajı
+
+	// Maksimum izin verilen mesaj verisi boyutu (1 MB).
+	// İstersen ileride config üzerinden ayarlarız.
+	MaxMessageBytes = 1 << 20 // 1 MB
 )
+
+// --- Ağ kimliği & versiyon ---
+
+const (
+	DefaultNetworkMagic = "QC_MAINNET_V1" // ana ağ magic
+	ProtocolVersion     = "1"             // p2p protokol versiyonu
+)
+
+// Ortam değişkeni ile override edilebilir:
+//
+//	set QC_NET_MAGIC=QC_TESTNET_V1
+func networkMagic() string {
+	v := strings.TrimSpace(os.Getenv("QC_NET_MAGIC"))
+	if v == "" {
+		return DefaultNetworkMagic
+	}
+	return v
+}
+
+// Handshake payload
+type Handshake struct {
+	Magic   string
+	Version string
+}
 
 // P2P mesaj yapısı
 type Message struct {
@@ -73,3 +104,17 @@ func RequestMessage() Message {
 // Ping/Pong
 func PingMessage() Message { return Message{Type: MsgPing} }
 func PongMessage() Message { return Message{Type: MsgPong} }
+
+// HandshakeMessage: ağ kimliği ve versiyon için hello paketi
+func HandshakeMessage() Message {
+	hs := Handshake{
+		Magic:   networkMagic(),
+		Version: ProtocolVersion,
+	}
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(hs); err != nil {
+		log.Println("Handshake encode error:", err)
+		return Message{Type: MsgHello}
+	}
+	return Message{Type: MsgHello, Data: buf.Bytes()}
+}

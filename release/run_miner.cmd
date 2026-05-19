@@ -1,39 +1,45 @@
 @echo off
-setlocal
+setlocal EnableExtensions
 chcp 65001 >NUL
-cd /d "C:\Projects\quantumcoin\release"
-set "QC_NODE_DIR=C:\Projects\quantumcoin\release"
-set "QC_COMMUNITY_ADDRESS=1iZ9PBE1F3gJ5VbBLpqFX1r9uEj5BnHBV"
-set "QC_DEV_FUND_ADDRESS=1iZ9PBE1F3gJ5VbBLpqFX1r9uEj5BnHBV"
-set "QC_PREMINE_ADDRESS=1iZ9PBE1F3gJ5VbBLpqFX1r9uEj5BnHBV"
-set "QC_MINED_PATH=%CD%\mined_balance.json"
-set "ADDR=1iZ9PBE1F3gJ5VbBLpqFX1r9uEj5BnHBV"
+cd /d "%~dp0"
+title QuantumCoin Miner
 
-REM PowerShell var mı? (tee için)
-where powershell >NUL 2>&1
-if %ERRORLEVEL% EQU 0 (set "HAS_PS=1") else (set "HAS_PS=0")
+set "QC_NODE_DIR=%CD%"
+set "QC_API_BASE=http://127.0.0.1:8082"
+set "QC_HTTP_PORT=:8082"
+set "QC_DIFFICULTY_BITS=12"
+set "QC_MINING_DELAY_MS=5000"
 
-REM Eski stop bayrağını temizle
-del /q "miner_stop.flag" 2>NUL
-
-echo ===============================
-echo Mining to: %ADDR%
-echo Folder    : %CD%
-echo ===============================
-
-:loop
-if exist "miner_stop.flag" goto :done
-
-if "%HAS_PS%"=="1" (
-  powershell -NoLogo -ExecutionPolicy Bypass -Command ^
-    "& { & '.\\quantumcoin.exe' mine "1iZ9PBE1F3gJ5VbBLpqFX1r9uEj5BnHBV" 2>&1 | Tee-Object -File 'miner_out.log' -Append }"
-) else (
-  ".\\quantumcoin.exe" mine "1iZ9PBE1F3gJ5VbBLpqFX1r9uEj5BnHBV" >> "miner_out.log" 2>&1
+if not defined ADDR (
+  if exist "%CD%\miner_address.txt" (
+    for /f "usebackq delims=" %%A in ("%CD%\miner_address.txt") do set "ADDR=%%A"
+  )
 )
 
-REM Kısa nefes
-timeout /t 1 /nobreak >NUL
-goto :loop
+if not defined ADDR (
+  if exist "%CD%\wallet_address.txt" (
+    for /f "usebackq delims=" %%A in ("%CD%\wallet_address.txt") do set "ADDR=%%A"
+  )
+)
 
-:done
-echo Stopped by miner_stop.flag
+set "ADDR=%ADDR:"=%"
+set "ADDR=%ADDR: =%"
+
+echo ===============================
+echo QuantumCoin Stable API-Mempool Miner
+echo Runtime    : %CD%
+echo API        : %QC_API_BASE%
+echo Address    : %ADDR%
+echo Difficulty : %QC_DIFFICULTY_BITS%
+echo Delay      : %QC_MINING_DELAY_MS% ms
+echo Mode       : visible CMD -> API /api/mine loop
+echo Chain      : %CD%\chain_data.dat
+echo ===============================
+echo.
+
+powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%CD%\_qc_api_mempool_miner.ps1" -ApiBase "%QC_API_BASE%" -Address "%ADDR%" -ReleaseDir "%CD%" -DelayMs 5000 -DifficultyBits 12
+
+echo.
+echo [QuantumCoin] Miner ended.
+pause
+endlocal

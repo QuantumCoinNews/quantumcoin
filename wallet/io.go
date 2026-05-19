@@ -1,9 +1,7 @@
 package wallet
 
 import (
-	"crypto/elliptic"
-	"crypto/x509"
-	"encoding/hex"
+	"crypto/ecdsa"
 	"encoding/json"
 	"errors"
 	"os"
@@ -19,9 +17,14 @@ var storeMu sync.Mutex
 // Disk formatı:
 //
 //	{
-//	  "wallets": { "<address>": "<priv_hex>", ... },
-//	  "default": "<address>"
+//	 "wallets": { "<address>": "<priv_hex>", ... },
+//	 "default": "<address>"
 //	}
+//
+// QuantumCoin wallet standardı:
+// - Curve: secp256k1
+// - Private key storage: raw 32-byte scalar hex
+// - Public key format: uncompressed 65 byte, 0x04 || X(32) || Y(32)
 type diskStore struct {
 	Wallets map[string]string `json:"wallets"`
 	Default string            `json:"default"`
@@ -45,6 +48,7 @@ func readStore() (*diskStore, error) {
 		}
 		return nil, err
 	}
+
 	var st diskStore
 	if err := json.Unmarshal(data, &st); err != nil {
 		return nil, err
@@ -57,28 +61,37 @@ func readStore() (*diskStore, error) {
 
 func writeStore(st *diskStore) error {
 	path := walletFilePath()
-	_ = os.MkdirAll(filepath.Dir(path), 0o755)
+	dir := filepath.Dir(path)
+	if dir != "." && dir != "" {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+	}
+
 	data, err := json.MarshalIndent(st, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+
+	// Private key içeren dosya olduğu için 0600 kullanıyoruz.
+	return os.WriteFile(path, data, 0o600)
 }
 
-// Geriye dönük uyumluluk: Eski isim
+// Geriye dönük uyumluluk: Eski isim.
 func SaveWalletToFile(w *Wallet) error { return SaveWallet(w) }
 
-// Yeni: cüzdanı kaydet (adres→privHex)
+// Yeni: cüzdanı kaydet.
+// Store formatı: address -> raw 32-byte private key hex.
 func SaveWallet(w *Wallet) error {
 	if w == nil || w.PrivateKey == nil {
 		return errors.New("wallet/save: invalid wallet")
 	}
-	privBytes, err := x509.MarshalECPrivateKey(w.PrivateKey)
-	if err != nil {
-		return err
-	}
-	privHex := hex.EncodeToString(privBytes)
+
 	addr := w.GetAddress()
+	privHex := w.ExportPrivateKeyHex()
+	if addr == "" || privHex == "" {
+		return errors.New("wallet/save: empty address or private key")
+	}
 
 	storeMu.Lock()
 	defer storeMu.Unlock()
@@ -90,10 +103,12 @@ func SaveWallet(w *Wallet) error {
 	if st.Wallets == nil {
 		st.Wallets = map[string]string{}
 	}
+
 	st.Wallets[addr] = privHex
 	if st.Default == "" {
 		st.Default = addr
 	}
+
 	return writeStore(st)
 }
 
@@ -107,9 +122,7 @@ func LoadWalletFromFile() *Wallet {
 
 	st, err := readStore()
 	if err != nil {
-		nw := NewWallet()
-		_ = SaveWallet(nw)
-		return nw
+		st = &diskStore{Wallets: map[string]string{}, Default: ""}
 	}
 
 	if st.Default != "" {
@@ -127,11 +140,20 @@ func LoadWalletFromFile() *Wallet {
 	}
 
 	nw := NewWallet()
-	_ = SaveWallet(nw)
+	addr := nw.GetAddress()
+	privHex := nw.ExportPrivateKeyHex()
+
+	if st.Wallets == nil {
+		st.Wallets = map[string]string{}
+	}
+	st.Wallets[addr] = privHex
+	st.Default = addr
+	_ = writeStore(st)
+
 	return nw
 }
 
-// Belirli adresteki cüzdanı yükle (varsa)
+// Belirli adresteki cüzdanı yükle.
 func LoadWalletByAddress(address string) (*Wallet, bool) {
 	storeMu.Lock()
 	defer storeMu.Unlock()
@@ -144,39 +166,31 @@ func LoadWalletByAddress(address string) (*Wallet, bool) {
 }
 
 func loadWalletByAddress(st *diskStore, address string) (*Wallet, bool) {
+	if st == nil || st.Wallets == nil {
+		return nil, false
+	}
+
 	privHex, ok := st.Wallets[address]
 	if !ok || privHex == "" {
 		return nil, false
 	}
-	privBytes, err := hex.DecodeString(privHex)
-	if err != nil {
+
+	// ImportPrivateKeyHex geriye dönük uyumluluk için eski DER/x509 formatını da,
+	// yeni standart olan raw 32-byte secp256k1 hex formatını da kabul eder.
+	priv, err := ImportPrivateKeyHex(privHex)
+	if err != nil || priv == nil {
 		return nil, false
 	}
-	priv, err := x509.ParseECPrivateKey(privBytes)
-	if err != nil {
+
+	pub := publicKeyBytes(&priv.PublicKey)
+	if len(pub) != 65 {
 		return nil, false
 	}
-	// Uncompressed pubkey (0x04||X||Y), P-256
-	pub := make([]byte, 0, 1+2*((priv.Curve.Params().BitSize+7)/8))
-	pub = append(pub, 0x04)
-	byteLen := (elliptic.P256().Params().BitSize + 7) / 8
-	x := priv.PublicKey.X.Bytes()
-	y := priv.PublicKey.Y.Bytes()
-	if lx := len(x); lx < byteLen {
-		pad := make([]byte, byteLen-lx)
-		x = append(pad, x...)
-	}
-	if ly := len(y); ly < byteLen {
-		pad := make([]byte, byteLen-ly)
-		y = append(pad, y...)
-	}
-	pub = append(pub, x...)
-	pub = append(pub, y...)
 
 	return &Wallet{PrivateKey: priv, PublicKey: pub}, true
 }
 
-// Varsayılan adresi işaretle (opsiyonel)
+// Varsayılan adresi işaretle.
 func SetDefaultWallet(address string) error {
 	storeMu.Lock()
 	defer storeMu.Unlock()
@@ -192,15 +206,52 @@ func SetDefaultWallet(address string) error {
 	return writeStore(st)
 }
 
-// QC adresinden pubKeyHash'i çıkar (Base58Check decode)
+// QC adresinden pubKeyHash'i çıkar.
+// Eski davranışı korumak için hata durumunda panic eder.
 func Base58DecodeAddress(address string) []byte {
+	pubKeyHash, err := Base58DecodeAddressSafe(address)
+	if err != nil {
+		panic(err)
+	}
+	return pubKeyHash
+}
+
+// Base58DecodeAddressSafe QC adresinden pubKeyHash'i güvenli şekilde çıkarır.
+func Base58DecodeAddressSafe(address string) ([]byte, error) {
 	decoded, err := utils.Base58Decode([]byte(address))
 	if err != nil {
-		panic(err) // projedeki eski davranışa uygun
+		return nil, err
 	}
-	if len(decoded) < 5 {
-		panic("invalid address")
+	if len(decoded) != 25 {
+		return nil, errors.New("invalid address length")
 	}
+
+	version := decoded[0]
+	if version != 0x00 {
+		return nil, errors.New("invalid address version")
+	}
+
 	// decoded: [version][pubKeyHash][checksum]
-	return decoded[1 : len(decoded)-4]
+	return decoded[1 : len(decoded)-4], nil
+}
+
+func publicKeyBytes(pub *ecdsa.PublicKey) []byte {
+	if pub == nil || pub.X == nil || pub.Y == nil {
+		return nil
+	}
+
+	out := make([]byte, 65)
+	out[0] = 0x04
+
+	xBytes := pub.X.Bytes()
+	yBytes := pub.Y.Bytes()
+
+	if len(xBytes) > 32 || len(yBytes) > 32 {
+		return nil
+	}
+
+	copy(out[1+32-len(xBytes):33], xBytes)
+	copy(out[33+32-len(yBytes):65], yBytes)
+
+	return out
 }

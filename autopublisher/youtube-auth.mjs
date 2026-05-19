@@ -1,6 +1,12 @@
 #!/usr/bin/env node
 // youtube-auth.mjs — YouTube OAuth (Desktop flow), .env’deki path’lerle çalışır.
 // Yeni klasör OLUŞTURMAZ; secrets yolu yoksa hata verir.
+//
+// Güncelleme (2026-02):
+//  - Windows’ta mümkünse Chrome’da açar (default tarayıcı yerine)
+//  - Token alındıktan sonra tokenInfo ile verilen scope’ları yazdırır
+//  - Kanal doğrulama (channels.list) başarısız olursa işlemi “fail” saymaz, sadece uyarı basar
+
 import 'dotenv/config';
 import { google } from 'googleapis';
 import http from 'http';
@@ -27,10 +33,13 @@ function loadClientSecrets(p) {
   const client_secret = d.client_secret || d.clientSecret;
   const redirects = d.redirect_uris || d.redirectUris || [];
   if (!client_id || !client_secret) throw new Error('client_id/client_secret bulunamadı.');
-  // Redirect seçimi: .env öncelikli; yoksa 127.0.0.1 içeren ilk redirect; o da yoksa varsayılan
-  let redirect = ENV_REDIRECT
+
+  // Redirect seçimi: .env öncelikli; yoksa localhost/127.0.0.1 içeren ilk redirect; o da yoksa varsayılan
+  const redirect = ENV_REDIRECT
     || redirects.find(u => u.startsWith('http://127.0.0.1'))
+    || redirects.find(u => u.startsWith('http://localhost'))
     || 'http://127.0.0.1:53682/oauth2callback';
+
   return { client_id, client_secret, redirect };
 }
 
@@ -45,6 +54,9 @@ if (!fs.existsSync(tokenDir)) {
 }
 
 const { hostname, port, pathname } = new URL(redirect);
+
+// Upload için youtube.upload yeterli.
+// “Kanala bağlandık mı?” doğrulaması istersen youtube.readonly (veya youtube) gerekir.
 const SCOPES = [
   'https://www.googleapis.com/auth/youtube.upload',
   'https://www.googleapis.com/auth/youtube.readonly',
@@ -53,12 +65,48 @@ const SCOPES = [
 const oauth2 = new google.auth.OAuth2(client_id, client_secret, redirect);
 const state = crypto.randomBytes(16).toString('hex');
 
+function trySpawnDetached(cmd, args) {
+  try {
+    const child = spawn(cmd, args, { detached: true, stdio: 'ignore' });
+    child.unref();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function openInBrowser(url) {
   try {
-    if (process.platform === 'win32') spawn('cmd', ['/c', 'start', '', url], { detached: true, stdio: 'ignore' });
-    else if (process.platform === 'darwin') spawn('open', [url], { detached: true, stdio: 'ignore' });
-    else spawn('xdg-open', [url], { detached: true, stdio: 'ignore' });
-  } catch { console.log('Otomatik açılamazsa URL:\n', url); }
+    if (process.platform === 'win32') {
+      // Chrome yollarını dene (kullanıcı “Chrome” istiyor)
+      const candidates = [
+        process.env.CHROME_PATH,
+        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+        path.join(process.env.LOCALAPPDATA || '', 'Google\\Chrome\\Application\\chrome.exe'),
+      ].filter(Boolean);
+
+      for (const exe of candidates) {
+        if (exe && fs.existsSync(exe)) {
+          if (trySpawnDetached(exe, ['--new-window', url])) return;
+        }
+      }
+
+      // Chrome bulunamazsa default tarayıcı
+      trySpawnDetached('cmd', ['/c', 'start', '', url]);
+      return;
+    }
+
+    if (process.platform === 'darwin') {
+      if (trySpawnDetached('open', ['-a', 'Google Chrome', url])) return;
+      trySpawnDetached('open', [url]);
+      return;
+    }
+
+    trySpawnDetached('xdg-open', [url]);
+  } catch {
+    console.log('Otomatik açılamazsa URL:\n', url);
+  }
 }
 
 async function main() {
@@ -69,25 +117,44 @@ async function main() {
 
       const code = u.searchParams.get('code');
       const returnedState = u.searchParams.get('state');
+
       if (!code) { res.writeHead(400); return res.end('Missing code'); }
       if (state !== returnedState) { res.writeHead(400); return res.end('State mismatch'); }
 
       const { tokens } = await oauth2.getToken(code);
       oauth2.setCredentials(tokens);
+
       fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokens, null, 2));
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end('<h3>Yetki tamam. Bu pencereyi kapatabilirsiniz.</h3>');
 
       console.log('✓ Token kaydedildi →', TOKEN_PATH);
 
-      const yt = google.youtube({ version: 'v3', auth: oauth2 });
-      const r = await yt.channels.list({ part: 'snippet,statistics', mine: true });
-      const ch = r.data.items?.[0];
-      if (ch) console.log(`✓ Bağlandı: ${ch.snippet.title} | Videos: ${ch.statistics.videoCount}`);
-      else console.log('Uyarı: Kanal bilgisi okunamadı ama yetki alınmış olabilir.');
+      // Token hangi scope’ları aldı? (çok işe yarar)
+      try {
+        const info = await oauth2.getTokenInfo(tokens.access_token);
+        const scopes = Array.isArray(info.scopes) ? info.scopes : (info.scope || '').split(' ').filter(Boolean);
+        console.log('✓ Token scopes:', scopes.join(' | ') || '(scope bilgisi alınamadı)');
+      } catch (e) {
+        console.log('Uyarı: tokenInfo okunamadı (önemsiz):', e?.message || e);
+      }
+
+      // Kanal doğrulama (opsiyonel) — hata verirse WARN, “OAuth başarısız” sayma
+      try {
+        const yt = google.youtube({ version: 'v3', auth: oauth2 });
+        const r = await yt.channels.list({ part: 'snippet,statistics', mine: true });
+        const ch = r.data.items?.[0];
+        if (ch) console.log(`✓ Bağlandı: ${ch.snippet.title} | Videos: ${ch.statistics.videoCount}`);
+        else console.log('Uyarı: Kanal bilgisi okunamadı ama token alınmış olabilir.');
+      } catch (e) {
+        console.log('WARN: Kanal doğrulama atlandı (scope yetersiz olabilir). Upload yine çalışabilir.');
+        console.log('WARN detail:', e?.response?.data || e?.message || e);
+      }
     } catch (err) {
       console.error('Yetkilendirme hatası:', err?.response?.data || err);
-    } finally { server.close(); }
+    } finally {
+      server.close();
+    }
   });
 
   server.listen(Number(port), hostname, () => {
@@ -97,7 +164,8 @@ async function main() {
       scope: SCOPES,
       state
     });
-    console.log('Tarayıcıda açılıyor. Otomatik açılmazsa bu URL’yi kopyala:\n', authUrl, '\n');
+
+    console.log('Tarayıcıda (tercihen Chrome) açılıyor. Otomatik açılmazsa bu URL’yi kopyala:\n', authUrl, '\n');
     openInBrowser(authUrl);
     console.log(`Dinleniyor: ${redirect}`);
   });

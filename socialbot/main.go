@@ -3,29 +3,27 @@ package main
 import (
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/joho/godotenv"
+
+	"socialbot/core"
 )
 
 func main() {
-	// .env yükle
 	_ = godotenv.Load()
 
-	// TZ ayarı (opsiyonel)
 	if tz := os.Getenv("TZ"); tz != "" {
 		_ = os.Setenv("TZ", tz)
 	}
 
-	log.Printf("socialbot starting… (TZ=%s)", os.Getenv("TZ"))
+	log.Printf("socialbot starting... (TZ=%s)", os.Getenv("TZ"))
 
-	// Yetkiler / bağlantılar
-	auth := NewAuth()
-
-	// Bot (içerik + publish akışı)
+	auth := core.NewAuth()
 	bot := NewSocialBot(auth)
 
-	// Cron scheduler (UTC)
 	sched := NewCronScheduler(bot)
 	if err := sched.AddSpec(getEnv("CRON_1", "0 18 * * *")); err != nil {
 		log.Fatal(err)
@@ -37,10 +35,14 @@ func main() {
 
 	log.Printf("running; press Ctrl+C to stop")
 
-	// Basit sonsuz bekleme (daemon)
-	for {
-		time.Sleep(24 * time.Hour)
-	}
+	// Wait for SIGINT/SIGTERM
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	<-sig
+
+	// Give logs a moment to flush
+	time.Sleep(200 * time.Millisecond)
+	log.Printf("bye")
 }
 
 func getEnv(k, d string) string {

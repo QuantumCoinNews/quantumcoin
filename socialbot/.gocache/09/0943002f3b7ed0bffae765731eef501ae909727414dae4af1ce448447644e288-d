@@ -1,0 +1,14 @@
+./context.go
+./counters.go
+./file_context.go
+./file_diagnostics.go
+./file_metadata.go
+./mcp.go
+./outline.go
+./references.go
+./rename_symbol.go
+./search.go
+./symbol_references.go
+./vulncheck.go
+./workspace.go
+./workspace_diagnostics.go

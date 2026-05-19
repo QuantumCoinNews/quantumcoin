@@ -15,7 +15,13 @@ const root    = path.resolve(process.cwd());
 const outDir  = path.join(root, 'src', 'content', 'out');
 const recentPath = path.join(outDir, 'recent-topics.json');
 
+// AI cache (stabilizasyon)
+const today = new Date().toLocaleDateString('en-CA', { timeZone: tz }); // YYYY-MM-DD
+const cacheDir = path.join(root, 'ai_cache', today);
+const cacheLast = path.join(cacheDir, 'last.json');
+
 fs.mkdirSync(outDir, { recursive: true });
+fs.mkdirSync(cacheDir, { recursive: true });
 
 const recent = fs.existsSync(recentPath)
   ? JSON.parse(fs.readFileSync(recentPath, 'utf8') || '[]')
@@ -80,76 +86,23 @@ const violates = (payload) => {
   return null;
 };
 
-// ====== local fallback (OpenAI yoksa/429 ise) ======
-function randInt(min, max){return Math.floor(Math.random()*(max-min+1))+min;}
-function sample(arr){return arr[Math.floor(Math.random()*arr.length)]}
-const topicalTag = (cat) => ({
-  'Consensus & Performance':'#Consensus',
-  'Mining & Validators':'#Validators',
-  'Explorer':'#Explorer',
-  'Wallet & Tooling':'#Tooling',
-  'Testnet Update':'#Testnet',
-  'Security & Audits':'#Security',
-  'Tokenomics Insight':'#Tokenomics',
-  'Roadmap Milestone':'#Roadmap',
-  'Community & Ambassador':'#Community',
-}[cat] || '#Web3');
-
-function localGenerate(){
-  const cat = sample(allowedCats);
-  const metrics = [
-    `${randInt(8,32)}% lower verification latency`,
-    `${randInt(2,9)}x validator throughput on synthetic load`,
-    `${randInt(3,12)} new integration tests`,
-    `block time steady at ${randInt(750,1100)}ms (p95)`,
-    `${randInt(1,4)} peer discovery fixes merged`,
-    `${randInt(2,6)} RPC endpoints hardened`,
-  ];
-  const artifacts = [
-    `bench job qbench-${randInt(100,999)}`,
-    `explorer diff v${randInt(0,9)}.${randInt(1,9)}.${randInt(0,9)}`,
-    `wallet CLI patch #${randInt(200,400)}`,
-    `testnet snapshot r${randInt(1000,1999)}`,
-    `audit checklist rev ${randInt(5,19)}`,
-  ];
-  const titleTemplates = [
-    `QC ${cat.split(' ')[0]} snapshot - ${now.toLocaleDateString('en-GB',{timeZone:tz})}`,
-    `${cat}: weekly progress note`,
-    `${cat}: concrete progress update`,
-    `QC ${cat} highlights`,
-  ];
-  const blurbPieces = [
-    `Focus on measurable progress: ${sample(metrics)}; artifact: ${sample(artifacts)}.`,
-    `Today’s focus: ${sample(metrics)}; shipped: ${sample(artifacts)}.`,
-    `Consolidating stability: ${sample(metrics)}; shipped: ${sample(artifacts)}.`,
-  ];
-  let title = sample(titleTemplates);
-  let blurb = sample(blurbPieces);
-  const tag = topicalTag(cat);
-
-  // ASCII-safe
-  title = stripNonAscii(toAsciiPunct(title));
-  blurb = stripNonAscii(toAsciiPunct(blurb));
-
-  const x = trimX(`QC ${cat.toLowerCase()}: ${blurb.replace(/\.$/,'')}. #QuantumCoin #QC ${tag}`);
-  const telegram = `<b>${escapeHtml(title)}</b>\n${escapeHtml(blurb)}\n\n${repoUrl}\n#QuantumCoin #QC #Web3`;
-  return { title, category: cat, x, telegram, source: 'fallback' };
-}
-
-// ====== OpenAI path (varsa) ======
+// ====== OpenAI path (required) ======
 async function generateWithOpenAI(){
+  if (!apiKey) throw new Error('no-apikey');
+
   const client = new OpenAI({ apiKey });
   const system =
     `You are a senior web3/social copywriter for QuantumCoin (QC).
-     Professional, specific, no emojis, no clickbait.`;
+Professional, specific, no emojis, no clickbait.`;
+
   const user =
     `Day: ${dow}
-     Produce one post for X and one for Telegram.
-     Choose exactly ONE category from: ${allowedCats.join(' | ')}.
-     Avoid these recent titles: ${lastTitles.length? lastTitles.join(' • ') : '—'}.
-     X: <=260 chars, 2–3 hashtags (#QuantumCoin #QC #Web3 + a topical tag), no link.
-     Telegram: HTML (<b>Title</b>\\nBlurb\\n\\n${repoUrl}\\n#QuantumCoin #QC #Web3).
-     Include one concrete metric/artifact/action. Avoid generic phrasing.`;
+Produce one post for X and one for Telegram.
+Choose exactly ONE category from: ${allowedCats.join(' | ')}.
+Avoid these recent titles: ${lastTitles.length ? lastTitles.join(' • ') : '—'}.
+X: <=260 chars, 2–3 hashtags (#QuantumCoin #QC #Web3 + a topical tag), no link.
+Telegram: HTML (<b>Title</b>\\nBlurb\\n\\n${repoUrl}\\n#QuantumCoin #QC #Web3).
+Include one concrete metric/artifact/action. Avoid generic phrasing.`;
 
   let cause = 'init';
   for (let i=0;i<3;i++){
@@ -159,9 +112,10 @@ async function generateWithOpenAI(){
       temperature: 0.9,
       messages: [
         { role:'system', content: system },
-        { role:'user',   content: user + (i? `\nPrevious violation: ${cause}` : '') }
+        { role:'user',   content: user + (i ? `\nPrevious violation: ${cause}` : '') }
       ],
     });
+
     let payload = JSON.parse(res.choices[0].message.content);
 
     // sanitize + rebuild
@@ -171,6 +125,7 @@ async function generateWithOpenAI(){
     blurb = stripNonAscii(toAsciiPunct(blurb));
 
     const telegram = `<b>${escapeHtml(title)}</b>\n${escapeHtml(blurb)}\n\n${repoUrl}\n#QuantumCoin #QC #Web3`;
+
     const candidate = {
       title,
       category: payload.category || '',
@@ -178,33 +133,62 @@ async function generateWithOpenAI(){
       telegram,
       source: 'openai'
     };
+
     const v = violates(candidate);
     if (!v) return candidate;
     cause = v;
   }
+
   throw new Error('openai-constraints-failed');
 }
 
-// ====== Orchestrate ======
-let out;
-try {
-  if (!apiKey) throw new Error('no-apikey');
-  out = await generateWithOpenAI();
-} catch (e){
-  // 429/quota/network/no key => fallback
-  out = localGenerate();
+// ====== cache helpers ======
+function readCache(){
+  if(!fs.existsSync(cacheLast)) return null;
+  try {
+    const o = JSON.parse(fs.readFileSync(cacheLast, 'utf8'));
+    if(o && o.title && o.x && o.telegram){
+      return { ...o, source: 'cache' };
+    }
+  } catch {}
+  return null;
 }
 
-// STDOUT
-console.log(JSON.stringify({
-  title: out.title,
-  category: out.category,
-  x: out.x,
-  telegram: out.telegram,
-  source: out.source,
-}));
+function writeAll(out){
+  // STDOUT
+  console.log(JSON.stringify({
+    title: out.title,
+    category: out.category,
+    x: out.x,
+    telegram: out.telegram,
+    source: out.source,
+  }));
 
-// Disk
-fs.writeFileSync(path.join(outDir,'last.json'), JSON.stringify(out,null,2));
-const updated = [...recent, { dt: now.toISOString(), title: out.title, category: out.category }];
-fs.writeFileSync(recentPath, JSON.stringify(updated.slice(-60), null, 2));
+  // Disk (main out)
+  fs.writeFileSync(path.join(outDir,'last.json'), JSON.stringify(out, null, 2), 'utf8');
+
+  const updated = [...recent, { dt: now.toISOString(), title: out.title, category: out.category }];
+  fs.writeFileSync(recentPath, JSON.stringify(updated.slice(-60), null, 2), 'utf8');
+
+  // Cache (AI success only)
+  if(out.source === 'openai'){
+    fs.writeFileSync(cacheLast, JSON.stringify(out, null, 2), 'utf8');
+  }
+}
+
+// ====== Orchestrate (AI required, cache allowed) ======
+try {
+  const out = await generateWithOpenAI();
+  writeAll(out);
+} catch (e) {
+  // AI fail -> cache fallback (still AI-generated content)
+  const cached = readCache();
+  if(cached){
+    writeAll(cached);
+  } else {
+    // AI must succeed and no cache => hard fail (scheduler will retry)
+   console.error(`[gen-content] AI required. OpenAI failed and no cache available. error=${String(e?.message || e)}`);
+process.exit(2);
+
+  }
+}

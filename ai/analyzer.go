@@ -3,79 +3,61 @@ package ai
 import (
 	"sort"
 	"time"
-
-	"quantumcoin/blockchain"
 )
 
-// Şüpheli cüzdan ve işlem analizi için temel veri yapısı
-type AnomalyReport struct {
-	WalletAddress string
-	Count         int
-	AvgAmount     float64
-	MaxAmount     float64
-	Suspicious    bool
-	Reason        string
-}
-
-// Son X saat içinde threshold'dan fazla transfer yapan cüzdanları bul.
-// Ek heurstik: Maks tutar ortalamanın 2x üstündeyse şüphe derecesini yükselt.
-func AnalyzeTransactions(txs []*blockchain.Transaction, threshold int, periodHours int) []AnomalyReport {
-	if threshold <= 0 {
-		threshold = 5
-	}
-	cutoff := time.Now().Add(-time.Duration(periodHours) * time.Hour)
-
-	type agg struct {
-		count int
-		sum   float64
-		max   float64
-	}
-	stats := make(map[string]*agg)
-
-	for _, tx := range txs {
-		if tx == nil {
-			continue
-		}
-		if tx.Timestamp.Before(cutoff) {
-			continue
-		}
-		a := stats[tx.Sender]
-		if a == nil {
-			a = &agg{}
-			stats[tx.Sender] = a
-		}
-		a.count++
-		a.sum += tx.Amount
-		if tx.Amount > a.max {
-			a.max = tx.Amount
-		}
+// tek analiz fonksiyonumuz BU olsun.
+// diğer dosyalarda tekrar yazmayacağız.
+func AnalyzeTransactions(txs []TxLite) []AnomalyReport {
+	if !Enabled() {
+		return nil
 	}
 
-	reports := make([]AnomalyReport, 0, len(stats))
-	for addr, a := range stats {
-		if a.count == 0 {
-			continue
+	out := make([]AnomalyReport, 0, len(txs))
+
+	// adreslere göre grupla
+	perAddr := make(map[string][]TxLite)
+	for _, t := range txs {
+		// büyük tutar kuralı
+		if t.Amount >= BigAmountThreshold {
+			out = append(out, AnomalyReport{
+				WalletAddress: t.WalletAddress,
+				TxID:          t.TxID,
+				Suspicious:    true,
+				Score:         0.7,
+				Reason:        "large transaction",
+			})
 		}
-		avg := a.sum / float64(a.count)
-		susp := a.count > threshold
-		reason := "High transfer frequency in period"
-		// ek heurstik
-		if susp && a.max >= 2*avg {
-			reason = "High frequency + amount spikes"
-		}
-		reports = append(reports, AnomalyReport{
-			WalletAddress: addr,
-			Count:         a.count,
-			AvgAmount:     avg,
-			MaxAmount:     a.max,
-			Suspicious:    susp,
-			Reason:        reason,
+		perAddr[t.WalletAddress] = append(perAddr[t.WalletAddress], t)
+	}
+
+	// frekans kuralı
+	for addr, list := range perAddr {
+		sort.Slice(list, func(i, j int) bool {
+			return list[i].Timestamp.Before(list[j].Timestamp)
 		})
+
+		window := time.Duration(BurstWindowSeconds) * time.Second
+		for i := 0; i < len(list); i++ {
+			count := 1
+			for j := i + 1; j < len(list); j++ {
+				if list[j].Timestamp.Sub(list[i].Timestamp) <= window {
+					count++
+				} else {
+					break
+				}
+			}
+			if count >= BurstCountThreshold {
+				out = append(out, AnomalyReport{
+					WalletAddress: addr,
+					TxID:          list[i].TxID,
+					Suspicious:    true,
+					Score:         0.6,
+					Reason:        "high frequency activity",
+				})
+				break
+			}
+		}
 	}
 
-	// Deterministik çıktı: cüzdan adresine göre sırala
-	sort.Slice(reports, func(i, j int) bool {
-		return reports[i].WalletAddress < reports[j].WalletAddress
-	})
-	return reports
+	return out
 }
