@@ -78,11 +78,40 @@ type WebMineSubmitResp struct {
 }
 
 // İmzalı gönderim için priv_hex destekli
+type FlexibleAmount int
+
+func (v *FlexibleAmount) UnmarshalJSON(data []byte) error {
+	var n int
+	if err := json.Unmarshal(data, &n); err == nil {
+		*v = FlexibleAmount(n)
+		return nil
+	}
+
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+
+	s = strings.TrimSpace(s)
+	if s == "" {
+		*v = 0
+		return nil
+	}
+
+	parsed, err := strconv.Atoi(s)
+	if err != nil {
+		return err
+	}
+
+	*v = FlexibleAmount(parsed)
+	return nil
+}
+
 type SendRequest struct {
-	From    string `json:"from"`
-	To      string `json:"to"`
-	Amount  int    `json:"amount"`
-	PrivHex string `json:"priv_hex,omitempty"`
+	From    string         `json:"from"`
+	To      string         `json:"to"`
+	Amount  FlexibleAmount `json:"amount"`
+	PrivHex string         `json:"priv_hex,omitempty"`
 }
 
 type SendResponse struct {
@@ -163,12 +192,16 @@ const apiMaxBodyBytes int64 = 1 << 20 // 1 MB
 /* ---------- Global değişkenler ---------- */
 
 var (
-	bc            *blockchain.Blockchain
-	gameState     = game.NewGameState()
-	cfg           *config.Config
-	httpServer    *http.Server
-	aiAlerts      = NewAIAlertBuffer(200)
-	globalMempool *internal.Mempool
+	bc               *blockchain.Blockchain
+	gameState        = game.NewGameState()
+	cfg              *config.Config
+	httpServer       *http.Server
+	aiAlerts         = NewAIAlertBuffer(200)
+	globalMempool    *internal.Mempool
+	apiReadOnlyMode  bool
+	apiChainReloadMu sync.Mutex
+	apiChainLastMod  time.Time
+	apiChainLastSize int64
 )
 
 /* ---------- Mining döngüleri ---------- */
@@ -183,10 +216,10 @@ func startContinuousMining(miner string) {
 			return
 
 		default:
-			blk, err := bc.MineBlock(miner, bc.NextDifficulty(cfg.DefaultDifficultyBits))
+			blk, err := bc.MineBlock(miner, effectiveDifficultyBits(bc.NextDifficulty(cfg.DefaultDifficultyBits)))
 			if err != nil {
 				log.Printf("mine error: %v", err)
-				time.Sleep(500 * time.Millisecond)
+				time.Sleep(effectiveMiningDelay(1200 * time.Millisecond))
 				continue
 			}
 
@@ -198,7 +231,7 @@ func startContinuousMining(miner string) {
 				blk.Index, ansiCyan, hex.EncodeToString(blk.Hash), ansiReset)
 
 			// AI bonus işlemleri
-			processAIBonus()
+			// processAIBonus() disabled: AI monitors only, no mining bonus / no supply effect.
 
 			// Zinciri diske yaz
 			_ = bc.SaveToFile(cfg.ChainFile)
@@ -218,6 +251,45 @@ func autosaveLoop() {
 			log.Println("autosave error:", err)
 		}
 	}
+}
+
+func reloadAPIChainFromDiskIfChanged() {
+	if !apiReadOnlyMode || cfg == nil || strings.TrimSpace(cfg.ChainFile) == "" {
+		return
+	}
+
+	st, err := os.Stat(cfg.ChainFile)
+	if err != nil {
+		return
+	}
+
+	apiChainReloadMu.Lock()
+	defer apiChainReloadMu.Unlock()
+
+	if !apiChainLastMod.IsZero() &&
+		apiChainLastMod.Equal(st.ModTime()) &&
+		apiChainLastSize == st.Size() {
+		return
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("api live reload skipped: %v", r)
+		}
+	}()
+
+	nbc, err := blockchain.LoadBlockchainFromFile(cfg.ChainFile)
+	if err != nil {
+		log.Printf("api live reload error: %v", err)
+		return
+	}
+
+	nbc.SetCoinbaseMaturity(cfg.CoinbaseMaturity)
+	bc = nbc
+	apiChainLastMod = st.ModTime()
+	apiChainLastSize = st.Size()
+
+	log.Printf("api live reload: chain height=%d file=%s", bc.GetBestHeight(), cfg.ChainFile)
 }
 
 /* web miner job state */
@@ -439,9 +511,11 @@ func main() {
 		p2p.RunNode(p, bc)
 
 	case "api":
-		go autosaveLoop()
-		go trapAndShutdown()
+		apiReadOnlyMode = true
+		// API mode is read-only for chain file: no autosave and no final save.
+		// Read endpoints reload chain_data.dat when miner writes new blocks.
 		startHTTPAPI()
+		return
 
 	case "connect":
 		if len(os.Args) < 4 {
@@ -485,7 +559,7 @@ func main() {
 			return
 		}
 		miner := os.Args[2]
-		difficulty := bc.NextDifficulty(cfg.DefaultDifficultyBits)
+		difficulty := effectiveDifficultyBits(bc.NextDifficulty(cfg.DefaultDifficultyBits))
 		block, err := bc.MineBlock(miner, difficulty)
 		if err != nil {
 			log.Println("mining failed:", err)
@@ -493,9 +567,9 @@ func main() {
 		}
 		p2p.BroadcastMessage(p2p.BlockMessage(block))
 		fmt.Printf(ansiGreen+"✅ New block mined by %s"+ansiReset+"\n", miner)
-		fmt.Printf("   Hash:   %s%s%s\n", ansiCyan, hex.EncodeToString(block.Hash), ansiReset)
+		fmt.Printf("   Hash:   %s%s%s\n", ansiGreen, hex.EncodeToString(block.Hash), ansiReset)
 		fmt.Printf("   Height: %d  Reward: %d QC\n", bc.GetBestHeight(), blockchain.GetCurrentReward())
-		processAIBonus()
+		// processAIBonus() disabled: AI monitors only, no mining bonus / no supply effect.
 		_ = bc.SaveToFile(cfg.ChainFile)
 
 	case "mine-forever":
@@ -787,6 +861,7 @@ func handleWalletAddress(w http.ResponseWriter, _ *http.Request) {
 }
 
 func handleBalance(w http.ResponseWriter, r *http.Request) {
+	reloadAPIChainFromDiskIfChanged()
 	parts := strings.Split(r.URL.Path, "/")
 	if len(parts) != 5 {
 		writeError(w, http.StatusBadRequest, "invalid path")
@@ -830,7 +905,7 @@ func handleMineBlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	block, err := bc.MineBlock(req.Address, bc.NextDifficulty(cfg.DefaultDifficultyBits))
+	block, err := bc.MineBlock(req.Address, effectiveDifficultyBits(bc.NextDifficulty(cfg.DefaultDifficultyBits)))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -845,7 +920,7 @@ func handleMineBlock(w http.ResponseWriter, r *http.Request) {
 		"block_hash": hex.EncodeToString(block.Hash),
 	})
 
-	processAIBonus()
+	// processAIBonus() disabled: AI monitors only, no mining bonus / no supply effect.
 	_ = bc.SaveToFile(cfg.ChainFile)
 }
 
@@ -886,7 +961,7 @@ func handleSendTx(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tx, err := blockchain.NewTransaction(req.From, req.To, req.Amount, bc)
+	tx, err := blockchain.NewTransaction(req.From, req.To, int(req.Amount), bc)
 	if err != nil {
 		writeOK(w, SendResponse{
 			Success: false,
@@ -986,7 +1061,7 @@ func handleFastMine(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for i := 0; i < n; i++ {
-		if _, err := bc.MineBlock(addr, bc.NextDifficulty(cfg.DefaultDifficultyBits)); err != nil {
+		if _, err := bc.MineBlock(addr, effectiveDifficultyBits(bc.NextDifficulty(cfg.DefaultDifficultyBits))); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -1009,6 +1084,7 @@ func handleFastMine(w http.ResponseWriter, r *http.Request) {
 
 // /api/telemetry
 func handleTelemetry(w http.ResponseWriter, r *http.Request) {
+	reloadAPIChainFromDiskIfChanged()
 	// Telemetry read-only, token şart değil – istersen:
 	// if !checkAPIToken(w, r) { return }
 
@@ -1045,47 +1121,39 @@ func handleTelemetry(w http.ResponseWriter, r *http.Request) {
 
 /* ---------- AI & Game ---------- */
 
+func effectiveMiningDelay(defaultDelay time.Duration) time.Duration {
+	v := strings.TrimSpace(os.Getenv("QC_MINING_DELAY_MS"))
+	if v == "" {
+		return defaultDelay
+	}
+
+	var n int
+	if _, err := fmt.Sscanf(v, "%d", &n); err != nil || n < 0 || n > 60000 {
+		log.Printf("[config] invalid QC_MINING_DELAY_MS=%q; using default=%s", v, defaultDelay)
+		return defaultDelay
+	}
+
+	return time.Duration(n) * time.Millisecond
+}
+func effectiveDifficultyBits(defaultBits int) int {
+	v := os.Getenv("QC_DIFFICULTY_BITS")
+	if v == "" {
+		return defaultBits
+	}
+
+	var n int
+	if _, err := fmt.Sscanf(v, "%d", &n); err != nil || n <= 0 || n > 30 {
+		log.Printf("[config] invalid QC_DIFFICULTY_BITS=%q; using default=%d", v, defaultBits)
+		return defaultBits
+	}
+
+	fmt.Printf("[config] QC_DIFFICULTY_BITS override: %d\n", n)
+	return n
+}
 func processAIBonus() {
-	if !ai.Enabled() {
-		return
-	}
-
-	// son 24 saatin işlemleri
-	var recentTxs []*blockchain.Transaction
-	cut := time.Now().Add(-24 * time.Hour)
-
-	for _, block := range bc.Blocks {
-		for _, tx := range block.Transactions {
-			if tx.Timestamp.After(cut) {
-				recentTxs = append(recentTxs, tx)
-			}
-		}
-	}
-
-	// blockchain.Transaction -> ai.TxLite
-	lite := blockchain.ToAITxLite(recentTxs)
-
-	// anomaliler
-	anoms := ai.AnalyzeTransactions(lite)
-
-	// UI için buffer'a yaz
-	for _, a := range anoms {
-		aiAlerts.Add(AIAlert{
-			Time:    time.Now(),
-			Height:  bc.GetBestHeight(),
-			Address: a.WalletAddress,
-			Reason:  a.Reason,
-			Score:   a.Score,
-		})
-	}
-
-	// AI’den bonus önerileri al
-	bonusSugs := ai.DistributeAIBonusesLite(lite)
-
-	// sistem bonus kaydına işle
-	for _, bs := range bonusSugs {
-		internal.GiveBonus(bs.WalletAddress, bs.Source, bs.Amount, bs.Reason, "")
-	}
+	// AI bonus is disabled for mining consensus and supply safety.
+	// AI can monitor/analyze only; it must not mint, write bonus files, or alter balances.
+	return
 }
 
 func handleAIBonus(w http.ResponseWriter, r *http.Request) {
@@ -1361,7 +1429,7 @@ func handleMineJob(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "address required")
 		return
 	}
-	diff := bc.NextDifficulty(cfg.DefaultDifficultyBits)
+	diff := effectiveDifficultyBits(bc.NextDifficulty(cfg.DefaultDifficultyBits))
 	j := makeWebJob(addr, diff)
 	jobMu.Lock()
 	curJob = j
@@ -1420,9 +1488,9 @@ func handleMineSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go func(miner string) {
-		if blk, err := bc.MineBlock(miner, bc.NextDifficulty(cfg.DefaultDifficultyBits)); err == nil {
+		if blk, err := bc.MineBlock(miner, effectiveDifficultyBits(bc.NextDifficulty(cfg.DefaultDifficultyBits))); err == nil {
 			p2p.BroadcastMessage(p2p.BlockMessage(blk))
-			processAIBonus()
+			// processAIBonus() disabled: AI monitors only, no mining bonus / no supply effect.
 			_ = bc.SaveToFile(cfg.ChainFile)
 		} else {
 			log.Printf("mine after accept failed: %v", err)

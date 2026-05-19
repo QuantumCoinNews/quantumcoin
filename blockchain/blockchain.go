@@ -589,7 +589,7 @@ func (bc *Blockchain) MineBlock(miner string, difficulty int) (*Block, error) {
 	}
 	defer func() {
 		if _minedOK && _minedReward > 0 {
-			AddMinedBalance(miner, _minedReward)
+			// AddMinedBalance disabled: canonical wallet balance must come only from blockchain/API.
 		}
 	}()
 
@@ -664,7 +664,11 @@ func DeserializeBlockchain(data []byte) *Blockchain {
 }
 
 func (bc *Blockchain) SaveToFile(filename string) error {
-	return os.WriteFile(filename, SerializeBlockchain(bc), 0o600)
+	tmp := filename + ".tmp"
+	if err := os.WriteFile(tmp, SerializeBlockchain(bc), 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, filename)
 }
 
 func LoadBlockchainFromFile(filename string) (*Blockchain, error) {

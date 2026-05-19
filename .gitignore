@@ -168,3 +168,40 @@ release.zip
 # Allow safe example env files
 !.env.example
 !**/.env.example
+
+# === QuantumCoin local/runtime secrets ===
+wallet_priv.hex
+wallet_address.txt
+miner_address.txt
+wallet_recovery_words.txt
+wallet_recovery_manifest.json
+*.log
+miner_out.log
+miner_pid.txt
+miner_cmd_pid.txt
+miner_stop.flag
+chain_data.dat
+chain_data*.dat
+bonus_store.json
+mined_balance.json
+wallet_balance.cache.json
+
+# === Runtime/test/build junk ===
+_root_exe_quarantine/
+_legacy_runtime_*/
+release_clean_test*/
+release_clean_test_old_*/
+*.bak_*
+*.exe~
+powershell
+fallback
+
+# === Large/generated binaries ===
+*.exe
+*.dll
+*.syso
+
+# === OS/editor ===
+.DS_Store
+Thumbs.db
+

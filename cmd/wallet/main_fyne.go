@@ -53,60 +53,77 @@ func hideConsoleOnStartup() {
 
 // İçeriden ortak "STOP'a indir" helper'ı (tek yerden yönetelim)
 func markMinerStoppedFromWatcher() {
-	// state
-	minerRunningState = false
-
-	// tail kapat
-	stopMinerTail()
-
-	// pid temizle
-	clearMinerPID()
-
-	// UI state indir (UI thread)
-	ui(func() {
-		if onMinerStateUpdate != nil {
-			onMinerStateUpdate(false)
-		}
-	})
-
-	// balance refresh
-	if walletRefreshHook != nil {
-		walletRefreshHook()
-	}
+	// Devre dışı: otomatik watcher/poller/cmd.Wait hattı Start sonrası anında Stopped'a düşürüyordu.
+	// Stop durumunu yalnızca stopMinerVisible() ayarlayacak.
 }
 
 func startMinerVisible() error {
+	qcResetStaleMinerState()
 	exePath, err := os.Executable()
 	if err != nil {
 		return err
 	}
+
 	releaseDir := filepath.Dir(exePath)
-	bat := filepath.Join(releaseDir, "run_miner.cmd")
 
-	if _, err := os.Stat(bat); err != nil {
-		return fmt.Errorf("run_miner.cmd not found: %w", err)
+	nodeExe := filepath.Join(releaseDir, "quantumcoin.exe")
+	if _, err := os.Stat(nodeExe); err != nil {
+		return fmt.Errorf("quantumcoin.exe not found in release: %w", err)
 	}
 
-	// Tek cmd.exe PID: detach yok
-	cmdLine := fmt.Sprintf(`pushd "%s" & title QuantumCoin Miner & call "%s"`, releaseDir, bat)
-	cmd := exec.Command("cmd.exe", "/K", cmdLine)
+	runBat := filepath.Join(releaseDir, "run_miner.cmd")
+	if _, err := os.Stat(runBat); err != nil {
+		return fmt.Errorf("run_miner.cmd not found in release: %w", err)
+	}
+
+	if minerRunningState {
+		if pid, err := readMinerPID(); err == nil && pid > 0 && isProcessAlive(pid) {
+			return nil
+		}
+	}
+
+	addr := cleanBase58(strings.TrimSpace(os.Getenv("ADDR")))
+	if !isLikelyBase58Address(addr) {
+		if b, err := os.ReadFile(filepath.Join(releaseDir, "miner_address.txt")); err == nil {
+			addr = cleanBase58(strings.TrimSpace(string(b)))
+		}
+	}
+	if !isLikelyBase58Address(addr) {
+		if b, err := os.ReadFile(filepath.Join(releaseDir, "wallet_address.txt")); err == nil {
+			addr = cleanBase58(strings.TrimSpace(string(b)))
+		}
+	}
+	if !isLikelyBase58Address(addr) {
+		return fmt.Errorf("invalid or missing miner address")
+	}
+
+	// API balance için kalsın. mine-forever API portu açmaz.
+	_ = startAPIBackground()
+
+	// Eski miner/CMD kalıntısı varsa temizle, API'ye dokunma.
+	killQuantumcoinMineOnly()
+	time.Sleep(500 * time.Millisecond)
+
+	_ = os.Remove(filepath.Join(releaseDir, "miner_stop.flag"))
+	_ = os.Remove(filepath.Join(releaseDir, "miner_pid.txt"))
+	_ = os.Remove(filepath.Join(releaseDir, "miner_cmd_pid.txt"))
+	clearMinerPID()
+
+	_ = os.WriteFile(filepath.Join(releaseDir, "wallet_address.txt"), []byte(addr), 0644)
+	_ = os.WriteFile(filepath.Join(releaseDir, "miner_address.txt"), []byte(addr), 0644)
+	cmd := exec.Command("cmd.exe", "/C", "start", "QuantumCoin Miner", runBat)
 	cmd.Dir = releaseDir
-
-	// API base (env > auto-detect)
-	api := strings.TrimSpace(os.Getenv("QC_API_BASE"))
-	if api == "" {
-		api = apiBase()
-	}
-
-	// run_miner.cmd için env
 	cmd.Env = append(os.Environ(),
+		"ADDR="+addr,
+		"QC_MINER="+addr,
 		"QC_NODE_DIR="+releaseDir,
-		"QC_MINED_PATH="+filepath.Join(releaseDir, "mined_balance.json"),
-		"QC_API_BASE="+api,
+		"QC_API_BASE=http://127.0.0.1:8082",
 		"QC_LANG=en",
+		"QC_COMMUNITY_ADDRESS="+addr,
+		"QC_DEV_FUND_ADDRESS="+addr,
+		"QC_PREMINE_ADDRESS="+addr,
 	)
 
-	// GUI console-less olsa bile CMD görünür açılsın
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		CreationFlags: 0x00000010, // CREATE_NEW_CONSOLE
 	}
@@ -115,28 +132,25 @@ func startMinerVisible() error {
 		return err
 	}
 
-	// PID yaz (cmd.exe PID)
-	if cmd.Process != nil {
-		writeMinerPID(cmd.Process.Pid)
+	// /C start launcher PID hemen kapanır; gerçek "QuantumCoin Miner" CMD PID'sini bul.
+	time.Sleep(1500 * time.Millisecond)
+
+	realPID := findMinerCmdPIDByTitle()
+	if realPID > 0 {
+		writeMinerPID(realPID)
+		_ = os.WriteFile(filepath.Join(releaseDir, "miner_cmd_pid.txt"), []byte(strconv.Itoa(realPID)), 0644)
 	}
 
-	// GUI state: running
-	minerRunningState = true
-	ui(func() {
-		if onMinerStateUpdate != nil {
-			onMinerStateUpdate(true)
-		}
-	})
-
-	// Poller (idempotent)
-	startMinerStatePoller()
-
-	// X ile kapanırsa -> Wait döner -> STOP
-	go func() {
-		_ = cmd.Wait()
-		markMinerStoppedFromWatcher()
-	}()
-
+	if walletRefreshHook != nil {
+		go func() {
+			time.Sleep(3 * time.Second)
+			walletRefreshHook()
+		}()
+	}
+	// ÖNEMLİ:
+	// Burada cmd.Wait ile otomatik Stopped'a düşürmüyoruz.
+	// Çünkü Windows/Fyne tarafında bu yol anlık false tetikleyip Start sonrası hemen Stop'a düşürüyor.
+	// Durumu sadece Stop Mining butonu değiştirecek.
 	return nil
 }
 
@@ -145,38 +159,42 @@ func stopMinerVisible() error {
 	if err != nil {
 		return err
 	}
+
 	releaseDir := filepath.Dir(exePath)
 
-	// run_miner.cmd döngüsüne "stop" de
 	_ = os.WriteFile(filepath.Join(releaseDir, "miner_stop.flag"), []byte("stop"), 0644)
 
 	if runtime.GOOS == "windows" {
-		// 1) En temiz: bizim başlattığımız cmd.exe PID ağacını kapat
 		if pid, err := readMinerPID(); err == nil && pid > 0 {
-			// önce yumuşak dene
-			c1 := exec.Command("taskkill", "/PID", strconv.Itoa(pid), "/T")
-			c1.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-			_ = c1.Run()
-
-			// çok kısa bekle, hâlâ yaşıyorsa force
-			time.Sleep(350 * time.Millisecond)
-			if isProcessAlive(pid) {
-				c2 := exec.Command("taskkill", "/PID", strconv.Itoa(pid), "/T", "/F")
-				c2.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-				_ = c2.Run()
-			}
-		} else {
-			// 2) PID yoksa fallback: başlığa göre
-			c := exec.Command("taskkill", "/F", "/FI", `WINDOWTITLE eq QuantumCoin Miner*`)
+			c := exec.Command("taskkill", "/PID", strconv.Itoa(pid), "/T", "/F")
 			c.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 			_ = c.Run()
 		}
+		killQuantumcoinMineOnly()
 	} else {
-		_ = exec.Command("pkill", "-f", "quantumcoin").Run()
+		_ = exec.Command("pkill", "-f", "quantumcoin.*mine").Run()
 	}
 
-	// UI'ı da indir (butona basınca anında)
-	markMinerStoppedFromWatcher()
+	time.Sleep(700 * time.Millisecond)
+
+	clearMinerPID()
+	_ = os.Remove(filepath.Join(releaseDir, "miner_pid.txt"))
+	_ = os.Remove(filepath.Join(releaseDir, "miner_cmd_pid.txt"))
+
+	minerRunningState = false
+
+	ui(func() {
+		if onMinerStateUpdate != nil {
+			onMinerStateUpdate(false)
+		}
+	})
+
+	_ = startAPIBackground()
+
+	if walletRefreshHook != nil {
+		go walletRefreshHook()
+	}
+
 	return nil
 }
 
@@ -193,7 +211,57 @@ func isSharingViolation(err error) bool {
 
 /* ================== Versiyon & Renkler ================== */
 
-var appVersion = "wallet-gui v2.0 (AI)"
+var appVersion = "wallet-gui v3.0.0-seed-runtime"
+
+func qcMinerRunnerAlive() bool {
+	logPath := filepath.Join(nodeDir(), "miner_out.log")
+
+	st, err := os.Stat(logPath)
+	if err != nil {
+		return false
+	}
+
+	// Son 25 saniyede log yazıldıysa miner aktif kabul edilir.
+	if time.Since(st.ModTime()) <= 25*time.Second {
+		return true
+	}
+
+	b, err := os.ReadFile(logPath)
+	if err != nil {
+		return false
+	}
+
+	txt := strings.ToLower(string(b))
+	lines := strings.Split(txt, "\n")
+
+	start := 0
+	if len(lines) > 30 {
+		start = len(lines) - 30
+	}
+
+	tail := strings.Join(lines[start:], "\n")
+
+	if strings.Contains(tail, "block") && strings.Contains(tail, `"success":true`) {
+		return true
+	}
+
+	if strings.Contains(tail, "stable api-mempool miner started") {
+		return true
+	}
+
+	return false
+}
+
+func qcResetStaleMinerState() {
+	if qcMinerRunnerAlive() {
+		return
+	}
+	minerRunningState = false
+	dir := nodeDir()
+	_ = os.Remove(filepath.Join(dir, "miner_pid.txt"))
+	_ = os.Remove(filepath.Join(dir, "miner_cmd_pid.txt"))
+	_ = os.Remove(filepath.Join(dir, "miner_stop.flag"))
+}
 
 var (
 	colSuccess = color.NRGBA{R: 46, G: 204, B: 113, A: 255} // yeşil
@@ -251,50 +319,7 @@ func exeDir() string {
 }
 
 func startMinerStatePoller() {
-	minerStatePollerMu.Lock()
-	if minerStatePollerRun {
-		minerStatePollerMu.Unlock()
-		return
-	}
-	minerStatePollerRun = true
-	minerStatePollerMu.Unlock()
-
-	go func() {
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-
-		misses := 0
-
-		for range ticker.C {
-			// miner çalışmıyorsa: izle ama aksiyon alma
-			if !minerRunningState {
-				misses = 0
-				continue
-			}
-
-			// Önce PID ile kontrol et (en sağlam)
-			pid, _ := readMinerPID()
-			alive := false
-			if pid > 0 {
-				alive = isProcessAlive(pid)
-			} else {
-				// PID yoksa fallback: pencere başlığı
-				alive = minerWindowAlive()
-			}
-
-			if alive {
-				misses = 0
-				continue
-			}
-
-			misses++
-			if misses >= 2 {
-				// STOP’a çek
-				markMinerStoppedFromWatcher()
-				misses = 0
-			}
-		}
-	}()
+	// Devre dışı: instant Stop'a düşürüyordu.
 }
 
 func isWalletTabActive(w fyne.Window) bool {
@@ -758,7 +783,11 @@ func isProcessAlive(pid int) bool {
 		return false
 	}
 	if runtime.GOOS == "windows" {
-		out, _ := exec.Command("tasklist", "/FI", fmt.Sprintf("PID eq %d", pid)).CombinedOutput()
+		c := exec.Command("tasklist", "/FI", fmt.Sprintf("PID eq %d", pid))
+		c.SysProcAttr = &syscall.SysProcAttr{
+			HideWindow: true,
+		}
+		out, _ := c.CombinedOutput()
 		return strings.Contains(string(out), fmt.Sprintf("%d", pid))
 	}
 	return exec.Command("kill", "-0", fmt.Sprint(pid)).Run() == nil
@@ -1981,34 +2010,6 @@ func makeWalletTab(w fyne.Window, myAddrEntry, fromEntry *widget.Entry) fyne.Can
 			return
 		}
 
-		// >>> ADD: Legacy HTTP fallback (modern uç başarısızsa)
-		if n, err := getBalanceUniversalLegacy(addr); err == nil && n > 0 {
-			total := float64(n) // legacy toplam (confirmed+pending) kabulü
-			ui(func() {
-				if total > lastBalance {
-					balanceText.Color = colSuccess
-				} else if total < lastBalance {
-					balanceText.Color = colError
-				} else {
-					balanceText.Color = colInfo
-				}
-				// Yerel pending bilgisi varsa ek bilgi olarak göster
-				if pendingLocal > 1e-7 {
-					balanceText.Text = fmt.Sprintf(
-						"%s: %.8f QC   (pending≈ %.8f)",
-						T("balance"), total, pendingLocal,
-					)
-				} else {
-					balanceText.Text = fmt.Sprintf("%s: %.8f QC", T("balance"), total)
-				}
-				canvas.Refresh(balanceText)
-				lastBalance = total
-			})
-			saveBalanceCache(addr, total)
-			return
-		}
-		// <<< END ADD
-
 		// API başarısızsa cache
 		if total, ok := loadBalanceCache(addr); ok {
 			ui(func() {
@@ -2308,6 +2309,14 @@ func createWalletBackup(targetPath, pass string) error {
 	if b, err := os.ReadFile(filepath.Join(dir, "wallet_priv.hex")); err == nil {
 		m["wallet_priv_hex"] = strings.TrimSpace(string(b))
 	}
+	if b, err := os.ReadFile(filepath.Join(dir, "wallet_recovery_words.txt")); err == nil {
+		m["wallet_recovery_words"] = strings.TrimSpace(string(b))
+	}
+	if b, err := os.ReadFile(filepath.Join(dir, "wallet_recovery_manifest.json")); err == nil {
+		var tmp interface{}
+		_ = json.Unmarshal(b, &tmp)
+		m["wallet_recovery_manifest"] = tmp
+	}
 	if b, err := os.ReadFile(filepath.Join(dir, "wallet_balance.cache.json")); err == nil {
 		var tmp interface{}
 		_ = json.Unmarshal(b, &tmp)
@@ -2335,6 +2344,14 @@ func restoreWalletBackup(sourcePath, pass string) error {
 	}
 	if v, ok := m["wallet_priv_hex"].(string); ok {
 		_ = os.WriteFile(filepath.Join(dir, "wallet_priv.hex"), []byte(strings.TrimSpace(v)), 0644)
+	}
+	if v, ok := m["wallet_recovery_words"].(string); ok {
+		_ = os.WriteFile(filepath.Join(dir, "wallet_recovery_words.txt"), []byte(strings.TrimSpace(v)), 0644)
+	}
+	if v, ok := m["wallet_recovery_manifest"]; ok {
+		if b, err := json.MarshalIndent(v, "", "  "); err == nil {
+			_ = os.WriteFile(filepath.Join(dir, "wallet_recovery_manifest.json"), b, 0644)
+		}
 	}
 	if v, ok := m["balance_cache"]; ok {
 		if b, err := json.MarshalIndent(v, "", "  "); err == nil {
@@ -2653,265 +2670,16 @@ func startMinerInCmd(addr string) error {
 		return fmt.Errorf("invalid reward address (Base58)")
 	}
 
-	// Varsayılan node dizini (legacy davranış)
 	dir := nodeDir()
-
-	// WINDOWS için: ÖNCE release klasöründeki quantumcoin.exe'yi tercih et
-	// (wallet-gui.exe ile aynı klasör)
-	if runtime.GOOS == "windows" {
-		if exePath, err := os.Executable(); err == nil && exePath != "" {
-			releaseDir := filepath.Dir(exePath)
-			localNode := filepath.Join(releaseDir, "quantumcoin.exe")
-			if st, err := os.Stat(localNode); err == nil && !st.IsDir() {
-				dir = releaseDir
-			}
-		}
+	runBat := filepath.Join(dir, "run_miner.cmd")
+	if _, err := os.Stat(runBat); err != nil {
+		return fmt.Errorf("run_miner.cmd not found in release: %w", err)
 	}
 
-	winExe := filepath.Join(dir, "quantumcoin.exe")
-	if _, err := os.Stat(winExe); err != nil && runtime.GOOS == "windows" {
-		return fmt.Errorf("quantumcoin.exe not found: %w", err)
-	}
+	_ = saveText(minerAddressPath(), addr)
+	_ = os.Setenv("ADDR", addr)
 
-	// Tek-adres env’leri ve yapı (Windows dışı için de anlamlı)
-	_ = os.Setenv("QC_NODE_DIR", dir)
-	_ = os.Setenv("QC_COMMUNITY_ADDRESS", addr)
-	_ = os.Setenv("QC_DEV_FUND_ADDRESS", addr)
-	_ = os.Setenv("QC_PREMINE_ADDRESS", addr)
-	ensureBonusStore(addr)
-
-	// --- WINDOWS ---
-	if runtime.GOOS == "windows" {
-		// POZİSYONEL argüman: mine "ADDR"
-		argLine := fmt.Sprintf(`%s "%s"`, minerSubcommand, addr)
-
-		runBat := filepath.Join(dir, "run_miner.cmd")
-
-		// Eğer klasörde zaten run_miner.cmd varsa onu EZME.
-		// (Senin release klasörüne koyduğun sade dosya korunur.)
-		if _, err := os.Stat(runBat); os.IsNotExist(err) {
-
-			// >>> hazır değilse fallback script üret (eski davranış korunuyor)
-			logPath := filepath.Join(dir, "miner_out.log")
-			if _, err := os.Stat(logPath); os.IsNotExist(err) {
-				// UTF-8 BOM
-				_ = os.WriteFile(logPath, []byte{0xEF, 0xBB, 0xBF}, 0644)
-			}
-
-			bat := fmt.Sprintf(`@echo off
-setlocal enableextensions enabledelayedexpansion
-chcp 65001 >NUL
-cd /d "%s"
-
-REM --- Tek-adres env'leri ---
-set "QC_NODE_DIR=%s"
-set "QC_COMMUNITY_ADDRESS=%s"
-set "QC_DEV_FUND_ADDRESS=%s"
-set "QC_PREMINE_ADDRESS=%s"
-set "QC_MINED_PATH=%%CD%%\mined_balance.json"
-set "ADDR=%s"
-set "LOG=miner_out.log"
-set "QC_LANG=en"
-set "LANG=en_US.UTF-8"
-set "LANGUAGE=en"
-set "LC_ALL=C"
-
-REM --- Eski stop bayrağını temizle ---
-del /q "miner_stop.flag" 2>NUL
-
-REM --- Basit log rotasyonu (~10MB) ---
-if exist "%%LOG%%" (
-  for %%%%A in ("%%LOG%%") do if %%%%~zA GTR 10485760 (
-    if exist "%%LOG%%.1" del /q "%%LOG%%.1" 2>NUL
-    ren "%%LOG%%" "%%LOG%%.1"
-  )
-)
-
-REM --- Bilgi başlığı ---
-title QuantumCoin Miner
-echo ===============================>>"%%LOG%%"
-echo Mining to: %%ADDR%%>>"%%LOG%%"
-echo Folder    : %%CD%%>>"%%LOG%%"
-echo Started   : %%date%% %%time%%>>"%%LOG%%"
-echo ===============================>>"%%LOG%%"
-
-REM --- PowerShell var mı? (tee için) ---
-where powershell >NUL 2>&1 && set "HAS_PS=1"
-if not defined HAS_PS set "HAS_PS=0"
-
-:loop
-if exist "miner_stop.flag" goto :done
-
-if "%%HAS_PS%%"=="1" (
-  powershell -NoLogo -ExecutionPolicy Bypass -Command ^
-    "& { & '.\\quantumcoin.exe' %s 2>&1 | Tee-Object -File '%%LOG%%' -Append }"
-) else (
-  ".\\quantumcoin.exe" %s >> "%%LOG%%" 2>&1
-)
-
-REM Kısa nefes; crash sonrası döngü devam eder
-timeout /t 1 /nobreak >NUL
-goto :loop
-
-:done
-echo Stopped by miner_stop.flag>>"%%LOG%%"
-endlocal
-`, dir, dir, addr, addr, addr, addr, argLine, argLine)
-
-			// CRLF ile yaz
-			batCRLF := strings.ReplaceAll(bat, "\n", "\r\n")
-			if err := os.WriteFile(runBat, []byte(batCRLF), 0644); err != nil {
-				return fmt.Errorf("could not write run_miner.cmd: %w", err)
-			}
-		}
-
-		// API arka planda hazır değilse kaldır (mevcut davranışı bozmaz)
-		_ = startAPIBackground()
-
-		// ÖNEMLİ:
-		// "cmd /c start ..." DETACH ettiği için GUI X kapanışını göremiyor.
-		// Bunun yerine görünür cmd.exe'yi direkt başlatıyoruz ve PID/Wait ile takip ediyoruz.
-		cmdLine := fmt.Sprintf(`title QuantumCoin Miner & cd /d "%s" & call "%s"`, dir, runBat)
-		cmd := exec.Command("cmd.exe", "/K", cmdLine)
-		cmd.Dir = dir
-
-		// run_miner.cmd için ENV'leri garanti et
-		env := append(os.Environ(),
-			"ADDR="+addr,
-			"QC_NODE_DIR="+dir,
-			"QC_COMMUNITY_ADDRESS="+addr,
-			"QC_DEV_FUND_ADDRESS="+addr,
-			"QC_PREMINE_ADDRESS="+addr,
-			"QC_MINED_PATH="+filepath.Join(dir, "mined_balance.json"),
-		)
-		// apiBase() varsa kullan; yoksa fallback bırak
-		api := strings.TrimSpace(apiBase())
-		if api == "" {
-			api = "http://127.0.0.1:8081"
-		}
-		env = append(env, "QC_API_BASE="+api)
-		cmd.Env = env
-
-		// GUI console-less olsa bile CMD görünür açılsın
-		// (0x00000010 = CREATE_NEW_CONSOLE)
-		cmd.SysProcAttr = &syscall.SysProcAttr{
-			CreationFlags: 0x00000010,
-		}
-
-		if err := cmd.Start(); err != nil {
-			return fmt.Errorf("could not start visible CMD: %w", err)
-		}
-
-		// PID kaydet (watchdog/poller için)
-		if cmd.Process != nil {
-			writeMinerPID(cmd.Process.Pid)
-		}
-
-		// GUI tarafına "çalışıyor" bilgisini yansıt
-		minerLogPath = filepath.Join(dir, "miner_out.log")
-		minerRunningState = true
-		if onMinerStateUpdate != nil {
-			onMinerStateUpdate(true)
-		}
-
-		// Poller/watchdog'ı BİR kez başlat
-		startMinerStatePoller()
-		go windowsMinerWatchdog()
-
-		// CMD kullanıcı X ile kapatırsa -> GUI otomatik STOPPED
-		go func() {
-			_ = cmd.Wait()
-
-			minerRunningState = false
-			stopMinerTail()
-			clearMinerPID()
-
-			if onMinerStateUpdate != nil {
-				onMinerStateUpdate(false)
-			}
-
-			if walletRefreshHook != nil {
-				walletRefreshHook()
-			}
-		}()
-
-		// Kısa gecikmeli refresh (orijinal davranış)
-		if walletRefreshHook != nil {
-			go func() {
-				time.Sleep(3 * time.Second)
-				walletRefreshHook()
-			}()
-		}
-
-		return nil
-	}
-
-	// --- macOS / LINUX ---
-	exe := findNodeExe()
-	if exe == "" {
-		// Emniyetli geri dönüş
-		exe = filepath.Join(dir, "quantumcoin")
-	}
-	if _, err := os.Stat(exe); err != nil {
-		return fmt.Errorf("quantumcoin executable not found: %w", err)
-	}
-	dir = filepath.Dir(exe)
-
-	args := []string{minerSubcommand, addr} // pozisyonel
-	minerLogPath = filepath.Join(dir, "miner_out.log")
-	lf, _ := os.OpenFile(minerLogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-
-	cmd := exec.Command(exe, args...)
-
-	// env ve çalışma dizini
-	env := append(os.Environ(),
-		"QC_LANG=en", // loglar İngilizce
-		"QC_NODE_DIR="+dir,
-		"QC_COMMUNITY_ADDRESS="+addr,
-		"QC_DEV_FUND_ADDRESS="+addr,
-		"QC_PREMINE_ADDRESS="+addr,
-		"QC_MINED_PATH="+filepath.Join(dir, "mined_balance.json"),
-	)
-	cmd.Env = env
-	cmd.Dir = dir
-
-	if lf != nil {
-		cmd.Stdout = lf
-		cmd.Stderr = lf
-	}
-	if err := cmd.Start(); err != nil {
-		if lf != nil {
-			_ = lf.Close()
-		}
-		return err
-	}
-	writeMinerPID(cmd.Process.Pid)
-	go func() {
-		_ = cmd.Wait()
-		if lf != nil {
-			_ = lf.Close()
-		}
-	}()
-
-	minerRunningState = true
-	// Poller + watchdog (CMD X kapanışını garanti yakalar)
-	startMinerStatePoller()
-	go windowsMinerWatchdog()
-	if onMinerStateUpdate != nil {
-		onMinerStateUpdate(true)
-	}
-
-	// İlk kısa gecikmeli yenile + periyodik 5 sn (Linux/macOS)
-	if walletRefreshHook != nil {
-		go func() { time.Sleep(3 * time.Second); walletRefreshHook() }()
-		go func() {
-			for i := 0; i < 120 && minerRunningState; i++ {
-				time.Sleep(5 * time.Second)
-				walletRefreshHook()
-			}
-		}()
-	}
-	return nil
+	return startMinerVisible()
 }
 
 // -------------------------------------------------------------
@@ -2977,19 +2745,28 @@ func makeMinerTab(w fyne.Window, defaultAddr string) fyne.CanvasObject {
 
 		// run_miner.cmd ENV önceliği: ADDR
 		_ = os.Setenv("ADDR", addr)
-
-		// Miner başlat (görünür CMD + PID yazılır)
-		if err := startMinerVisible(); err != nil {
+		// Miner başlat: tek canonical flow
+		if err := startMinerInCmd(addr); err != nil {
 			dialog.ShowError(err, w)
 			return
 		}
-
 		// API (varsa/kapalıysa) arka planda
 		_ = startAPIBackground()
 
 		// log tail
 		minerLogPath = filepath.Join(nodeDir(), "miner_out.log")
 		startMinerTailInto(logView)
+
+		// gerçek miner gerçekten ayağa kalktı mı?
+		time.Sleep(2 * time.Second)
+		if !qcMinerRunnerAlive() {
+			minerRunningState = false
+			if onMinerStateUpdate != nil {
+				onMinerStateUpdate(false)
+			}
+			dialog.ShowError(fmt.Errorf("miner process crashed"), w)
+			return
+		}
 
 		// UI running
 		minerRunningState = true
@@ -3114,10 +2891,16 @@ func processImageName(pid int) string {
 		return ""
 	}
 
-	out, err := exec.Command(
-		"tasklist", "/fo", "csv", "/nh",
-		"/fi", fmt.Sprintf("PID eq %d", pid),
-	).Output()
+	c := exec.Command(
+		"tasklist", "/v", "/fo", "csv", "/nh",
+		"/fi", "IMAGENAME eq cmd.exe",
+	)
+
+	c.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow: true,
+	}
+
+	out, err := c.Output()
 	if err != nil {
 		return ""
 	}
@@ -3142,37 +2925,15 @@ func isCmdPID(pid int) bool {
 // API'yi öldürmez (api komutu farklı).
 func killQuantumcoinMineOnly() {
 	if runtime.GOOS != "windows" {
+		_ = exec.Command("pkill", "-f", "quantumcoin.*mine").Run()
 		return
 	}
 
-	psCmd := `Get-CimInstance Win32_Process -Filter "Name='quantumcoin.exe'" | ` +
-		`Where-Object { $_.CommandLine -match '(\s|^)(mine)(\s|$)' } | ` +
-		`Select-Object -ExpandProperty ProcessId`
+	ps := `Get-CimInstance Win32_Process | Where-Object { (($_.Name -eq 'quantumcoin.exe') -and ($_.CommandLine -match 'mine-forever| mine ') -and ($_.CommandLine -notmatch ' api')) -or (($_.Name -eq 'cmd.exe') -and ($_.CommandLine -match 'run_miner.cmd|QuantumCoin Miner')) -or (($_.Name -match 'powershell|pwsh') -and ($_.CommandLine -match '_qc_miner_stream|run_miner|quantumcoin.exe mine')) } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`
 
-	out, err := exec.Command("powershell", "-NoProfile", "-Command", psCmd).Output()
-	if err != nil {
-		out2, err2 := exec.Command("pwsh", "-NoProfile", "-Command", psCmd).Output()
-		if err2 != nil {
-			return
-		}
-		out = out2
-	}
-
-	for _, ln := range strings.Split(string(out), "\n") {
-		ln = strings.TrimSpace(ln)
-		if ln == "" {
-			continue
-		}
-
-		pid, e := strconv.Atoi(ln)
-		if e != nil || pid <= 0 {
-			continue
-		}
-
-		c := exec.Command("taskkill", "/PID", strconv.Itoa(pid), "/T", "/F")
-		c.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-		_ = c.Run()
-	}
+	c := exec.Command("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps)
+	c.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	_ = c.Run()
 }
 
 // tasklist /v /fo csv ile PID'ye ait Window Title'ı okumaya çalışır.
@@ -3181,10 +2942,16 @@ func cmdWindowTitleByPID(pid int) (title string, ok bool) {
 		return "", false
 	}
 
-	out, err := exec.Command(
+	c := exec.Command(
 		"tasklist", "/v", "/fo", "csv", "/nh",
 		"/fi", fmt.Sprintf("PID eq %d", pid),
-	).Output()
+	)
+
+	c.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow: true,
+	}
+
+	out, err := c.Output()
 	if err != nil {
 		return "", false
 	}
@@ -3222,10 +2989,16 @@ func findMinerCmdPIDByTitle() int {
 		return 0
 	}
 
-	out, err := exec.Command(
+	c := exec.Command(
 		"tasklist", "/v", "/fo", "csv", "/nh",
 		"/fi", "IMAGENAME eq cmd.exe",
-	).Output()
+	)
+
+	c.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow: true,
+	}
+
+	out, err := c.Output()
 	if err != nil {
 		return 0
 	}
@@ -3270,47 +3043,7 @@ func findMinerCmdPIDByTitle() int {
 
 // Miner penceresi (bizim CMD) yaşıyor mu?
 func minerWindowAlive() bool {
-	if runtime.GOOS != "windows" {
-		return false
-	}
-
-	pid, _ := readMinerPID()
-
-	// PID yoksa veya yanlışlıkla cmd.exe dışında bir process yazıldıysa,
-	// pencere başlığından doğru CMD PID'sini bul ve düzelt.
-	if pid <= 0 || !isCmdPID(pid) {
-		if p2 := findMinerCmdPIDByTitle(); p2 > 0 {
-			pid = p2
-			writeMinerPID(pid)
-		}
-	}
-
-	if pid > 0 {
-		if !isProcessAlive(pid) {
-			// PID ölmüşse son fallback olarak başlıktan tekrar ara.
-			if p2 := findMinerCmdPIDByTitle(); p2 > 0 {
-				writeMinerPID(p2)
-				return true
-			}
-			return false
-		}
-
-		if title, ok := cmdWindowTitleByPID(pid); ok {
-			title = strings.ToLower(strings.TrimSpace(title))
-			return strings.Contains(title, "quantumcoin miner")
-		}
-
-		// PID canlı ama title okunamadıysa cmd yaşıyor kabul et.
-		return true
-	}
-
-	// PID hiç yoksa en son fallback: açık cmd.exe pencerelerinde başlığa bak.
-	if p2 := findMinerCmdPIDByTitle(); p2 > 0 {
-		writeMinerPID(p2)
-		return true
-	}
-
-	return false
+	return qcMinerRunnerAlive()
 }
 
 // ===== Windows miner watchdog =====
@@ -3321,39 +3054,45 @@ func windowsMinerWatchdog() {
 		return
 	}
 
-	misses := 0
+	go func() {
+		time.Sleep(5 * time.Second)
 
-	for {
-		if !minerRunningState {
+		for {
+			time.Sleep(2 * time.Second)
+
+			if !minerRunningState {
+				return
+			}
+
+			pid, err := readMinerPID()
+			if err != nil || pid <= 0 {
+				continue
+			}
+
+			if isProcessAlive(pid) {
+				continue
+			}
+
+			// CMD X ile kapandı: GUI state'i indir, flag/pid temizle
+			minerRunningState = false
+			clearMinerPID()
+			_ = os.Remove(filepath.Join(nodeDir(), "miner_pid.txt"))
+			_ = os.Remove(filepath.Join(nodeDir(), "miner_cmd_pid.txt"))
+			_ = os.WriteFile(filepath.Join(nodeDir(), "miner_stop.flag"), []byte("stop"), 0644)
+
+			ui(func() {
+				if onMinerStateUpdate != nil {
+					onMinerStateUpdate(false)
+				}
+			})
+
+			if walletRefreshHook != nil {
+				go walletRefreshHook()
+			}
+
 			return
 		}
-
-		time.Sleep(900 * time.Millisecond)
-
-		if !minerRunningState {
-			return
-		}
-
-		if minerWindowAlive() {
-			misses = 0
-			continue
-		}
-
-		misses++
-		if misses < 2 {
-			continue
-		}
-
-		// Kullanıcı CMD penceresini X ile kapattıysa:
-		// 1) stop flag yaz
-		// 2) orphan mine süreçlerini temizle
-		// 3) GUI durumunu Stopped yap
-		writeMinerStopFlag()
-		killQuantumcoinMineOnly()
-		markMinerStoppedFromWatcher()
-
-		return
-	}
+	}()
 }
 
 /* ================== Web Wallet & API bootstrap ================== */
@@ -3550,6 +3289,7 @@ func appendAILog(e *widget.Entry, prefix, raw string, maxLines int) {
 }
 
 func buildUI(w fyne.Window) {
+	qcResetStaleMinerState()
 	// i18n anahtarlarını garanti altına al
 	ensureThemeI18nKeys()
 	ensureBackupRestoreI18nKeys()
@@ -3892,13 +3632,7 @@ func getBalanceUniversalLegacy(addr string) (int64, error) {
 
 	ports := []int{8082, 8081, 8080, 3001, 9090}
 	patterns := []string{
-		"/api/address/%s/balance",
 		"/api/wallet/balance/%s",
-		"/api/balance?addr=%s",
-		"/api/wallet/balance?addr=%s",
-		"/api/address/%s",
-		"/address/%s/balance",
-		"/balance/%s",
 	}
 
 	client := &http.Client{Timeout: 4 * time.Second}
