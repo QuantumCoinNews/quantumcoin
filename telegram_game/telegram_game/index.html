@@ -1,0 +1,980 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <title>QuantumCoin Space Miner – Telegram Game</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+  <style>
+    :root {
+      --bg: #020617;
+      --panel: #020617;
+      --accent: #22c55e;
+      --accent-soft: rgba(34, 197, 94, 0.15);
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --danger: #f97373;
+      --warn: #fbbf24;
+      --line: rgba(148, 163, 184, 0.35);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0;
+      width: 100%; height: 100%;
+      background: radial-gradient(circle at top, #0f172a 0, #020617 55%, #000 100%);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    body { display: flex; flex-direction: column; }
+
+    .app {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 16px;
+      max-width: 480px;
+      margin: 0 auto;
+    }
+    .header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+    .logo {
+      width: 40px; height: 40px; border-radius: 12px;
+      background: radial-gradient(circle at top, #22c55e 0, #16a34a 40%, #0f172a 100%);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px; user-select: none;
+    }
+    .title-block h1 { margin: 0; font-size: 18px; font-weight: 700; }
+    .title-block p  { margin: 2px 0 0 0; font-size: 12px; color: var(--muted); }
+
+    .card {
+      background: rgba(15, 23, 42, 0.9);
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.55);
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      backdrop-filter: blur(14px);
+      margin-bottom: 12px;
+    }
+    .card h2 { margin: 0 0 6px 0; font-size: 15px; }
+    .card p  { margin: 0; font-size: 13px; color: var(--muted); }
+
+    .regions {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin: 14px 0;
+    }
+    .region {
+      border-radius: 14px;
+      padding: 8px 6px;
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid var(--line);
+      text-align: center;
+      font-size: 11px;
+      cursor: pointer;
+      transition: transform 0.1s ease, box-shadow 0.1s ease, border-color 0.1s ease, background 0.1s ease;
+      user-select: none;
+    }
+    .region span.emoji { display: block; font-size: 20px; margin-bottom: 4px; }
+    .region span.name  { display: block; font-weight: 600; }
+    .region span.meta  { display: block; margin-top: 2px; font-size: 10px; color: var(--muted); }
+
+    .region.active {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.5);
+      background: radial-gradient(circle at top, rgba(34, 197, 94, 0.18), rgba(15, 23, 42, 0.95));
+    }
+    .region:active { transform: scale(0.97); }
+
+    .progress-panel {
+      margin-top: 8px;
+      padding: 12px;
+      border-radius: 14px;
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid var(--line);
+    }
+    .progress-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      margin-bottom: 4px;
+      color: var(--muted);
+    }
+    .progress-bar {
+      width: 100%;
+      height: 8px;
+      border-radius: 999px;
+      background: rgba(30, 64, 175, 0.7);
+      overflow: hidden;
+    }
+    .progress-inner {
+      height: 100%;
+      width: 0;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #22c55e, #4ade80);
+      transition: width 0.15s linear;
+    }
+
+    .footer-buttons {
+      margin-top: auto;
+      padding-top: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    button.primary {
+      padding: 12px 18px;
+      border-radius: 999px;
+      border: none;
+      background: linear-gradient(135deg, #22c55e, #4ade80);
+      color: #022c22;
+      font-weight: 700;
+      font-size: 15px;
+      cursor: pointer;
+      box-shadow: 0 8px 25px rgba(34, 197, 94, 0.45);
+    }
+    button.secondary {
+      padding: 10px 18px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.55);
+      background: rgba(15, 23, 42, 0.9);
+      color: var(--text);
+      font-weight: 500;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    button.secondary:disabled,
+    button.primary:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      filter: grayscale(30%);
+    }
+
+    .log {
+      margin-top: 6px;
+      font-size: 11px;
+      color: var(--muted);
+      max-height: 110px;
+      overflow-y: auto;
+    }
+    .log-line {
+      margin-bottom: 2px;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      overflow: hidden;
+    }
+    .log-line.good { color: var(--accent); }
+    .log-line.warn { color: var(--warn); }
+
+    .tag-row {
+      margin-top: 8px;
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .tag {
+      font-size: 10px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(148, 163, 184, 0.4);
+      color: var(--muted);
+    }
+
+    .grid4 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .stat {
+      border-radius: 14px;
+      padding: 10px 10px;
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid var(--line);
+    }
+    .stat .k { font-size: 11px; color: var(--muted); }
+    .stat .v { margin-top: 2px; font-size: 16px; font-weight: 800; letter-spacing: 0.2px; }
+
+    .row {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+      align-items: center;
+    }
+    .mini { font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.35; }
+    .danger { color: var(--danger); font-weight: 700; }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.55);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 999;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      width: 100%;
+      max-width: 480px;
+      border-radius: 18px;
+      background: rgba(15, 23, 42, 0.96);
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      box-shadow: 0 25px 70px rgba(0,0,0,0.6);
+      backdrop-filter: blur(14px);
+      padding: 14px;
+    }
+    .modal h3 { margin: 0; font-size: 15px; }
+    .modal .sub { margin-top: 4px; font-size: 12px; color: var(--muted); }
+    .field { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+    .field label { font-size: 11px; color: var(--muted); }
+    .field input {
+      width: 100%;
+      border-radius: 12px;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      background: rgba(15, 23, 42, 0.9);
+      color: var(--text);
+      padding: 10px 10px;
+      outline: none;
+      font-size: 12px;
+    }
+    .modal-actions { margin-top: 12px; display: flex; gap: 8px; }
+    .hint { margin-top: 8px; font-size: 11px; color: var(--muted); }
+
+    .list {
+      margin-top: 8px;
+      border-radius: 12px;
+      border: 1px solid rgba(148, 163, 184, 0.22);
+      overflow: hidden;
+    }
+    .list-item {
+      padding: 8px 10px;
+      border-top: 1px solid rgba(148, 163, 184, 0.18);
+      background: rgba(2,6,23,0.25);
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      font-size: 11px;
+    }
+    .list-item:first-child { border-top: 0; }
+    .list-item .topline { display:flex; justify-content:space-between; gap:10px; }
+    .pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      background: rgba(15, 23, 42, 0.65);
+      color: var(--muted);
+      font-size: 10px;
+      white-space: nowrap;
+    }
+    .pill.ok { border-color: rgba(34,197,94,0.35); color: rgba(74,222,128,0.95); }
+    .pill.bad { border-color: rgba(249,115,115,0.35); color: rgba(249,115,115,0.95); }
+
+    .linkbtn {
+      border: none;
+      background: transparent;
+      color: rgba(74, 222, 128, 0.95);
+      font-size: 11px;
+      padding: 0;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+    .linkbtn:disabled { opacity: 0.5; cursor: not-allowed; }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <div class="header">
+      <div class="logo">Q</div>
+      <div class="title-block">
+        <h1>QuantumCoin Space Miner</h1>
+        <p>Telegram WebApp – Demo Oyun Ekranı</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>TGWT – 4 Sepet (Backend Senkron)</h2>
+      <p>Bu panel, <b>/api/v1/tgwt/state</b> endpoint’inden <b>rev</b> ve <b>micro-unit</b> bakiyeleri çekip ekrana yazar.</p>
+
+      <div class="tag-row">
+        <div class="tag">User: <span id="tgUser">–</span></div>
+        <div class="tag">Rev: <span id="tgRev">–</span></div>
+        <div class="tag">Sync: <span id="tgSync">–</span></div>
+        <div class="tag">API: <span id="tgApi">–</span></div>
+      </div>
+
+      <div class="grid4">
+        <div class="stat">
+          <div class="k">Earned</div>
+          <div class="v" id="bEarned">0</div>
+          <div class="k">micro-u: <span id="uEarned">0</span></div>
+        </div>
+        <div class="stat">
+          <div class="k">Pending</div>
+          <div class="v" id="bPending">0</div>
+          <div class="k">micro-u: <span id="uPending">0</span></div>
+        </div>
+        <div class="stat">
+          <div class="k">Verified</div>
+          <div class="v" id="bVerified">0</div>
+          <div class="k">micro-u: <span id="uVerified">0</span></div>
+        </div>
+        <div class="stat">
+          <div class="k">Withdrawn</div>
+          <div class="v" id="bWithdrawn">0</div>
+          <div class="k">micro-u: <span id="uWithdrawn">0</span></div>
+        </div>
+      </div>
+
+      <div class="row">
+        <button class="secondary" id="btn-sync" style="flex:1">🔄 Şimdi Senkronla</button>
+        <button class="secondary" id="btn-verify-all" style="flex:1">✅ Pending → Verified (Demo)</button>
+      </div>
+
+      <div class="row">
+        <button class="secondary" id="btn-withdraw" style="flex:1">💸 TGWT Çek (Verified)</button>
+      </div>
+
+      <div class="mini">
+        Çekim sadece <b>Verified</b> sepetinden olur.
+        İstek oluşunca backend <b>Verified</b> bakiyeden <b>(amount + fee)</b> düşer ve <b>Withdrawn</b> sepetine amount ekler.
+        Status <b>CONFIRMED</b> olunca sadece txHash yazılır.
+        <span class="danger">Prod’da admin/private key UI’da olmaz.</span>
+      </div>
+
+      <div class="mini">
+        <span>Withdraw geçmişi (son 10): </span>
+        <button class="linkbtn" id="btn-withdraw-refresh">yenile</button>
+        <div id="withdrawList" class="list" style="display:none;"></div>
+        <div id="withdrawListHint" class="hint" style="display:none;"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Madencilik Görevi Seç</h2>
+      <p>Gemini bir maden bölgesine gönder, süre dolunca ödülünü al. Şimdilik bu ekran <b>demo</b>; sonraki adımda gerçek blockchain entegrasyonu bağlanacak.</p>
+
+      <div class="regions">
+        <div class="region" data-key="moon">
+          <span class="emoji">🌙</span>
+          <span class="name">Ay Yörüngesi</span>
+          <span class="meta">2 dk • düşük risk</span>
+        </div>
+        <div class="region" data-key="asteroid">
+          <span class="emoji">☄️</span>
+          <span class="name">Asteroit Kuşağı</span>
+          <span class="meta">5 dk • orta risk</span>
+        </div>
+        <div class="region" data-key="deep">
+          <span class="emoji">🌀</span>
+          <span class="name">Derin Uzay</span>
+          <span class="meta">10 dk • yüksek risk</span>
+        </div>
+      </div>
+
+      <div class="progress-panel" id="progress-panel">
+        <div class="progress-label">
+          <span id="mission-label">Görev seçilmedi</span>
+          <span id="mission-eta">–:–</span>
+        </div>
+
+        <div class="progress-bar">
+          <div class="progress-inner" id="progress-inner"></div>
+        </div>
+      </div>
+
+      <div class="tag-row">
+        <div class="tag">⛏ Gerçek zamanlı kazım</div>
+        <div class="tag">🔗 QC blockchain entegrasyonu</div>
+        <div class="tag">🎁 TGWT & NFT ödülleri</div>
+      </div>
+    </div>
+
+    <div class="footer-buttons">
+      <button class="primary" id="btn-start">🚀 Görevi Başlat (Demo)</button>
+      <button class="secondary" id="btn-cancel">🛑 Görevi İptal Et</button>
+      <div class="log" id="log"></div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="withdrawBackdrop" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="withdrawTitle">
+      <h3 id="withdrawTitle">TGWT Çekim</h3>
+      <div class="sub" id="withdrawSub">Verified bakiyeden çekim isteği oluşturur.</div>
+
+      <div class="field">
+        <label for="withdrawTo">EVM adresi (0x...)</label>
+        <input id="withdrawTo" inputmode="text" autocomplete="off" placeholder="0x1234...abcd" />
+      </div>
+
+      <div class="field">
+        <label for="withdrawAmt">Miktar (TGWT)</label>
+        <input id="withdrawAmt" inputmode="decimal" autocomplete="off" placeholder="0.100000" />
+      </div>
+
+      <div class="hint" id="withdrawHint"></div>
+
+      <div class="modal-actions">
+        <button class="secondary" id="withdrawCancel" style="flex:1">Vazgeç</button>
+        <button class="primary" id="withdrawConfirm" style="flex:1">Onayla</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function initTelegram() {
+      try {
+        const tg = window.Telegram?.WebApp;
+        if (tg) {
+          tg.expand();
+          try { tg.setBackgroundColor("#020617"); } catch {}
+          try { tg.setHeaderColor("#020617"); } catch {}
+        }
+      } catch (e) {
+        console.warn("Telegram WebApp init error:", e);
+      }
+    })();
+
+    const UNIT = 1_000_000;
+    const EVM_ADDR_RE = /^0x[a-fA-F0-9]{40}$/;
+
+    function getApiBase() {
+      try {
+        const v = localStorage.getItem("qc_api_base");
+        if (v && /^https?:\/\//i.test(v)) return v;
+      } catch {}
+      const host = location.hostname || "";
+      if (host === "localhost" || host === "127.0.0.1") return "http://127.0.0.1:8081";
+      return location.origin;
+    }
+
+    function getUserId() {
+      try {
+        const tg = window.Telegram?.WebApp;
+        const uid = tg?.initDataUnsafe?.user?.id;
+        if (uid) return "tg_" + String(uid);
+      } catch {}
+      try {
+        let u = localStorage.getItem("qc_demo_userid");
+        if (!u) {
+          u = "dev_" + Math.random().toString(16).slice(2, 10);
+          localStorage.setItem("qc_demo_userid", u);
+        }
+        return u;
+      } catch {
+        return "dev_fallback";
+      }
+    }
+
+    const userId = getUserId();
+    const API_BASE = getApiBase();
+
+    const tgUserEl = document.getElementById("tgUser");
+    const tgRevEl  = document.getElementById("tgRev");
+    const tgSyncEl = document.getElementById("tgSync");
+    const tgApiEl  = document.getElementById("tgApi");
+
+    const bEarnedEl   = document.getElementById("bEarned");
+    const bPendingEl  = document.getElementById("bPending");
+    const bVerifiedEl = document.getElementById("bVerified");
+    const bWithdrawnEl= document.getElementById("bWithdrawn");
+
+    const uEarnedEl   = document.getElementById("uEarned");
+    const uPendingEl  = document.getElementById("uPending");
+    const uVerifiedEl = document.getElementById("uVerified");
+    const uWithdrawnEl= document.getElementById("uWithdrawn");
+
+    const btnSync = document.getElementById("btn-sync");
+    const btnVerifyAll = document.getElementById("btn-verify-all");
+    const btnWithdraw = document.getElementById("btn-withdraw");
+    const btnWithdrawRefresh = document.getElementById("btn-withdraw-refresh");
+    const withdrawListEl = document.getElementById("withdrawList");
+    const withdrawListHintEl = document.getElementById("withdrawListHint");
+
+    const withdrawBackdrop = document.getElementById("withdrawBackdrop");
+    const withdrawToEl = document.getElementById("withdrawTo");
+    const withdrawAmtEl = document.getElementById("withdrawAmt");
+    const withdrawHintEl = document.getElementById("withdrawHint");
+    const withdrawCancelBtn = document.getElementById("withdrawCancel");
+    const withdrawConfirmBtn = document.getElementById("withdrawConfirm");
+
+    const regions = {
+      moon:  { name: "Ay Yörüngesi",  durationSec: 120 },
+      asteroid: { name: "Asteroit Kuşağı", durationSec: 300 },
+      deep:  { name: "Derin Uzay Madenleri", durationSec: 600 },
+    };
+
+    let activeRegionKey = null;
+    let timer = null;
+    let startedAt = null;
+    let durationSec = 0;
+
+    const regionEls = document.querySelectorAll(".region");
+    const btnStart = document.getElementById("btn-start");
+    const btnCancel = document.getElementById("btn-cancel");
+    const progressInner = document.getElementById("progress-inner");
+    const missionLabel = document.getElementById("mission-label");
+    const missionEta = document.getElementById("mission-eta");
+    const logEl = document.getElementById("log");
+
+    function log(msg, type = "normal") {
+      const line = document.createElement("div");
+      line.className = "log-line" + (type === "good" ? " good" : type === "warn" ? " warn" : "");
+      line.textContent = msg;
+      logEl.prepend(line);
+    }
+
+    function formatSeconds(s) {
+      const m = Math.floor(s / 60);
+      const sec = s % 60;
+      return `${m.toString().padStart(2, "0")}:${sec.toString().padStart(2, "0")}`;
+    }
+
+    function fmtTGWTu(u) {
+      const n = Number(u) / UNIT;
+      const fixed = n.toFixed(6);
+      return fixed.replace(/\.?0+$/, "");
+    }
+
+    function nonce() {
+      try { if (crypto && crypto.randomUUID) return crypto.randomUUID(); } catch {}
+      return String(Date.now()) + "-" + Math.random().toString(16).slice(2);
+    }
+
+    function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
+
+    async function fetchWithTimeout(url, options, ms = 6000) {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), ms);
+      try {
+        const r = await fetch(url, { ...options, signal: ctrl.signal, cache: "no-store" });
+        return r;
+      } finally {
+        clearTimeout(t);
+      }
+    }
+
+    async function apiGet(path) {
+      const url = `${API_BASE}${path}`;
+      const r = await fetchWithTimeout(url, { method: "GET", mode: "cors" }, 6000).catch((e) => {
+        return { ok: false, status: 0, _err: e };
+      });
+      if (!r || r.status === 0) return { ok: false, json: { ok: false, error: "network_error" } };
+      const j = await r.json().catch(() => ({}));
+      return { ok: r.ok, json: j };
+    }
+
+    async function apiPost(path, body) {
+      const url = `${API_BASE}${path}`;
+      const r = await fetchWithTimeout(url, {
+        method: "POST",
+        mode: "cors",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }, 7000).catch((e) => {
+        return { ok: false, status: 0, _err: e };
+      });
+      if (!r || r.status === 0) return { ok: false, json: { ok: false, error: "network_error" } };
+      const j = await r.json().catch(() => ({}));
+      return { ok: r.ok, json: j };
+    }
+
+    let lastRev = null;
+    let lastState = null;
+    let pollTimer = null;
+
+    async function fetchTGWTState() {
+      const res = await apiGet(`/api/v1/tgwt/state?user_id=${encodeURIComponent(userId)}`);
+      if (!res.json || !res.json.ok) throw new Error(res.json?.error || "state_failed");
+      return res.json;
+    }
+
+    function updateButtonsFromState(j) {
+      const b = j?.balances || {};
+      const pending_u = Number(b.pending_u ?? 0);
+      const verified_u = Number(b.verified_u ?? 0);
+
+      // verify-all: pending > 0 iken aktif
+      btnVerifyAll.disabled = pending_u <= 0;
+      btnWithdraw.disabled = verified_u <= 0;
+    }
+
+    function applyTGWTState(j) {
+      lastState = j;
+      const rev = Number(j.rev ?? 0);
+
+      tgUserEl.textContent = userId;
+      tgRevEl.textContent = String(rev);
+      tgSyncEl.textContent = new Date().toLocaleTimeString();
+      tgApiEl.textContent = API_BASE.replace(/^https?:\/\//i, "");
+
+      const b = j.balances || {};
+      const earned_u = Number(b.earned_u ?? 0);
+      const pending_u = Number(b.pending_u ?? 0);
+      const verified_u = Number(b.verified_u ?? 0);
+      const withdrawn_u = Number(b.withdrawn_u ?? 0);
+
+      uEarnedEl.textContent = String(earned_u);
+      uPendingEl.textContent = String(pending_u);
+      uVerifiedEl.textContent = String(verified_u);
+      uWithdrawnEl.textContent = String(withdrawn_u);
+
+      bEarnedEl.textContent = fmtTGWTu(earned_u);
+      bPendingEl.textContent = fmtTGWTu(pending_u);
+      bVerifiedEl.textContent = fmtTGWTu(verified_u);
+      bWithdrawnEl.textContent = fmtTGWTu(withdrawn_u);
+
+      updateButtonsFromState(j);
+    }
+
+    async function syncTGWT(reason = "poll") {
+      try {
+        const j = await fetchTGWTState();
+        const rev = Number(j.rev ?? 0);
+
+        if (lastRev === null || rev !== lastRev) {
+          applyTGWTState(j);
+          if (lastRev !== null) log(`TGWT senkron: rev ${lastRev} → ${rev} (${reason})`, "good");
+          lastRev = rev;
+        } else if (reason !== "poll") {
+          applyTGWTState(j);
+          log(`TGWT senkron (rev değişmedi: ${rev})`, "good");
+        }
+      } catch (e) {
+        log(`TGWT senkron hata: ${String(e.message || e)}`, "warn");
+      }
+    }
+
+    function startPolling() {
+      stopPolling();
+      pollTimer = setInterval(() => syncTGWT("poll"), 4000);
+    }
+    function stopPolling() {
+      if (pollTimer) clearInterval(pollTimer);
+      pollTimer = null;
+    }
+
+    async function tgwtEarn(amountStr, meta) {
+      const res = await apiPost("/api/v1/tgwt/earn", {
+        userId,
+        amount: amountStr,
+        nonce: nonce(),
+        meta: meta || null
+      });
+      if (!res.json?.ok) throw new Error(res.json?.error || "earn_failed");
+      return res.json;
+    }
+
+    async function tgwtVerify(amountStrOrNull, source) {
+      const body = {
+        userId,
+        amount: amountStrOrNull === null ? null : amountStrOrNull,
+        nonce: nonce(),
+        source: source || null
+      };
+      const res = await apiPost("/api/v1/tgwt/verify", body);
+      if (!res.json?.ok) throw new Error(res.json?.error || "verify_failed");
+      return res.json;
+    }
+
+    function openWithdrawModal() {
+      const verified_u = Number(lastState?.balances?.verified_u ?? 0);
+      const verified = verified_u / UNIT;
+
+      withdrawHintEl.textContent = `Max: ${verified.toFixed(6)} TGWT (Verified)`;
+      withdrawToEl.value = "";
+      withdrawAmtEl.value = verified > 0 ? String(clamp(verified, 0.000001, verified).toFixed(6)) : "";
+
+      withdrawBackdrop.classList.add("open");
+      withdrawBackdrop.setAttribute("aria-hidden", "false");
+
+      setTimeout(() => { try { withdrawToEl.focus(); } catch {} }, 30);
+    }
+
+    function closeWithdrawModal() {
+      withdrawBackdrop.classList.remove("open");
+      withdrawBackdrop.setAttribute("aria-hidden", "true");
+      withdrawHintEl.textContent = "";
+    }
+
+    withdrawBackdrop.addEventListener("click", (e) => {
+      if (e.target === withdrawBackdrop) closeWithdrawModal();
+    });
+    withdrawCancelBtn.addEventListener("click", closeWithdrawModal);
+
+    async function submitWithdrawFromModal() {
+      const verified_u = Number(lastState?.balances?.verified_u ?? 0);
+      const verified = verified_u / UNIT;
+
+      if (verified <= 0) {
+        log("Withdraw için Verified bakiye yok (0).", "warn");
+        closeWithdrawModal();
+        return;
+      }
+
+      const to = (withdrawToEl.value || "").trim();
+      if (!EVM_ADDR_RE.test(to)) {
+        withdrawHintEl.textContent = "Adres geçersiz. 0x + 40 hex olmalı.";
+        return;
+      }
+
+      const amtStr = (withdrawAmtEl.value || "").trim().replace(",", ".");
+      const amt = Number(amtStr);
+
+      if (!isFinite(amt) || amt <= 0) {
+        withdrawHintEl.textContent = "Miktar geçersiz.";
+        return;
+      }
+      if (amt > verified + 1e-12) {
+        withdrawHintEl.textContent = `Maksimum aşıldı. Max: ${verified.toFixed(6)}`;
+        return;
+      }
+
+      withdrawConfirmBtn.disabled = true;
+      withdrawCancelBtn.disabled = true;
+      withdrawHintEl.textContent = "İstek gönderiliyor...";
+
+      try {
+        const res = await apiPost("/api/v1/withdraw/request", {
+          userId,
+          asset: "TGWT",
+          amount: amt,
+          toAddress: to,
+          nonce: nonce()
+        });
+
+        if (!res.json?.ok) {
+          withdrawHintEl.textContent = `Hata: ${res.json?.error || "failed"}`;
+          return;
+        }
+
+        const reqId = res.json.requestId;
+        closeWithdrawModal();
+
+        log(`Withdraw request oluşturuldu. ID=${reqId} (QUEUED)`, "good");
+        await syncTGWT("withdraw_request");
+        pollWithdrawStatus(reqId);
+        await refreshWithdrawList(true);
+      } catch (e) {
+        withdrawHintEl.textContent = `Hata: ${String(e.message || e)}`;
+      } finally {
+        withdrawConfirmBtn.disabled = false;
+        withdrawCancelBtn.disabled = false;
+      }
+    }
+
+    withdrawConfirmBtn.addEventListener("click", submitWithdrawFromModal);
+
+    async function fetchWithdrawStatus(id) {
+      const res = await apiGet(`/api/v1/withdraw/status?id=${encodeURIComponent(id)}`);
+      if (!res.json || !res.json.ok) throw new Error(res.json?.error || "status_failed");
+      return res.json.request;
+    }
+
+    function pollWithdrawStatus(reqId) {
+      let last = null;
+      const t = setInterval(async () => {
+        try {
+          const req = await fetchWithdrawStatus(reqId);
+          if (req.status !== last) {
+            last = req.status;
+            log(
+              `Withdraw #${reqId}: ${req.status}${req.txHash ? " tx=" + req.txHash : ""}`,
+              req.status === "REJECTED" ? "warn" : "good"
+            );
+          }
+          if (req.status === "CONFIRMED" || req.status === "REJECTED") {
+            clearInterval(t);
+            await syncTGWT("withdraw_final");
+            await refreshWithdrawList(true);
+          }
+        } catch (e) {}
+      }, 900);
+
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) clearInterval(t);
+      }, { once: true });
+    }
+
+    function statusPill(status) {
+      if (status === "CONFIRMED") return `<span class="pill ok">CONFIRMED</span>`;
+      if (status === "REJECTED") return `<span class="pill bad">REJECTED</span>`;
+      return `<span class="pill">${String(status || "UNKNOWN")}</span>`;
+    }
+
+    function shortAddr(a) {
+      if (!a) return "–";
+      if (a.length <= 14) return a;
+      return a.slice(0, 8) + "…" + a.slice(-6);
+    }
+
+    function fmtEpoch(ts) {
+      const n = Number(ts);
+      if (!isFinite(n) || n <= 0) return "–";
+      return new Date(n * 1000).toLocaleString();
+    }
+
+    async function refreshWithdrawList(silent) {
+      btnWithdrawRefresh.disabled = true;
+      withdrawListHintEl.style.display = "none";
+      try {
+        const res = await apiGet(`/api/v1/withdraw/list?user_id=${encodeURIComponent(userId)}&limit=10`);
+        if (!res.json || !res.json.ok) {
+          withdrawListEl.style.display = "none";
+          withdrawListHintEl.style.display = "block";
+          withdrawListHintEl.textContent = "Withdraw list endpoint desteklenmiyor (api/v1/withdraw/list).";
+          return;
+        }
+
+        const items = Array.isArray(res.json.items) ? res.json.items : [];
+        if (!items.length) {
+          withdrawListEl.style.display = "none";
+          withdrawListHintEl.style.display = "block";
+          withdrawListHintEl.textContent = "Henüz withdraw kaydı yok.";
+          return;
+        }
+
+        const html = items.map((it) => {
+          const amt = it.amount || "0";
+          const addr = shortAddr(it.toAddress);
+          const st = it.status || "UNKNOWN";
+          const tx = it.txHash ? String(it.txHash) : "";
+          const top = `<div class="topline">
+              <div><b>${amt}</b> TGWT → <span class="pill">${addr}</span></div>
+              <div>${statusPill(st)}</div>
+            </div>`;
+          const bot = `<div style="opacity:.9;color:var(--muted)">
+              #${it.id} • ${fmtEpoch(it.createdAt)}
+              ${tx ? " • tx " + tx.slice(0, 10) + "…" : ""}
+            </div>`;
+          return `<div class="list-item">${top}${bot}</div>`;
+        }).join("");
+
+        withdrawListEl.innerHTML = html;
+        withdrawListEl.style.display = "block";
+        withdrawListHintEl.style.display = "none";
+      } catch (e) {
+        if (!silent) log(`Withdraw list hata: ${String(e.message || e)}`, "warn");
+      } finally {
+        btnWithdrawRefresh.disabled = false;
+      }
+    }
+
+    function selectRegion(key) {
+      activeRegionKey = key;
+      regionEls.forEach(el => el.classList.toggle("active", el.dataset.key === key));
+      const region = regions[key];
+      missionLabel.textContent = region.name + " – görev seçildi";
+      missionEta.textContent = formatSeconds(region.durationSec);
+      log("Bölge seçildi: " + region.name, "good");
+    }
+
+    regionEls.forEach(el => el.addEventListener("click", () => selectRegion(el.dataset.key)));
+
+    function startMission() {
+      if (!activeRegionKey) {
+        log("Önce bir maden bölgesi seçmelisin.", "warn");
+        return;
+      }
+      const region = regions[activeRegionKey];
+      durationSec = region.durationSec;
+      startedAt = Date.now();
+      progressInner.style.width = "0%";
+
+      if (timer) clearInterval(timer);
+
+      timer = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+        const remaining = Math.max(durationSec - elapsed, 0);
+        const pct = Math.min(100, Math.floor((elapsed / durationSec) * 100));
+        progressInner.style.width = pct + "%";
+        missionLabel.textContent = region.name + " – görev devam ediyor";
+        missionEta.textContent = formatSeconds(remaining);
+
+        if (remaining <= 0) {
+          clearInterval(timer);
+          timer = null;
+          missionCompleted(region);
+        }
+      }, 1000);
+
+      log("Görev başlatıldı: " + region.name, "good");
+    }
+
+    function cancelMission() {
+      if (!timer) {
+        log("İptal edilecek aktif görev yok.", "warn");
+        return;
+      }
+      clearInterval(timer);
+      timer = null;
+      progressInner.style.width = "0%";
+      missionLabel.textContent = "Görev iptal edildi";
+      missionEta.textContent = "–:–";
+      log("Görev iptal edildi.", "warn");
+    }
+
+    async function missionCompleted(region) {
+      progressInner.style.width = "100%";
+      missionLabel.textContent = region.name + " – görev tamamlandı";
+
+      const qc = (Math.random() * 15 + 5).toFixed(2);
+      const tgwt = (Math.random() * 0.8 + 0.2).toFixed(6);
+
+      log(`Görev tamamlandı! (Demo) Ödüller → QC: ${qc}, TGWT: ${tgwt}`, "good");
+
+      try {
+        await tgwtEarn(tgwt, { source: "mission_demo", region: region.name });
+        await tgwtVerify(tgwt, "mission_demo_auto_verify");
+        await syncTGWT("mission_reward");
+        log(`TGWT backend yazıldı + doğrulandı: +${tgwt}`, "good");
+        await refreshWithdrawList(true);
+      } catch (e) {
+        log(`TGWT backend yazma hata: ${String(e.message || e)}`, "warn");
+      }
+
+      try {
+        const tg = window.Telegram?.WebApp;
+        if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success");
+      } catch (e) {}
+    }
+
+    btnStart.addEventListener("click", startMission);
+    btnCancel.addEventListener("click", cancelMission);
+
+    btnSync.addEventListener("click", () => syncTGWT("manual"));
+
+    btnVerifyAll.addEventListener("click", async () => {
+      try {
+        const res = await tgwtVerify(null, "manual_demo_verify_all");
+        const moved_u = Number(res.moved_u || 0);
+        log(`Pending → Verified (Demo): moved ${moved_u} micro-u`, "good");
+        await syncTGWT("verify_all");
+      } catch (e) {
+        log(`Verify hata: ${String(e.message || e)}`, "warn");
+      }
+    });
+
+    btnWithdraw.addEventListener("click", () => openWithdrawModal());
+    btnWithdrawRefresh.addEventListener("click", () => refreshWithdrawList(false));
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) stopPolling();
+      else { syncTGWT("resume"); startPolling(); }
+    });
+
+    log(`UI yüklendi. API=${API_BASE} | userId=${userId}`);
+    btnVerifyAll.disabled = true;
+    btnWithdraw.disabled = true;
+
+    syncTGWT("boot");
+    startPolling();
+    refreshWithdrawList(true);
+  </script>
+</body>
+</html>
