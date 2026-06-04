@@ -1,0 +1,248 @@
+/* QuantumCoin Space Miner - External Cinematic Manager CSS */
+
+#qcCinematicLayer.qc-cinematic-hidden {
+  display: none !important;
+}
+
+#qcCinematicLayer {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background:
+    radial-gradient(circle at 50% 35%, rgba(0, 220, 255, 0.16), transparent 34%),
+    radial-gradient(circle at 70% 70%, rgba(140, 80, 255, 0.14), transparent 40%),
+    #02040b;
+  overflow: hidden;
+  color: #eafaff;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body.qc-cinematic-open {
+  overflow: hidden;
+}
+
+.qc-cinematic-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #02040b;
+  display: none;
+}
+
+.qc-cinematic-card {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(92vw, 540px);
+  transform: translate(-50%, -50%);
+  padding: 26px 22px;
+  border: 1px solid rgba(0, 240, 255, 0.42);
+  border-radius: 24px;
+  background: rgba(3, 10, 24, 0.88);
+  box-shadow: 0 0 38px rgba(0, 220, 255, 0.2);
+  text-align: center;
+  backdrop-filter: blur(14px);
+}
+
+.qc-cinematic-logo {
+  width: 152px;
+  height: 152px;
+  object-fit: cover;
+  margin: -26px auto 10px auto;
+  display: block;
+  border-radius: 50%;
+  padding: 8px;
+  background: radial-gradient(circle at 50% 35%, rgba(0,220,255,0.16), rgba(255,255,255,0.04));
+  border: 2px solid rgba(95, 245, 255, 0.38);
+  box-shadow:
+    0 0 22px rgba(0, 220, 255, 0.28),
+    0 0 48px rgba(95, 245, 255, 0.18);
+  filter: drop-shadow(0 0 18px rgba(0, 220, 255, 0.35));
+  animation: qcLogoPulse 2.8s ease-in-out infinite;
+}
+
+@keyframes qcLogoPulse {
+  0%, 100% { transform: scale(1) rotate(0deg); opacity: 0.92; }
+  50% { transform: scale(1.04) rotate(3deg); opacity: 1; }
+}
+
+.qc-cinematic-kicker {
+  font-size: 12px;
+  letter-spacing: 0.22em;
+  color: #5ff5ff;
+  margin-bottom: 10px;
+}
+
+.qc-cinematic-title {
+  font-size: clamp(25px, 5vw, 42px);
+  font-weight: 800;
+  margin-bottom: 12px;
+}
+
+.qc-cinematic-text {
+  font-size: 14px;
+  line-height: 1.5;
+  color: rgba(234, 250, 255, 0.82);
+  margin-bottom: 18px;
+}
+
+.qc-cinematic-start-btn,
+.qc-cinematic-enter-btn,
+.qc-cinematic-skip-btn {
+  border: 1px solid rgba(95, 245, 255, 0.55);
+  border-radius: 999px;
+  background: rgba(0, 220, 255, 0.14);
+  color: #eafaff;
+  padding: 11px 18px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+.qc-cinematic-enter-btn {
+  margin-left: 8px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.qc-cinematic-skip-btn {
+  position: absolute;
+  right: 16px;
+  top: -8px;
+  display: none;
+  z-index: 2;
+}
+
+.qc-cinematic-caption {
+  position: absolute;
+  left: 50%;
+  bottom: 26px;
+  transform: translateX(-50%);
+  width: min(92vw, 780px);
+  padding: 12px 16px;
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.50);
+  border: 1px solid rgba(95, 245, 255, 0.22);
+  text-align: center;
+  font-size: 14px;
+  color: rgba(234, 250, 255, 0.9);
+  display: none;
+}
+
+
+
+/* QC-CINEMATIC-LOGO-ENHANCE-START */
+.qc-cinematic-card {
+  isolation: isolate;
+  perspective: 1500px;
+}
+
+.qc-cinematic-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.qc-cinematic-card::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -8px;
+  width: 312px; height: 312px;
+  transform: translateX(-50%) rotate(0deg);
+  border-radius: 50%;
+  background:
+    conic-gradient(
+      from 0deg,
+      rgba(95, 245, 255, 0),
+      rgba(95, 245, 255, 0.68),
+      rgba(160, 90, 255, 0.42),
+      rgba(255, 210, 80, 0.44),
+      rgba(95, 245, 255, 0)
+    );
+  opacity: 0.42;
+  filter: drop-shadow(0 0 18px rgba(0, 220, 255, 0.28));
+  animation: qcRingSpinSmooth 24s linear infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.qc-cinematic-card::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -8px;
+  width: 250px; height: 250px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(0, 220, 255, 0.20), rgba(0, 0, 0, 0) 70%);
+  animation: qcCoreGlowSmooth 6s linear infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.qc-cinematic-logo {
+  width: 300px; height: 300px;
+  padding: 0;
+  object-fit: cover;
+  border-radius: 50%;
+  transform-origin: center center;
+  transform-style: preserve-3d;
+  backface-visibility: visible;
+  will-change: transform;
+  animation: qcLogoDepthSpinNoPause 18s linear infinite;
+}
+
+@keyframes qcLogoDepthSpinNoPause {
+  from {
+    transform: rotateY(0.01deg) translateZ(0);
+  }
+  to {
+    transform: rotateY(359.99deg) translateZ(0);
+  }
+}
+
+@keyframes qcRingSpinSmooth {
+  from {
+    transform: translateX(-50%) rotate(0.01deg);
+  }
+  to {
+    transform: translateX(-50%) rotate(359.99deg);
+  }
+}
+
+@keyframes qcCoreGlowSmooth {
+  0% {
+    opacity: 0.62;
+    transform: translateX(-50%) scale(1);
+  }
+  50% {
+    opacity: 0.78;
+    transform: translateX(-50%) scale(1.015);
+  }
+  100% {
+    opacity: 0.62;
+    transform: translateX(-50%) scale(1);
+  }
+}
+
+@media (max-width: 480px) {
+  .qc-cinematic-logo {
+    width: 216px; height: 216px;
+  }
+
+  .qc-cinematic-card::before {
+    width: 232px; height: 232px; top: -8px;
+  }
+
+  .qc-cinematic-card::after {
+    width: 186px; height: 186px; top: -8px;
+  }
+}
+/* QC-CINEMATIC-LOGO-ENHANCE-END */
+
+
+
+
+
+
+
+

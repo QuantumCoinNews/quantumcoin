@@ -1,0 +1,67 @@
+{
+  "version": "1.0.0",
+  "project": "QuantumCoin Telegram Space Miner",
+  "cinematicMode": true,
+  "intro": [
+    {
+      "id": "intro_logo",
+      "type": "video",
+      "src": "assets/videos/intro/intro_logo.mp4",
+      "title": "QuantumCoin Logo Intro",
+      "fallbackMs": 3000
+    },
+    {
+      "id": "intro_ship",
+      "type": "video",
+      "src": "assets/videos/intro/intro_ship.mp4",
+      "title": "Spaceship Deep Space Transition",
+      "fallbackMs": 4000
+    },
+    {
+      "id": "intro_cockpit",
+      "type": "video",
+      "src": "assets/videos/intro/intro_cockpit.mp4",
+      "title": "Cockpit Radio Dialogue",
+      "fallbackMs": 4000
+    },
+    {
+      "id": "intro_moon_overview",
+      "type": "video",
+      "src": "assets/videos/intro/intro_moon_overview.mp4",
+      "title": "Moon Mining Zone Overview",
+      "fallbackMs": 5000
+    }
+  ],
+  "zones": {
+    "LUNA-01": {
+      "src": "assets/videos/zones/zone_01.mp4",
+      "fallbackMs": 2500
+    },
+    "LUNA-02": {
+      "src": "assets/videos/zones/zone_02.mp4",
+      "fallbackMs": 2500
+    },
+    "LUNA-03": {
+      "src": "assets/videos/zones/zone_03.mp4",
+      "fallbackMs": 2500
+    },
+    "LUNA-04": {
+      "src": "assets/videos/zones/zone_04.mp4",
+      "fallbackMs": 2500
+    },
+    "LUNA-05": {
+      "src": "assets/videos/zones/zone_05.mp4",
+      "fallbackMs": 2500
+    }
+  },
+  "audio": {
+    "introLogo": "assets/audio/intro_logo.wav",
+    "spaceAmbience": "assets/audio/space_ambience.mp3",
+    "cockpitRadio": "assets/audio/cockpit_radio.mp3",
+    "zoneTransition": "assets/audio/zone_transition.wav"
+  },
+  "notes": {
+    "seedPhraseLanguage": "Seed phrase UI remains English in all languages.",
+    "fallback": "If a video/audio file is missing or empty, the HTML video manager must continue to the game without breaking."
+  }
+}
