@@ -64,6 +64,14 @@ const SCHEDULE_ENABLED =
   hasFlag("--schedule") ||
   (ENV.YOUTUBE_SCHEDULE || "").toString().trim() === "1";
 
+// NO_UPLOAD_DRY_RUN_V1
+// Allows local render tests without uploading to YouTube.
+// Usage: --no-upload OR YOUTUBE_UPLOAD=0 OR NO_UPLOAD=1
+const NO_UPLOAD =
+  hasFlag("--no-upload") ||
+  (ENV.YOUTUBE_UPLOAD || "").toString().trim() === "0" ||
+  (ENV.NO_UPLOAD || "").toString().trim() === "1";
+
 const QC_TODAY = (ENV.QC_TODAY || "").trim();            // yyyy-MM-dd (optional)
 const QC_SLOT  = (ENV.QC_SLOT || "").toString().trim();  // 1 or 2 (optional)
 const QC_TZ_OFFSET = (ENV.QC_TZ_OFFSET || "+03:00").trim(); // TR default
@@ -792,8 +800,15 @@ async function uploadToYouTube(filePath, title, desc, privacy){
     const hashtags = Array.isArray(gen.hashtags) ? gen.hashtags.join(" ") : "#shorts #crypto #QuantumCoin";
     const desc = `${gen.description}\n\n${hashtags}`;
 
-    log("Uploading to YouTube...", SCHEDULE_ENABLED ? "(scheduled)" : PRIVACY);
-    const url = await uploadToYouTube(outPath, gen.title, desc, PRIVACY);
+    let url = "";
+
+    if (NO_UPLOAD) {
+      log("NO_UPLOAD_DRY_RUN_V1 -> render completed; YouTube upload skipped");
+      url = "DRY_RUN_NO_UPLOAD";
+    } else {
+      log("Uploading to YouTube...", SCHEDULE_ENABLED ? "(scheduled)" : PRIVACY);
+      url = await uploadToYouTube(outPath, gen.title, desc, PRIVACY);
+    }
 
     console.log("\n=== DONE ===");
     console.log("Video:", outPath);
