@@ -358,7 +358,15 @@ if ($platforms -contains 'youtube') {
     if ($joined -match 'exceeded the number of videos they may upload') {
       Write-Log "WARN: YouTube upload limit hit today. Continuing with Telegram/X."
     } else {
-      throw "make-shorts FAILED exit=$msExit"
+      # YOUTUBE_FAIL_OPEN_CONTINUE_V1
+      # YouTube OAuth/API failures must not block Telegram/X.
+      # Known cases: invalid_grant, revoked token, expired token, quota/auth errors.
+      Write-Log "WARN: YouTube/make-shorts failed exit=$msExit -> continuing with Telegram/X"
+      if ($joined -match 'invalid_grant') {
+        Write-Log "WARN: YouTube OAuth token invalid_grant -> reauth required"
+      }
+      $env:YOUTUBE_LAST_STATUS = "failed"
+      $env:YOUTUBE_REAUTH_REQUIRED = if ($joined -match 'invalid_grant') { "1" } else { "0" }
     }
   }
   else {
