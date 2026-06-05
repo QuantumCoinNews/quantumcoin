@@ -76,9 +76,24 @@ if ($useX) {
     if ($LASTEXITCODE -eq 0 -and $out) {
       Write-Log ("X OK -> " + ($out -replace "`r"," " -replace "`n"," ").Trim())
     } else {
-      Write-Log ("X ERR -> " + ($out -replace "`r"," " -replace "`n"," ").Trim()); $overallOk = $false
+      # X_NO_CREDITS_SKIP_V1
+      # X API no-credit/account-credit failures should be logged as a controlled skip.
+      # This keeps the daily autopublisher flow professional while X billing/credits are fixed.
+      $xMsg = ($out -replace "`r"," " -replace "`n"," ").Trim()
+      if ($xMsg -match 'does not have any credits|no credits|not have any credits') {
+        Write-Log ("X SKIP -> no API credits / billing required")
+      } else {
+        Write-Log ("X ERR -> " + $xMsg); $overallOk = $false
+      }
     }
-  } catch { Write-Log ("X ERR -> " + (Get-Err $_)); $overallOk = $false }
+  } catch {
+    $xErr = Get-Err $_
+    if ($xErr -match 'does not have any credits|no credits|not have any credits') {
+      Write-Log ("X SKIP -> no API credits / billing required")
+    } else {
+      Write-Log ("X ERR -> " + $xErr); $overallOk = $false
+    }
+  }
 }
 
 Write-Log "Bitti -> done"
