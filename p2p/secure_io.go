@@ -1,4 +1,6 @@
 // p2p/secure_io.go
+
+// Package p2p contains QuantumCoin project code for this module.
 package p2p
 
 import (
@@ -20,12 +22,14 @@ var (
 	ErrMessageTooLarge = errors.New("p2p: message too large")
 )
 
+// SafeReader documents the QuantumCoin component used by this module.
 // SafeReader: net.Conn üstüne wrap edilmiş, limitli okuma yapan reader
 type SafeReader struct {
 	Conn   net.Conn
 	Reader *bufio.Reader
 }
 
+// NewSafeReader documents the QuantumCoin component used by this module.
 // NewSafeReader: Her connection için bir kere oluştur
 func NewSafeReader(conn net.Conn) *SafeReader {
 	return &SafeReader{
@@ -34,6 +38,7 @@ func NewSafeReader(conn net.Conn) *SafeReader {
 	}
 }
 
+// ReadLineLimited documents the QuantumCoin component used by this module.
 // ReadLineLimited: \n ile biten bir mesajı, MaxMessageSize sınırı ile okur.
 // Şu an protokolün gob bazlı olduğu için bu helper'ı kullanmıyoruz; ileride
 // satır bazlı bir protokole geçersen hazır dursun diye bırakıyoruz.
@@ -53,6 +58,7 @@ func (sr *SafeReader) ReadLineLimited() ([]byte, error) {
 	return line, err
 }
 
+// WriteLimited documents the QuantumCoin component used by this module.
 // WriteLimited: Mesajı boyut kontrolü ve timeout ile yazar
 func WriteLimited(conn net.Conn, data []byte) error {
 	if len(data) > MaxMessageSize {

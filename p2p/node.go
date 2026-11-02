@@ -6,8 +6,12 @@ import (
 	"net"
 	"quantumcoin/blockchain"
 	"strings"
+	"time"
 )
 
+const OutboundDialTimeoutV1 = 5 * time.Second
+
+// RunNode documents the QuantumCoin component used by this module.
 // RunNode: TCP node başlatıcı (inbound bağlantılar için)
 // DefaultPeerSecurity ile IP bazlı ban / connection limit kontrolü yapılır.
 func RunNode(port string, bc *blockchain.Blockchain) {
@@ -49,30 +53,56 @@ func RunNode(port string, bc *blockchain.Blockchain) {
 	}
 }
 
-// ConnectToPeer: Diğer node’a bağlanır. Ek olarak yerel dinlemeyi de başlatır.
-func ConnectToPeer(port string, address string, bc *blockchain.Blockchain) {
-	// 1) Yerel dinlemeyi arka planda başlat
-	go func() {
-		defer func() {
-			_ = recover() // zaten dinliyorsa panik olmasın
-		}()
-		RunNode(port, bc)
-	}()
+// ConnectToPeer documents the QuantumCoin component used by this module.
+// ConnectToPeer: Yalnızca uzak node'a outbound bağlantı kurar.
+func ConnectToPeer(
+	port string,
+	address string,
+	bc *blockchain.Blockchain,
+) {
+	_ = port
 
-	// 2) Uzak düğüme bağlan
-	conn, err := net.Dial("tcp", address)
-	if err != nil {
-		log.Println("Connection failed:", err)
+	if bc == nil {
+		log.Println(
+			"p2p: outbound connect rejected: blockchain unavailable",
+		)
 		return
 	}
-	fmt.Println("Connected to:", address)
 
-	// --- GÜVENLİK: outbound peer için de kayıt ---
+	address = strings.TrimSpace(address)
+	if address == "" {
+		log.Println(
+			"p2p: outbound connect rejected: address empty",
+		)
+		return
+	}
+
+	conn, err := net.DialTimeout("tcp", address, OutboundDialTimeoutV1)
+	if err != nil {
+		log.Println(
+			"Connection failed:",
+			err,
+		)
+		return
+	}
+
+	fmt.Println(
+		"Connected to:",
+		address,
+	)
+
 	if DefaultPeerSecurity != nil {
 		if ra := conn.RemoteAddr(); ra != nil {
 			ip := ExtractIP(ra)
-			if err := DefaultPeerSecurity.OnConnect(ip); err != nil {
-				log.Printf("p2p: rejecting outbound peer %s: %v", ip, err)
+
+			if err :=
+				DefaultPeerSecurity.OnConnect(ip); err != nil {
+				log.Printf(
+					"p2p: rejecting outbound peer %s: %v",
+					ip,
+					err,
+				)
+
 				_ = conn.Close()
 				return
 			}
@@ -81,11 +111,18 @@ func ConnectToPeer(port string, address string, bc *blockchain.Blockchain) {
 
 	registerPeer(conn)
 
-	// İlk iş olarak handshake gönder
-	sendToPeer(conn, HandshakeMessage())
+	sendToPeer(
+		conn,
+		HandshakeMessage(),
+	)
 
-	go HandleConnection(conn, bc)
+	go HandleConnection(
+		conn,
+		bc,
+	)
 
-	// 3) Zinciri iste (sade haliyle)
-	sendToPeer(conn, RequestMessage())
+	sendToPeer(
+		conn,
+		RequestMessage(),
+	)
 }
