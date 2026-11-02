@@ -1,3 +1,4 @@
+// Package webui contains QuantumCoin project code for this module.
 package webui
 
 import (
@@ -10,6 +11,7 @@ import (
 //go:embed dist/**
 var embeddedDist embed.FS
 
+// Assets documents the QuantumCoin component used by this module.
 // Assets: dist kökünü döner; dist yoksa geliştirme için boş FS döndürür.
 func Assets() fs.FS {
 	sub, err := fs.Sub(embeddedDist, "dist")

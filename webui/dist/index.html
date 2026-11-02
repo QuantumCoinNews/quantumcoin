@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html>
   <head>
     <meta charset="UTF-8" />
@@ -33,7 +33,7 @@
         <label>Send (signed)</label><br/>
         <input id="qc-send-from" style="width:420px;margin:4px 0;" placeholder="From address"/><br/>
         <input id="qc-send-to" style="width:420px;margin:4px 0;" placeholder="To address"/><br/>
-        <input id="qc-send-amt" type="number" style="width:120px;margin:4px 0;" placeholder="Amount (int)"/><br/>
+        <input id="qc-send-amt" type="text" inputmode="decimal" style="width:120px;margin:4px 0;" placeholder="Amount (QC)"/><br/>
         <input id="qc-send-priv" style="width:520px;margin:4px 0;" placeholder="Private key (hex)"/><br/>
         <button id="qc-btn-send">Send</button>
       </div>
@@ -96,7 +96,7 @@
       $("qc-btn-send")?.addEventListener("click", async () => {
         const from = ($("qc-send-from").value || "").trim();
         const to   = ($("qc-send-to").value   || "").trim();
-        const amt  = parseInt(($("qc-send-amt").value || "0"), 10);
+        const amt  = ($("qc-send-amt").value || "").trim();
         const priv = ($("qc-send-priv").value || "").trim();
         if (!from || !to || !amt || !priv) return show("⚠️ from, to, amount, priv_hex gerekli");
         try {
@@ -132,5 +132,22 @@
 
     })();
     </script>
-  </body>
+  <!-- QC_TESTNET_LABEL_UI_V1 -->
+<div id="qc-testnet-badge-v1" style="display:none;position:fixed;z-index:99999;top:10px;right:10px;background:#b91c1c;color:#fff;font-family:Arial,sans-serif;font-size:13px;font-weight:800;letter-spacing:.08em;padding:8px 12px;border-radius:10px;box-shadow:0 6px 22px rgba(0,0,0,.25);">TESTNET</div>
+<script id="qc-testnet-label-ui-v1">
+(function(){
+  function showBadge(){
+    var el=document.getElementById('qc-testnet-badge-v1');
+    if(el){ el.style.display='block'; }
+    document.documentElement.setAttribute('data-qc-network','testnet');
+    document.title = document.title.indexOf('TESTNET') >= 0 ? document.title : 'TESTNET - ' + document.title;
+  }
+  fetch('/api/network/label',{cache:'no-store'})
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(j){ if(j && (j.is_testnet === true || j.label === 'TESTNET')) showBadge(); })
+    .catch(function(){});
+})();
+</script>
+</body>
 </html>
+

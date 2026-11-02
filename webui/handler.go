@@ -1,3 +1,4 @@
+// Package webui contains QuantumCoin project code for this module.
 package webui
 
 import (
@@ -9,6 +10,7 @@ import (
 	"strings"
 )
 
+// Handler documents the QuantumCoin component used by this module.
 // Handler: SPA (single-page app) servis eder. dist yoksa hata döndürür.
 func Handler() (http.Handler, error) {
 	sub, err := fs.Sub(embeddedDist, "dist")
