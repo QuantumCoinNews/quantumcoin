@@ -1,3 +1,4 @@
+// Package api contains QuantumCoin project code for this module.
 package api
 
 import (
@@ -10,6 +11,7 @@ import (
 //	api.AddressProvider = func() string { return w.Address }
 var AddressProvider func() string
 
+// RegisterWalletRoutes documents the QuantumCoin component used by this module.
 // RegisterWalletRoutes, /api/wallet/address endpoint'ini mux'a ekler.
 func RegisterWalletRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/wallet/address", func(w http.ResponseWriter, r *http.Request) {

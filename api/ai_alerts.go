@@ -1,3 +1,4 @@
+// Package api contains QuantumCoin project code for this module.
 package api
 
 import (
@@ -7,6 +8,7 @@ import (
 	"quantumcoin/ai"
 )
 
+// HandleAIAlerts documents the QuantumCoin component used by this module.
 // GET /api/ai/alerts
 func HandleAIAlerts(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
