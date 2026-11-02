@@ -5,85 +5,167 @@ import (
 	"sync"
 )
 
+// QC721Token documents the QuantumCoin component used by this module.
+// QC721Token: bağımsız NFT koleksiyonu.
+// TOKEN_SAFE_BOUNDARY_V1:
+// - Mint için owner/policy sınırı eklendi.
+// - Eski Mint(to, tokenID, uri) uyumluluk için kalır ama owner yoksa çalışmaz.
 type QC721Token struct {
-	Name      string
-	Symbol    string
-	Owners    map[uint64]string
-	TokenURIs map[uint64]string
-	mu        sync.RWMutex
+	name      string
+	symbol    string
+	owner     string
+	owners    map[uint64]string
+	tokenURIs map[uint64]string
+
+	// authorizationNonces prevents signed QC721 operation replay.
+	// Custom JSON persistence keeps consumed nonces across reloads.
+	authorizationNonces map[string]uint64
+	mu                  sync.RWMutex
 }
 
-// Yeni NFT koleksiyonu başlat
 func NewQC721Token(name, symbol string) *QC721Token {
+	return NewQC721TokenWithOwner(name, symbol, "")
+}
+
+func NewQC721TokenWithOwner(name, symbol, owner string) *QC721Token {
 	return &QC721Token{
-		Name:      name,
-		Symbol:    symbol,
-		Owners:    make(map[uint64]string),
-		TokenURIs: make(map[uint64]string),
+		name:                name,
+		symbol:              symbol,
+		owner:               owner,
+		owners:              make(map[uint64]string),
+		tokenURIs:           make(map[uint64]string),
+		authorizationNonces: make(map[string]uint64),
 	}
 }
 
-// NFT mint (oluştur ve sahip ata)
+// NewValidatedQC721TokenV1 is the fail-closed constructor for untrusted
+// collection-owner input.
+func NewValidatedQC721TokenV1(
+	name,
+	symbol,
+	owner string,
+) (*QC721Token, error) {
+	canonicalOwner, err :=
+		requireCanonicalTokenAddressV1(owner)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewQC721TokenWithOwner(
+		name,
+		symbol,
+		canonicalOwner,
+	), nil
+}
+
 func (n *QC721Token) Mint(to string, tokenID uint64, tokenURI string) error {
+	owner := n.Owner()
+	return n.MintByOwner(owner, to, tokenID, tokenURI)
+}
+
+func (n *QC721Token) MintByOwner(caller, to string, tokenID uint64, tokenURI string) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	if _, exists := n.Owners[tokenID]; exists {
+
+	if n.owner == "" {
+		return ErrTokenOwnerNotConfigured
+	}
+	if !validTokenAddress(n.owner) ||
+		!validTokenAddress(caller) {
+		return ErrInvalidTokenAddress
+	}
+	if caller != n.owner {
+		return errors.New("not collection owner")
+	}
+	if !validTokenAddress(to) {
+		return ErrInvalidTokenAddress
+	}
+	if tokenURI == "" {
+		return errors.New("tokenURI boş olamaz")
+	}
+	if _, exists := n.owners[tokenID]; exists {
 		return errors.New("token zaten var")
 	}
-	n.Owners[tokenID] = to
-	n.TokenURIs[tokenID] = tokenURI
+
+	n.owners[tokenID] = to
+	n.tokenURIs[tokenID] = tokenURI
 	return nil
 }
 
-// Sahibi kim?
 func (n *QC721Token) OwnerOf(tokenID uint64) (string, error) {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
-	owner, ok := n.Owners[tokenID]
+
+	owner, ok := n.owners[tokenID]
 	if !ok {
 		return "", errors.New("token bulunamadı")
 	}
 	return owner, nil
 }
 
-// Transfer
-func (n *QC721Token) Transfer(from, to string, tokenID uint64) error {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	currentOwner, exists := n.Owners[tokenID]
-	if !exists {
-		return errors.New("token yok")
-	}
-	if currentOwner != from {
-		return errors.New("transfer yetkisi yok")
-	}
-	n.Owners[tokenID] = to
-	return nil
-}
+func (n *QC721Token) Transfer(
+	from string,
+	to string,
+	tokenID uint64,
+) error {
+	domain := ""
 
-// TokenURI (metadata/görsel/json)
+	if n != nil {
+		n.mu.RLock()
+		domain =
+			tokenAuthorizationDomainForQC721LockedV1(n)
+		n.mu.RUnlock()
+	}
+
+	err := ErrTokenAuthorizationRequired
+
+	observeTokenAuthorizationV1(
+		TokenAuthorizationModelQC721V1,
+		TokenOperationTransferV1,
+		from,
+		domain,
+		0,
+		tokenAuthorizationStageAuthorizationV1,
+		err,
+	)
+
+	return err
+}
 func (n *QC721Token) TokenURI(tokenID uint64) (string, error) {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
-	uri, ok := n.TokenURIs[tokenID]
+
+	uri, ok := n.tokenURIs[tokenID]
 	if !ok {
 		return "", errors.New("token bulunamadı")
 	}
 	return uri, nil
 }
 
-// Ekstra: NFT'yi yak
-func (n *QC721Token) Burn(tokenID uint64, owner string) error {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	currentOwner, exists := n.Owners[tokenID]
-	if !exists {
-		return errors.New("token yok")
+func (n *QC721Token) Burn(
+	tokenID uint64,
+	owner string,
+) error {
+	domain := ""
+
+	if n != nil {
+		n.mu.RLock()
+		domain =
+			tokenAuthorizationDomainForQC721LockedV1(n)
+		n.mu.RUnlock()
 	}
-	if currentOwner != owner {
-		return errors.New("yakma yetkisi yok")
-	}
-	delete(n.Owners, tokenID)
-	delete(n.TokenURIs, tokenID)
-	return nil
+
+	err := ErrTokenAuthorizationRequired
+
+	observeTokenAuthorizationV1(
+		TokenAuthorizationModelQC721V1,
+		TokenOperationBurnV1,
+		owner,
+		domain,
+		0,
+		tokenAuthorizationStageAuthorizationV1,
+		err,
+	)
+
+	return err
 }
