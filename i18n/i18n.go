@@ -1,3 +1,4 @@
+// Package i18n contains QuantumCoin project code for this module.
 package i18n
 
 import (
@@ -36,6 +37,7 @@ func loadLanguage(lang string) {
 	messages[lang] = langMessages
 }
 
+// T documents the QuantumCoin component used by this module.
 // T: çeviri fonksiyonu. Anahtar ve dil verildiğinde çeviriyi döndürür.
 func T(lang, key string) string {
 	if langMap, ok := messages[lang]; ok {
