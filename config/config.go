@@ -1,9 +1,12 @@
 package config
 
+import qconsensus "quantumcoin/consensus"
+
 import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -15,15 +18,19 @@ import (
 // ===== Backward-compat shims (eski kod uyumluluğu) =====
 //
 
+// QC documents the QuantumCoin component used by this module.
 // 1 QC = 100,000,000 "atoms"
 const QC int64 = 100_000_000
 
-// Eski kod bu sabiti bekliyor; ENV ile override edilebilir (QC_ANNUAL_BONUS_QC).
-var AnnualBonusPerYearQC int64 = 100
+// AnnualBonusPerYearQC is a retired compatibility value.
+// QMA-0047: the annual CMD mining bonus is cancelled and cannot be enabled by ENV.
+const AnnualBonusPerYearQC int64 = 0
 
+// GenesisTime documents the QuantumCoin component used by this module.
 // Eski kod bazı yerlerde time.Time olarak GenesisTime bekliyor.
 var GenesisTime time.Time
 
+// BlocksPerYear documents the QuantumCoin component used by this module.
 // BlocksPerYear: hedef blok süresine göre yaklaşık blok/yıl (int64 döner)
 func BlocksPerYear() int64 {
 	c := Current()
@@ -38,6 +45,7 @@ func BlocksPerYear() int64 {
 // ===== Yeni yapı =====
 //
 
+// Config documents the QuantumCoin component used by this module.
 // Config: QuantumCoin temel ayarları
 type Config struct {
 	// --- Chain & Monetary Policy ---
@@ -67,6 +75,8 @@ type Config struct {
 	CommunityPoolAddress string `json:"community_pool_address"`
 	BurnAddress          string `json:"burn_address"`
 
+	// --- Economy pool addresses (ECONOMY_POLICY_V1) ---
+	MiningPoolAddress string `json:"mining_pool_address"`
 	// --- Eski/alternatif adres alanları (normalize edilecek) ---
 	RewardAddrMiner     string `json:"reward_addr_miner"`
 	RewardAddrStake     string `json:"reward_addr_stake"`
@@ -82,8 +92,8 @@ type Config struct {
 	PremineAddress               string `json:"premine_address"`        // fallback founder address
 	PremineLiquidAddress         string `json:"premine_liquid_address"`
 	PremineLockedAddress         string `json:"premine_locked_address"`
-	FounderVestingCliffMonths    int    `json:"founder_vesting_cliff_months"`    // default: 6
-	FounderVestingDurationMonths int    `json:"founder_vesting_duration_months"` // default: 36
+	FounderVestingCliffMonths    int    `json:"founder_vesting_cliff_months"`    // default: 12
+	FounderVestingDurationMonths int    `json:"founder_vesting_duration_months"` // default: 48
 
 	// --- Networking ---
 	HTTPPort  string   `json:"http_port"`
@@ -105,43 +115,41 @@ func Default() *Config {
 	const genesisUnix = 1725158400 // 2024-09-01 00:00:00 UTC
 	return &Config{
 		Symbol:                "QC",
-		InitialReward:         50,
-		TotalSupply:           25_500_000,
+		InitialReward:         int(qconsensus.CanonicalInitialMiningRewardQCV1),
+		TotalSupply:           int(qconsensus.CanonicalTotalSupplyQCV1),
 		GenesisUnix:           genesisUnix,
 		HalvingIntervalSecs:   int64(2 * 365 * 24 * 60 * 60),
 		MiningPeriodSecs:      int64(10 * 365 * 24 * 60 * 60),
 		TargetBlockTimeSecs:   30,
 		HalvingPeriodBlocks:   0,
 		DefaultDifficultyBits: 16,
-
-		CoinbaseMaturity: 10,
-
-		RewardPctMiner: 70,
-		RewardPctStake: 10,
-		RewardPctDev:   10,
-		RewardPctBurn:  5,
+		CoinbaseMaturity:      qconsensus.CanonicalCoinbaseMaturityBlocksV1,
+		RewardPctMiner:        70,
+		RewardPctStake:        10,
+		RewardPctDev:          10,
+		RewardPctBurn:         5,
 
 		DevFundAddress:       "",
 		StakePoolAddress:     "",
 		CommunityPoolAddress: "",
-		BurnAddress:          "QC_BURN_SINK",
-
-		RewardAddrMiner:     "",
-		RewardAddrStake:     "",
-		RewardAddrDev:       "",
-		RewardAddrBurn:      "",
-		RewardAddrCommunity: "",
+		BurnAddress:          qconsensus.CanonicalBurnSinkAddressV1,
+		MiningPoolAddress:    qconsensus.CanonicalMiningEmissionPoolAddressV1,
+		RewardAddrMiner:      "",
+		RewardAddrStake:      "",
+		RewardAddrDev:        "",
+		RewardAddrBurn:       "",
+		RewardAddrCommunity:  "",
 
 		// Premine / founder defaults
-		PreminePercent:               5,
-		PremineLiquidPercent:         1,
-		PremineLockedPercent:         4,
+		PreminePercent:               qconsensus.CanonicalFounderTotalPercentV1,
+		PremineLiquidPercent:         qconsensus.CanonicalFounderLiquidPercentV1,
+		PremineLockedPercent:         qconsensus.CanonicalFounderLockedPercentV1,
 		PremineAddress:               "",
 		PremineLiquidAddress:         "",
 		PremineLockedAddress:         "",
-		FounderVestingCliffMonths:    6,
-		FounderVestingDurationMonths: 36,
-		HTTPPort:                     ":8081",
+		FounderVestingCliffMonths:    qconsensus.CanonicalFounderCliffMonthsV1,
+		FounderVestingDurationMonths: qconsensus.CanonicalFounderVestingMonthsV1,
+		HTTPPort:                     ":8082",
 		P2PPort:                      ":3001",
 		BootPeers:                    []string{},
 
@@ -157,76 +165,124 @@ func Default() *Config {
 
 var (
 	current *Config
-	once    sync.Once
 	mu      sync.RWMutex
 )
 
+// Load documents the QuantumCoin component used by this module.
 // Load: ENV ve (varsa) dosyadan yükle; normalize et; doğrula; global ata.
 func Load(filePath string) (*Config, error) {
-	var err error
-	once.Do(func() {
-		cfg := Default()
-		applyEnv(cfg)
+	cfg := Default()
 
-		if filePath != "" {
-			if _, statErr := os.Stat(filePath); statErr == nil {
-				if loadErr := loadFromFile(filePath, cfg); loadErr != nil {
-					err = loadErr
-					return
-				}
+	// Configuration precedence:
+	// defaults -> file -> environment -> normalize -> validate.
+	if filePath != "" {
+		if _, statErr := os.Stat(filePath); statErr == nil {
+			if err := loadFromFile(filePath, cfg); err != nil {
+				return nil, err
 			}
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return nil, fmt.Errorf(
+				"stat config %s failed: %w",
+				filePath,
+				statErr,
+			)
 		}
+	}
 
-		cfg.normalizeRewardAddresses()
+	// Deployment/runtime environment has final precedence.
+	applyEnv(cfg)
+	cfg.normalizeRewardAddresses()
 
-		if vErr := cfg.Validate(); vErr != nil {
-			err = vErr
-			return
-		}
-
-		mu.Lock()
-		current = cfg
-		// Back-compat: GenesisTime
-		if cfg.GenesisUnix > 0 {
-			GenesisTime = time.Unix(cfg.GenesisUnix, 0).UTC()
-		} else {
-			GenesisTime = time.Unix(Default().GenesisUnix, 0).UTC()
-		}
-		mu.Unlock()
-	})
-	if err != nil {
+	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	return Current(), nil
+
+	mu.Lock()
+	current = cfg
+
+	if cfg.GenesisUnix > 0 {
+		GenesisTime = time.Unix(
+			cfg.GenesisUnix,
+			0,
+		).UTC()
+	} else {
+		GenesisTime = time.Unix(
+			Default().GenesisUnix,
+			0,
+		).UTC()
+	}
+
+	result := *cfg
+	result.BootPeers = append(
+		[]string(nil),
+		cfg.BootPeers...,
+	)
+
+	mu.Unlock()
+
+	return &result, nil
 }
 
+// Current documents the QuantumCoin component used by this module.
 // Current: aktif konfigürasyon
 func Current() *Config {
 	mu.RLock()
 	defer mu.RUnlock()
+
 	if current == nil {
 		return Default()
 	}
+
 	cpy := *current
+	cpy.BootPeers = append(
+		[]string(nil),
+		current.BootPeers...,
+	)
+
 	return &cpy
 }
 
-// Set: test/override
-func Set(c *Config) {
+// SetValidated validates and defensively copies the supplied
+// configuration before replacing the process-global configuration.
+func SetValidated(c *Config) error {
 	if c == nil {
-		return
+		return errors.New("config cannot be nil")
 	}
-	_ = c.Validate()
+
+	candidate := *c
+	candidate.BootPeers = append(
+		[]string(nil),
+		c.BootPeers...,
+	)
+
+	if err := candidate.Validate(); err != nil {
+		return err
+	}
+
 	mu.Lock()
-	current = c
-	if c.GenesisUnix > 0 {
-		GenesisTime = time.Unix(c.GenesisUnix, 0).UTC()
+	current = &candidate
+
+	if candidate.GenesisUnix > 0 {
+		GenesisTime = time.Unix(
+			candidate.GenesisUnix,
+			0,
+		).UTC()
 	}
+
 	mu.Unlock()
+
+	return nil
+}
+
+// Set preserves the legacy API while refusing invalid or
+// mainnet-immutable configuration overrides.
+func Set(c *Config) {
+	_ = SetValidated(c)
 }
 
 // ====== EK: Community yüzdesi ve “ana cüzdan” çözümleyici ======
 
+// CommunityPercent documents the QuantumCoin component used by this module.
 // CommunityPercent: kalan % (negatifse 0’a sıkıştırılır)
 func (c *Config) CommunityPercent() int {
 	sum := c.RewardPctMiner + c.RewardPctStake + c.RewardPctDev + c.RewardPctBurn
@@ -240,6 +296,7 @@ func (c *Config) CommunityPercent() int {
 	return rem
 }
 
+// ResolveCommunityAddress documents the QuantumCoin component used by this module.
 // ResolveCommunityAddress:
 // community_pool_address boşsa öncelik sırası:
 // 1) PremineAddress (ANA CÜZDAN)
@@ -258,8 +315,18 @@ func (c *Config) ResolveCommunityAddress() string {
 	return ""
 }
 
+// Validate documents the QuantumCoin component used by this module.
 // Validate: mantıksal doğrulama
 func (c *Config) Validate() error {
+	if err := ValidateChainFileSeparationV1(c); err != nil {
+		return err
+	}
+	if err := ValidateMainnetImmutableConfigV1(c); err != nil {
+		return err
+	}
+	if err := ValidateFounderAddressBindingV1(c); err != nil {
+		return err
+	}
 	if c.InitialReward < 0 {
 		return errors.New("initial_reward cannot be negative")
 	}
@@ -324,6 +391,7 @@ func (c *Config) Validate() error {
 	return nil
 }
 
+// SaveToFile documents the QuantumCoin component used by this module.
 // SaveToFile: config'i JSON olarak yazar (pretty)
 func (c *Config) SaveToFile(filePath string) error {
 	if filePath == "" {
@@ -356,18 +424,48 @@ func (c *Config) MiningEndsAt() int64 {
 // ---- internal: ENV ve Dosya yükleyicileri ----
 
 func loadFromFile(path string, into *Config) error {
-	data, err := os.ReadFile(path)
+	if into == nil {
+		return errors.New("config destination cannot be nil")
+	}
+
+	file, err := os.Open(path)
 	if err != nil {
 		return err
 	}
-	var fileCfg Config
-	if err := json.Unmarshal(data, &fileCfg); err != nil {
-		return fmt.Errorf("parse %s failed: %w", path, err)
+	defer file.Close()
+
+	decoder := json.NewDecoder(file)
+	decoder.DisallowUnknownFields()
+
+	// Decode into the structure already populated with defaults.
+	// Omitted fields retain their defaults. Explicit zero values
+	// overwrite defaults correctly.
+	if err := decoder.Decode(into); err != nil {
+		return fmt.Errorf(
+			"parse %s failed: %w",
+			path,
+			err,
+		)
 	}
-	merge(into, &fileCfg)
+
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf(
+				"parse %s failed: multiple JSON values",
+				path,
+			)
+		}
+
+		return fmt.Errorf(
+			"parse %s trailing data failed: %w",
+			path,
+			err,
+		)
+	}
+
 	return nil
 }
-
 func merge(base, src *Config) {
 	// Basit merge (zero-value olmayanlar)
 	if src.Symbol != "" {
@@ -561,7 +659,7 @@ func applyEnv(c *Config) {
 	c.StakePoolAddress = envStr("QC_STAKE_POOL_ADDRESS", c.StakePoolAddress)
 	c.CommunityPoolAddress = envStr("QC_COMMUNITY_POOL_ADDRESS", c.CommunityPoolAddress)
 	c.BurnAddress = envStr("QC_BURN_ADDRESS", c.BurnAddress)
-
+	c.MiningPoolAddress = envStr("QC_MINING_POOL_ADDRESS", c.MiningPoolAddress)
 	// Founder / Premine
 	c.PreminePercent = envInt("QC_PREMINE_PERCENT", c.PreminePercent)
 	c.PremineLiquidPercent = envInt("QC_PREMINE_LIQUID_PERCENT", c.PremineLiquidPercent)
@@ -581,12 +679,7 @@ func applyEnv(c *Config) {
 	c.WalletFile = envStr("QC_WALLET_FILE", c.WalletFile)
 
 	c.LogLevel = envStr("QC_LOG_LEVEL", c.LogLevel)
-	// Back-compat: yıllık bonus ENV override
-	if v := strings.TrimSpace(os.Getenv("QC_ANNUAL_BONUS_QC")); v != "" {
-		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n >= 0 {
-			AnnualBonusPerYearQC = n
-		}
-	}
+	// QMA-0047: QC_ANNUAL_BONUS_QC is retired and intentionally ignored.
 }
 
 // Eski adres alanlarından kanoniğe taşıma + premine/community fallback

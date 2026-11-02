@@ -1,4 +1,6 @@
 // config/economics.go
+
+// Package config contains QuantumCoin project code for this module.
 package config
 
 // Paylaşım yüzdeleri (sabit politika).

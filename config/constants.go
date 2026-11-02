@@ -1,4 +1,6 @@
 // config/constants.go
+
+// Package config contains QuantumCoin project code for this module.
 package config
 
 const (
