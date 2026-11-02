@@ -1,15 +1,18 @@
+// Package game contains QuantumCoin project code for this module.
 package game
 
 import (
 	"sort"
 )
 
+// PlayerScore documents the QuantumCoin component used by this module.
 // PlayerScore: liderlik tablosu için DTO
 type PlayerScore struct {
 	Player string `json:"player"`
 	Score  int    `json:"score"`
 }
 
+// GetTopPlayers documents the QuantumCoin component used by this module.
 // GetTopPlayers: en yüksek N skor
 func GetTopPlayers(gs *GameState, n int) []PlayerScore {
 	if gs == nil || n <= 0 {

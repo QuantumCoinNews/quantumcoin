@@ -1,3 +1,4 @@
+// Package game contains QuantumCoin project code for this module.
 package game
 
 import "fmt"
@@ -9,6 +10,7 @@ const (
 	RewardThresholdGold   = 2000
 )
 
+// GiveReward documents the QuantumCoin component used by this module.
 // Basit ödül yazdırma (zincir içi bonus entegrasyonu yoksa sorun çıkarmaz)
 func GiveReward(player string, rewardType string, amount int) {
 	if player == "" || amount <= 0 {
@@ -17,6 +19,7 @@ func GiveReward(player string, rewardType string, amount int) {
 	fmt.Printf("[REWARD] %s -> %d x %s\n", player, amount, rewardType)
 }
 
+// EvaluateAndReward documents the QuantumCoin component used by this module.
 // Skora göre ödül mantığı (yalnızca çağrıldığında işler)
 func EvaluateAndReward(gs *GameState, player string) {
 	if gs == nil || player == "" {
