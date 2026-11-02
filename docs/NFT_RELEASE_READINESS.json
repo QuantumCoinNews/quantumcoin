@@ -1,0 +1,9 @@
+{
+  "schema": "NFT_RELEASE_READINESS_V1",
+  "technicalLifecycle": "implemented_and_tested",
+  "independentWitness": "deployment_ready_not_hosted",
+  "finalArtworkAndMetadata": "pending",
+  "authorizedFinalApprovals": "pending",
+  "playerWalletSigningUX": "pending",
+  "liveMintAuthorized": false
+}

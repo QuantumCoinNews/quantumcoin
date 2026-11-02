@@ -1,324 +1,179 @@
 # 🌌 QuantumCoin — AI + Blockchain + Gaming + Social Power
 
-> **"Doing what hasn't been done."**
+**“Doing what hasn't been done.”**
 
-Not just another blockchain.  
-QuantumCoin brings together a mining economy, wallet-based rewards, cinematic gaming, social engagement, and AI-assisted tools — all inside one connected ecosystem.
+QuantumCoin combines a mineable Proof-of-Work blockchain, a desktop wallet and
+miner, Telegram Space Miner, community incentive tools and AI-assisted monitoring.
+Transactions, ownership and rewards are governed by the chain's validation rules.
 
-QuantumCoin is being built to deliver real value to both everyday users and long-term ecosystem participants.
+**Development status:** active development and pre-production validation.
+The source includes tested runtime components and deployment preparation tools;
+this update does not announce a mainnet launch or a new binary release.
 
----
+## What is included
 
-## 🚀 What is QuantumCoin?
-
-QuantumCoin is a mineable Proof-of-Work blockchain ecosystem focused on:
-
-- Wallet-based mining
-- Real QC rewards
-- Blockchain transaction records
-- Cinematic Web3 gaming
-- Telegram Space Miner experience
-- TGWT community incentive layer
-- AI-assisted monitoring and automation
-- Social engagement and community growth
-
-QuantumCoin is not designed to be only a coin, only a wallet, or only a game.
-
-It is being built as an ecosystem where mining, wallet activity, blockchain records, gaming, and community engagement work together.
-
----
-
-## ✨ What Makes Us Different?
-
-### ⛏️ Real Gamified Mining
-
-QuantumCoin Space Miner is built around one simple idea:
-
-**If users mine, the reward should be real.**
-
-Not just points.  
-Not just promises.  
-Wallet-based QC rewards.  
-Recorded on-chain.  
-Transferable by the user.
-
-The goal is to turn mining into a cinematic and gamified experience while keeping the reward logic connected to the real QuantumCoin blockchain.
-
----
-
-### 🧠 AI-Assisted Smart Network
-
-AI is planned as an assistant layer for the QuantumCoin ecosystem.
-
-Planned and experimental AI areas include:
-
-- Network monitoring
-- Wallet and miner telemetry analysis
-- Anomaly detection concepts
-- User guidance and recommendation tools
-- Automation support
-- Social content planning
-- Ecosystem intelligence
-
-AI is not intended to bypass consensus rules, create supply, or change balances outside the blockchain logic.
-
----
-
-### 🎮 Gaming & Telegram Space Miner
-
-Telegram Space Miner is the cinematic GameFi entry point of the QuantumCoin ecosystem.
-
-Current progress includes:
-
-- Game UI prototype
-- Moon mining map
-- LUNA mining zones
-- Wallet panel structure
-- TGWT panel structure
-- Multi-language UI structure
-- Cinematic intro flow
-
-Current cinematic intro flow:
-
-- Launch screen
-- Cockpit video
-- Moon overview video
-- Main mining map
-
-The next development focus is LUNA zone transition videos and deeper mining gameplay flow.
-
----
-
-### 👛 Wallet + Miner Runtime
-
-QuantumCoin Wallet + Miner is the core user runtime of the ecosystem.
-
-Current working milestone:
-
-- Start / Stop Mining flow
-- Wallet-based mining launch
-- Balance update flow
-- Send / Receive flow
-- Blockchain write confirmation
-- Miner integration through wallet interface
-- Windows release package preparation
-
-This is the foundation that connects the user directly to the mining and blockchain layer.
-
----
-
-### 🌍 Community & Social Power
-
-QuantumCoin also includes a social and community growth layer.
-
-Planned and active directions:
-
-- AI-assisted content planning
-- Daily X / social media activity
-- YouTube, X, Telegram, TikTok and future social automation
-- Multi-language support: EN, TR, ES, ZH
-- Community tasks and engagement rewards
-- TGWT incentive economy
-- Future DAO and on-chain voting concepts
-
----
-
-### 🔒 Security Direction
-
-QuantumCoin security is being developed step by step.
-
-Focus areas:
-
-- Wallet safety
-- Transaction validation
-- Blockchain persistence
-- Mempool and UTXO stability
-- API hardening
-- Release package safety
-- Future AI-assisted anomaly detection
-- Testnet security review
-
-Security-related AI tools are planned as monitoring and support systems, not as unrestricted control mechanisms.
-
----
-
-## 🧩 Ecosystem Structure
-
-| Layer | Role |
+| Component | Current capabilities |
 |---|---|
-| QuantumCoin Blockchain | Real reward and record layer |
-| Wallet + Miner | Core runtime for users |
-| Telegram Space Miner | Cinematic mining entry point |
-| TGWT | Community / watch / incentive economy |
-| AI Tools | Monitoring, automation and ecosystem intelligence |
-| SocialBot / Autopublisher | Community growth and content distribution |
+| Blockchain and consensus | Canonical block/transaction validation, signed protocol activation, exact fee accounting, persisted chain state and replacement/reload checks. |
+| Wallet and miner | Windows desktop wallet, send/receive contracts, shared backend startup, mining controls and canonical reward validation. |
+| Network and API | API authentication, CORS and request limits, peer message validation, network identity checks and connection lifecycle controls. |
+| Token framework | QC20/QC721 authorization and ownership controls, address validation, registry integrity and persistence contracts. |
+| State and workers | Durable state adapters, idempotent work handling, retry/lease controls, and backup/restore safety policies. |
+| Economy controls | Fixed-supply rules, founder vesting, burn accounting and chain-bound policy validation. |
+| Telegram Space Miner | Cinematic game interface, mining-session flow, wallet panels, verified activity and authenticated administrative review. |
+| Monthly NFT rewards | Wallet-control proofs, frozen candidate pools, externally witnessed commitments, verified randomness and canonical mint receipts. |
+| AI and community tools | Analysis, telemetry and advisory tools, social content automation and separate TGWT/watch/community workflows. Availability depends on configuration and service setup. |
 
----
+The repository contains both runtime implementations and preparation/policy
+modules. A module's presence does not automatically enable its service or reward path.
 
-## 💰 Tokenomics
+## Verified monthly NFT reward flow
 
-| Feature | Value |
+The monthly program links game activity to an auditable award process:
+
+1. Authenticate the player and derive activity from server records.
+2. Review the candidate and prove control of the receiving wallet with a signed challenge.
+3. Freeze the eligible pool and publish its commitment before a fixed future randomness round.
+4. Read the independent witness's public signed record and verify the pinned beacon's BLS signature.
+5. Select the winner without modulo bias and persist the draw evidence.
+6. Verify final artwork/metadata and separate authorized AI/admin approval signatures.
+7. Submit the signed award and confirm the node's persisted canonical receipt.
+
+Missing evidence prevents mint authorization. A missing receipt after a chain
+change enters reconciliation; it does not automatically create a replacement mint.
+
+The program covers **12 active award periods, one rare NFT per period**.
+Actual periods derive from the verified program activation date.
+
+**Ready for independent deployment:** the publication witness service, HTTPS
+client, fixed-round beacon verification, publication recovery and deployment guide.
+An independent operator/host, real keys and operational configuration are still required.
+
+**Still awaiting final preparation:** the 12 actual NFT artworks/metadata and
+their real authorized approval evidence. Existing catalog entries are drafts.
+The retired automatic miner NFT/annual bonus paths remain disabled.
+
+See [reward lifecycle](docs/NFT_REWARD_LIFECYCLE.md),
+[final preparation](docs/NFT_FINAL_PREPARATION.md) and
+[independent witness setup](nft/preproduction/INDEPENDENT-WITNESS.md).
+
+## Wallet, gaming and community
+
+The desktop wallet and miner provide the core mining and transfer workflow.
+Telegram Space Miner adds the game interface, cinematic intro, moon map, mining
+sessions and wallet/community panels. Further LUNA zone transitions, visual
+polish and player-facing wallet-signing support remain development work.
+
+TGWT, watch tasks and social incentives have their own verification and settlement
+controls. Their ledgers and preparation tools do not authorize extra QC issuance.
+AI supplies analysis and advisory evidence; monetary rules and ownership remain
+subject to chain validation and configured signing authorities.
+
+The socialbot/autopublisher modules support community content workflows. External
+publishing services require their own accounts, credentials and operator setup.
+
+## TGWT — The Green World Technology
+
+TGWT is the community incentive token planned for the Telegram Game reward layer.
+Its deployed token contract is on **BNB Smart Chain mainnet (chain ID 56)**:
+
+**[`0xbc70225507b132e9926c9b09c14ff4f87f6d5451`](https://bscscan.com/token/0xbc70225507b132e9926c9b09c14ff4f87f6d5451)**
+
+We are building with a small, early community. There is room for the game,
+community participation and incentive features to develop together. Early players,
+testers and contributors can help shape the experience through gameplay and feedback.
+
+**Planned Telegram Game distribution:** users will be able to earn TGWT through
+qualifying game activity and eligible community tasks without purchasing the
+reward tokens. The game's verification and settlement controls are still being
+prepared; the current BSC claim configuration remains disabled by default.
+On-chain claims, when enabled, may require the user to pay BNB network gas.
+
+TGWT operates on BNB Smart Chain and has a separate reward/claim layer from the
+native QC blockchain. Game ledger entries are subject to verification and are not
+automatically proof that a token transfer has occurred on BSC.
+
+## Canonical economy
+
+| Parameter | Current source rule |
 |---|---|
 | Coin | QC |
-| Total Supply | 25,500,000 QC |
-| Initial Reward | 50 QC |
-| Halving | Every 2 years |
-| Distribution | 70% Miners, 10% Stakers, 10% Devs, 5% Burn, 5% Community |
-| Annual Bonus Concept | 100 QC + Rare NFT |
+| Total supply | **25,500,000 QC** |
+| Initial mining reward | **50 QC** |
+| Coinbase maturity | **10 blocks** |
+| Founder allocation | **5% — 1,275,000 QC** |
+| Founder liquid allocation | **1% — 255,000 QC** |
+| Founder locked allocation | **4% — 1,020,000 QC** |
+| Founder vesting | **12-month cliff, then 48 monthly unlocks** |
+| Monthly founder unlock after the cliff | **21,250 QC** |
+| Remaining network allocation | **95%** |
 
-> Tokenomics and reward distribution are under active development and will be verified before testnet / mainnet release.
+The authoritative monetary constants live in
+[`consensus/canonical_economy_policy_v1.go`](consensus/canonical_economy_policy_v1.go).
+Founder binding, transaction denomination, burn rules and activation gates must
+be interpreted with the corresponding consensus and runtime validation code.
+Game, AI, token and automation modules do not independently expand the QC supply.
 
----
+## Repository structure
 
-## 🧭 Project Positioning
+| Directory | Purpose |
+|---|---|
+| `consensus/`, `blockchain/`, `node/` | Protocol rules, canonical ledger and node runtime. |
+| `wallet/`, `miner/`, `cmd/` | Keys/addresses, mining and desktop/CLI entry points. |
+| `api/`, `p2p/`, `security/` | HTTP contracts, peer transport and runtime security controls. |
+| `token/` | Token authorization, ownership and registry persistence. |
+| `persistence/`, `queueworker/`, `backuprestore/` | State handling, durable work and recovery controls. |
+| `nft/`, `telegram_game/` | Reward catalog, evidence verification and game integration. |
+| `configs/` | Example configuration and policy files. |
+| `release/` | Launch/check scripts, control-panel sources and existing release support files. |
+| `socialbot/`, `autopublisher/` | Community content and distribution tools. |
+| `docs/` | Feature, deployment and architecture documentation. |
 
-QuantumCoin can be described as:
+## Build and test
 
-A mineable Proof-of-Work blockchain ecosystem combining wallet mining, cinematic Web3 gaming, AI-assisted tools, and real on-chain rewards.
+The current Windows validation used **Go 1.24.5**. The module's Go declaration is
+in [`go.mod`](go.mod). Desktop GUI builds require CGO, a working C compiler and
+the Fyne/OpenGL build environment. Python services should use an isolated environment.
 
-Primary category:
-
-- Proof-of-Work / Mineable Coin
-
-Secondary categories:
-
-- Layer-1 development
-- Mine-to-Earn
-- GameFi
-- Web3 Gaming
-- AI-assisted Utility
-- Community Utility
-
----
-
-## 🛠️ Current Development Status
-
-### ✅ Working / Tested Milestones
-
-- Wallet + Miner flow
-- Start / Stop Mining
-- Send / Receive flow
-- Balance update flow
-- Blockchain write confirmation
-- Telegram Space Miner UI prototype
-- Cinematic intro card
-- Cockpit video intro
-- Moon overview intro
-- Main game map return flow
-
-### 🚧 In Progress
-
-- LUNA-01 to LUNA-05 zone transition videos
-- Better moon visual integration
-- Game mining flow
-- Wallet/game reward synchronization
-- Release package improvements
-- API and P2P stability
-- Security hardening
-- Testnet preparation
-
-### 🔜 Planned
-
-- Web explorer
-- Faucet system
-- NFT reward system
-- QC20 / QC721 support
-- Staking layer
-- TGWT integration
-- Social task rewards
-- DAO / voting concepts
-- Mobile app expansion
-
----
-
-## 🗺️ Roadmap
-
-### Phase 1 — Core Runtime
-
-- Wallet + Miner stability
-- Blockchain write confirmation
-- Send / Receive flow
-- Balance synchronization
-- Windows release package
-
-### Phase 2 — Game Integration
-
-- Telegram Space Miner cinematic intro
-- LUNA mining zones
-- Game wallet logic
-- Mining progress flow
-- QC reward connection
-
-### Phase 3 — Ecosystem Expansion
-
-- TGWT incentive layer
-- Watch / community tasks
-- NFT reward concepts
-- Social engagement tools
-- AI-assisted monitoring
-
-### Phase 4 — Testnet Preparation
-
-- Network stability
-- API / P2P improvements
-- Security review
-- Public testnet release
-- Faucet / explorer preparation
-
-### Phase 5 — Mainnet Direction
-
-- Final supply validation
-- Reward validation
-- Consensus rule verification
-- Release package
-- Community onboarding
-
----
-
-## ⚡ Installation & Run — v0.1.0 / testnet-alpha
-
-### Prerequisites
-
-- Go 1.22+
-- Windows recommended for current Wallet + Miner testing
-- PowerShell
-- CGO enabled for GUI builds
-- Fyne dependencies for desktop wallet
-
-### 1) Clone the source code
-
-git clone https://github.com/QuantumCoinNews/quantumcoin.git  
+```powershell
+git clone https://github.com/QuantumCoinNews/quantumcoin.git
 cd quantumcoin
-
-### 2) Build
-
 go build ./...
+go test ./... -count=1
+```
 
-Wallet GUI builds may require CGO and a working C compiler environment on Windows.
+For the game and NFT evidence dependencies:
 
----
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r telegram_game/requirements.txt -r telegram_game/requirements-nft-witness.txt
+python scripts/monthly_nft_catalog_v1.py --check
+python scripts/test_monthly_nft_catalog_v1.py
+```
 
-## ⚠️ Important Notice
+Configuration examples need operator-specific values before use. Keep real keys,
+API credentials, wallet files and runtime databases outside source control.
+The witness deployment command and required operator inputs are documented in
+[`nft/preproduction/INDEPENDENT-WITNESS.md`](nft/preproduction/INDEPENDENT-WITNESS.md).
 
-QuantumCoin is experimental software under active development.
+## Validation and next steps
 
-This repository may include blockchain, wallet, mining, GUI, Telegram game, automation, and ecosystem-related modules that are still evolving.
+The integrated runtime passed **1,088 Go tests across 24 tested packages** and
+**23 isolated Python regression scripts**, including the game-to-Go-node
+mint/receipt lifecycle. PowerShell launch/check sources were syntax-checked.
+These are software test results, not live network adoption or launch approval.
 
-This project is not financial advice.  
-Use test builds carefully.  
-Official stable releases will be announced separately.
+Current preparation work includes independent witness hosting, final NFT
+artwork/approvals, wallet challenge-signing UX, further game content, operational
+testnet checks and release packaging. Explorer, broader community incentives,
+staking, governance and mobile experiences remain separate development areas.
 
----
+See [runtime integration](docs/RUNTIME_INTEGRATION.md) and
+[test coverage](docs/NFT_RUNTIME_TEST_COVERAGE.md).
 
-## 📌 Core Message
+## License
 
-**Real mining. Real wallet rewards. Real blockchain records.**
+MIT, as stated by the project.
 
 **QuantumCoin — Mine. Earn. Transfer.**
-
----
-
-## 📄 License
-
-MIT License
-
