@@ -1,3 +1,4 @@
+// Package consolefx contains QuantumCoin project code for this module.
 package consolefx
 
 import (
@@ -6,6 +7,7 @@ import (
 	"time"
 )
 
+// SpinFor documents the QuantumCoin component used by this module.
 // Süre boyunca terminalde ufak bir spinner gösterir.
 // Log akışını bozmamak için aynı satırı kullanır ve sonunda temizler.
 func SpinFor(d time.Duration) {
@@ -21,5 +23,6 @@ func SpinFor(d time.Duration) {
 	fmt.Fprint(os.Stdout, "\r      \r")
 }
 
+// SpinBrief documents the QuantumCoin component used by this module.
 // Kısa spinner (yaklaşık 1.2s)
 func SpinBrief() { SpinFor(1200 * time.Millisecond) }
