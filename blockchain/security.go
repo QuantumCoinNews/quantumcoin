@@ -21,12 +21,15 @@ import (
 
 // --- Güvenlik limitleri (istenirse ayarlanabilir) ---
 
+// MaxTxPerBlock documents the QuantumCoin component used by this module.
 // Bir blokta izin verilen maksimum transaction sayısı.
 var MaxTxPerBlock = 5000
 
+// MaxOutputsPerTx documents the QuantumCoin component used by this module.
 // Bir transaction içindeki maksimum output sayısı.
 var MaxOutputsPerTx = 5000
 
+// MaxFutureDrift documents the QuantumCoin component used by this module.
 // Blok zaman damgasının "geleceğe" ne kadar taşabileceği (drift).
 // Örn: max +2 saat.
 var MaxFutureDrift = 2 * time.Hour
@@ -47,6 +50,10 @@ var (
 func ValidateTransactionBasic(tx *Transaction) error {
 	if tx == nil {
 		return ErrNilTx
+	}
+
+	if err := ValidateTransactionIDV1(tx); err != nil {
+		return fmt.Errorf("security: transaction id validation failed: %w", err)
 	}
 
 	// ID boş olmasın
@@ -202,12 +209,14 @@ func (bc *Blockchain) ValidateChainLinks() error {
 	return nil
 }
 
+// ValidateBasicChain documents the QuantumCoin component used by this module.
 // ValidateBasicChain
 // Zincirin link + basic block validation setini çalıştırır.
 func (bc *Blockchain) ValidateBasicChain() error {
 	return bc.ValidateChainLinks()
 }
 
+// ValidateFullChain documents the QuantumCoin component used by this module.
 // ValidateFullChain
 // Zincirin tümünü dolaşıp:
 // - yapısal kontroller (index, prevhash, timestamp, tx sayısı)
@@ -239,6 +248,7 @@ func (bc *Blockchain) ValidateFullChain() error {
 	return nil
 }
 
+// ValidateBlockchain documents the QuantumCoin component used by this module.
 // ValidateBlockchain
 // Dış dünya için "tek isim": şu an ValidateFullChain()'i çağırıyoruz.
 // main.go içinden QC_STRICT_CHAIN=1 ise burası devreye giriyor.
@@ -246,6 +256,7 @@ func (bc *Blockchain) ValidateBlockchain() error {
 	return bc.ValidateFullChain()
 }
 
+// ValidateNewBlockBasic documents the QuantumCoin component used by this module.
 // ValidateNewBlockBasic
 // Tek bir yeni blok için, mevcut zincirin son bloğuna göre temel kontrol:
 // - blok temel kuralları (ValidateBlockBasic)
@@ -282,6 +293,7 @@ func (bc *Blockchain) ValidateNewBlockBasic(b *Block) error {
 	return nil
 }
 
+// AddBlockFromPeerSecure documents the QuantumCoin component used by this module.
 // AddBlockFromPeerSecure
 // Peer'dan gelen bloklar için güvenli sarmalayıcı.
 // Önce temel blok kuralları (index/prevhash/zaman/tx basic), ardından

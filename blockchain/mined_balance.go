@@ -2,6 +2,7 @@ package blockchain
 
 import (
 	"encoding/json"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,6 +21,7 @@ func exeDir() string {
 }
 func minedBalancePath() string { return filepath.Join(exeDir(), "mined_balance.json") }
 
+// AddMinedBalance documents the QuantumCoin component used by this module.
 // Her başarılı blokta ödülü release\mined_balance.json'a kümülatif yazar.
 func AddMinedBalance(addr string, deltaQC int) {
 	addr = strings.TrimSpace(addr)
@@ -43,8 +45,19 @@ func AddMinedBalance(addr string, deltaQC int) {
 	m.Updated = time.Now().Unix()
 
 	tmp := p + ".tmp"
-	if b, err := json.MarshalIndent(m, "", "  "); err == nil {
-		_ = os.WriteFile(tmp, b, 0644)
-		_ = os.Rename(tmp, p) // atomik güncelleme
+	b, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		log.Printf("blockchain: mined balance encode failed: %v", err)
+		return
+	}
+	if err := os.WriteFile(tmp, b, 0644); err != nil {
+		log.Printf("blockchain: mined balance temp write failed: %v", err)
+		return
+	}
+	if err := os.Rename(tmp, p); err != nil {
+		log.Printf("blockchain: mined balance replace failed: %v", err)
+		if removeErr := os.Remove(tmp); removeErr != nil && !os.IsNotExist(removeErr) {
+			log.Printf("blockchain: mined balance temp cleanup failed: %v", removeErr)
+		}
 	}
 }

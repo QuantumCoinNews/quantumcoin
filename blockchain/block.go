@@ -4,22 +4,31 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/gob"
+	"fmt"
 	"time"
 )
 
 type Block struct {
-	Index        int
-	Timestamp    int64
-	Transactions []*Transaction
-	PrevHash     []byte
-	Hash         []byte
-	Nonce        int
-	Miner        string
-	Difficulty   int
-	Metadata     map[string]string
+	Index            int
+	Timestamp        int64
+	Transactions     []*Transaction
+	PrevHash         []byte
+	Hash             []byte
+	Nonce            int
+	Miner            string
+	Difficulty       int
+	Metadata         map[string]string
+	NFTMintRecordsV1 []NFTMintRecordV1
+	NFTAwardProofsV1 []NFTAwardProofV1
 }
 
-func NewBlock(index int, txs []*Transaction, prevHash []byte, miner string, difficulty int) *Block {
+func NewBlock(
+	index int,
+	txs []*Transaction,
+	prevHash []byte,
+	miner string,
+	difficulty int,
+) (*Block, error) {
 	b := &Block{
 		Index:        index,
 		Timestamp:    time.Now().Unix(),
@@ -34,12 +43,18 @@ func NewBlock(index int, txs []*Transaction, prevHash []byte, miner string, diff
 
 	pow := NewProofOfWork(b)
 
-	nonce, hash := pow.Run()
+	nonce, hash, err := pow.Run()
+	if err != nil {
+		return nil, fmt.Errorf(
+			"mine block proof of work: %w",
+			err,
+		)
+	}
 
 	b.Nonce = nonce
-	b.Hash = hash
+	b.Hash = append([]byte(nil), hash...)
 
-	return b
+	return b, nil
 }
 
 func (b *Block) HashTransactions() []byte {
@@ -85,7 +100,5 @@ func DeserializeBlock(data []byte) *Block {
 }
 
 func (b *Block) ValidatePoW() bool {
-	pow := NewProofOfWork(b)
-
-	return pow.Validate()
+	return ValidateBlockPoWV1(b) == nil
 }

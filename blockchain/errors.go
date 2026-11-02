@@ -5,6 +5,7 @@ import "errors"
 // Genel
 var (
 	ErrInvalidPoW             = errors.New("invalid proof-of-work")
+	ErrNonceExhausted         = errors.New("proof-of-work nonce range exhausted")
 	ErrPrevHashMismatch       = errors.New("prev hash mismatch")
 	ErrIncomingChainNotLonger = errors.New("incoming chain is not longer")
 	ErrIncomingChainInvalid   = errors.New("incoming chain is invalid")

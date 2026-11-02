@@ -1,68 +1,136 @@
 package blockchain
 
-import "quantumcoin/config"
+import (
+	"fmt"
 
-const (
-	difficultyRetargetWindow = 100
-	maxDifficultyBits        = 255
+	"quantumcoin/config"
+	qconsensus "quantumcoin/consensus"
 )
 
-// NextDifficulty mevcut zincir temposuna göre önerilen PoW difficulty değerini döndürür.
-// defaultBits minimum/taban difficulty olarak kullanılır.
-// Mantık:
-// - Yeterli blok yoksa defaultBits döner.
-// - Son 100 blok hedef süreden hızlıysa difficulty +1.
-// - Son 100 blok hedef süreden çok yavaşsa difficulty -1.
-// - Difficulty hiçbir zaman defaultBits altına düşmez.
-func (bc *Blockchain) NextDifficulty(defaultBits int) int {
-	if defaultBits <= 0 {
-		defaultBits = 16
-	}
-	if defaultBits > maxDifficultyBits {
-		defaultBits = maxDifficultyBits
+const (
+	// Eski blockchain içi adları koruyoruz; değerlerin kanonik kaynağı
+	// artık consensus paketidir.
+	difficultyRetargetWindow = qconsensus.LegacyDifficultyRetargetWindow
+	maxDifficultyBits        = qconsensus.MaxDifficultyBits
+)
+
+// NextDifficulty mevcut zincir temposuna göre önerilen dinamik PoW
+// difficulty değerini döndürür.
+//
+// Dış sözleşme geriye uyumluluk için blockchain paketinde korunur;
+// deterministik retarget hesabı kanonik consensus motoruna devredilir.
+func (bc *Blockchain) NextDifficulty(
+	defaultBits int,
+) int {
+	input := qconsensus.DifficultyInput{
+		DefaultBits: defaultBits,
 	}
 
-	if bc == nil || len(bc.Blocks) <= difficultyRetargetWindow {
-		return defaultBits
+	if bc == nil ||
+		len(bc.Blocks) <= difficultyRetargetWindow {
+		return qconsensus.LegacyNextDifficulty(
+			input,
+		)
 	}
 
-	last := bc.Blocks[len(bc.Blocks)-1]
-	prev := bc.Blocks[len(bc.Blocks)-1-difficultyRetargetWindow]
+	lastIndex := len(bc.Blocks) - 1
+	prevIndex := lastIndex - difficultyRetargetWindow
+
+	last := bc.Blocks[lastIndex]
+	prev := bc.Blocks[prevIndex]
+
 	if last == nil || prev == nil {
-		return defaultBits
+		return qconsensus.LegacyNextDifficulty(
+			input,
+		)
 	}
 
-	current := last.Difficulty
-	if current <= 0 {
-		current = defaultBits
-	}
-	if current < defaultBits {
-		current = defaultBits
-	}
-	if current > maxDifficultyBits {
-		current = maxDifficultyBits
+	targetBlockTimeSeconds :=
+		config.Current().TargetBlockTimeSecs
+
+	input.CurrentBits = last.Difficulty
+	input.ActualTimespanSeconds =
+		last.Timestamp - prev.Timestamp
+	input.TargetBlockTimeSeconds =
+		int64(targetBlockTimeSeconds)
+	input.HasFullWindow = true
+
+	return qconsensus.LegacyNextDifficulty(
+		input,
+	)
+}
+
+// ExpectedNextDifficultyV1 returns the effective difficulty required for the
+// next block after the current chain tip.
+//
+// It uses the same resolution path as the node and local miner:
+// canonical base difficulty, deterministic chain retarget and the temporary
+// fixed override where the selected runtime profile explicitly permits it.
+//
+// Public testnet and mainnet profiles reject fixed overrides.
+func (bc *Blockchain) ExpectedNextDifficultyV1() (
+	int,
+	error,
+) {
+	if bc == nil {
+		return 0, fmt.Errorf(
+			"expected next difficulty: nil blockchain",
+		)
 	}
 
-	targetSecs := config.Current().TargetBlockTimeSecs
-	if targetSecs <= 0 {
-		targetSecs = 30
+	cfg := config.Current()
+	if cfg == nil {
+		return 0, fmt.Errorf(
+			"expected next difficulty: nil config",
+		)
 	}
 
-	expected := int64(targetSecs * difficultyRetargetWindow)
-	actual := last.Timestamp - prev.Timestamp
-	if actual <= 0 || expected <= 0 {
-		return current
+	dynamicBits := bc.NextDifficulty(
+		cfg.DefaultDifficultyBits,
+	)
+
+	info, err := config.ResolveEffectiveDifficultyBitsV1(
+		cfg,
+		dynamicBits,
+	)
+	if err != nil {
+		return 0, fmt.Errorf(
+			"expected next difficulty: %w",
+			err,
+		)
 	}
 
-	// Çok hızlıysa zorluğu artır.
-	if actual < expected*8/10 && current < maxDifficultyBits {
-		return current + 1
+	return info.EffectiveBits, nil
+}
+
+// ValidateExpectedDifficultyV1 requires a candidate next block to use exactly
+// the difficulty selected for the current chain state and runtime profile.
+func (bc *Blockchain) ValidateExpectedDifficultyV1(
+	blk *Block,
+) error {
+	if bc == nil {
+		return fmt.Errorf(
+			"expected difficulty validation: nil blockchain",
+		)
 	}
 
-	// Çok yavaşsa zorluğu azalt ama defaultBits altına düşürme.
-	if actual > expected*12/10 && current > defaultBits {
-		return current - 1
+	if blk == nil {
+		return ErrNilBlock
 	}
 
-	return current
+	expected, err := bc.ExpectedNextDifficultyV1()
+	if err != nil {
+		return err
+	}
+
+	if blk.Difficulty != expected {
+		return fmt.Errorf(
+			"block difficulty mismatch at height %d: got %d, expected %d",
+			blk.Index,
+			blk.Difficulty,
+			expected,
+		)
+	}
+
+	return nil
 }

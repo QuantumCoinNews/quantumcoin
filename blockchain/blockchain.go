@@ -8,19 +8,28 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"quantumcoin/ai"
 	"quantumcoin/config"
+	qconsensus "quantumcoin/consensus"
+	"quantumcoin/security"
 	"quantumcoin/wallet"
 )
 
 type Blockchain struct {
-	Blocks           []*Block
-	UTXO             map[string][]TransactionOutput
-	TotalSupply      int
-	coinbaseMaturity int
-	pendingTxs       []*Transaction
+	stateMu           sync.RWMutex
+	Blocks            []*Block
+	UTXO              map[string][]TransactionOutput
+	TotalSupply       int
+	coinbaseMaturity  int
+	pendingTxs        []*Transaction
+	confirmedTxIndex  map[string]int
+	pendingTxIndex    map[string]struct{}
+	activationPolicy  activationPolicyBindingStateV1
+	nftAwardTrust     nftAwardTrustBindingStateV1
+	nftMonthlyProgram nftMonthlyProgramBindingStateV1
 }
 
 // Varsayılanlar (config yoksa devreye girer)
@@ -28,56 +37,35 @@ const (
 	GenesisTimeDefault     = 1725158400             // 2024-09-01 UTC
 	HalvingIntervalDefault = 2 * 365 * 24 * 60 * 60 // ~2 yıl
 	MiningPeriodDefault    = 10 * 365 * 24 * 60 * 60
-	InitialRewardDefault   = 50
+	InitialRewardDefault   = CanonicalInitialMiningRewardV1
 )
 
+// GetCurrentReward documents the QuantumCoin component used by this module.
 // UYARISIZ ve doğru hal
 func GetCurrentReward() int {
-	p := config.Current()
-	now := time.Now().Unix()
-
-	genesis := p.GenesisUnix
-	if genesis <= 0 {
-		genesis = GenesisTimeDefault
-	}
-	elapsed := now - genesis
-	if elapsed < 0 {
-		elapsed = 0
-	}
-
-	halvingSecs := p.HalvingIntervalSecs
-	if halvingSecs <= 0 {
-		halvingSecs = HalvingIntervalDefault
-	}
-	halvings := int(elapsed / halvingSecs)
-
-	r := p.InitialReward
-	if r <= 0 {
-		r = InitialRewardDefault
-	}
-	r >>= halvings
-	if r < 1 {
-		r = 1
-	}
-
-	miningSecs := p.MiningPeriodSecs
-	if miningSecs <= 0 {
-		miningSecs = MiningPeriodDefault
-	}
-	if elapsed > miningSecs {
-		r = 0
-	}
-	return r
+	// Legacy compatibility helper. Consensus paths use
+	// ExpectedSubsidyForHeightV1 with an explicit chain height.
+	return RewardAtHeightV1(1)
 }
 
 func NewBlockchain(initialReward, totalSupply int) *Blockchain {
 	var txs []*Transaction
 
+	genesisTime := CanonicalGenesisTimeV1()
+
+	if initialReward <= 0 {
+		initialReward = InitialRewardDefault
+	}
+
+	if totalSupply == int(QCTotalSupplyHardCap) {
+		initialReward = CanonicalInitialMiningRewardV1
+	}
+
 	genesisCoinbase := &Transaction{
 		ID:        nil,
 		Inputs:    []TransactionInput{},
 		Outputs:   []TransactionOutput{{Amount: initialReward, PubKeyHash: []byte("genesis-recipient")}},
-		Timestamp: time.Now(),
+		Timestamp: genesisTime,
 		Sender:    "COINBASE",
 		Amount:    float64(initialReward),
 	}
@@ -85,22 +73,38 @@ func NewBlockchain(initialReward, totalSupply int) *Blockchain {
 	txs = append(txs, genesisCoinbase)
 
 	p := config.Current()
-	premineFallbackAddr := strings.TrimSpace(p.PremineAddress)
+
+	premineFallbackAddr := strings.TrimSpace(
+		p.PremineAddress,
+	)
 	if premineFallbackAddr == "" {
-		premineFallbackAddr = strings.TrimSpace(os.Getenv("QC_MAIN_ADDRESS"))
+		premineFallbackAddr = strings.TrimSpace(
+			os.Getenv("QC_MAIN_ADDRESS"),
+		)
 	}
 
-	liquidAddr := strings.TrimSpace(p.PremineLiquidAddress)
+	liquidAddr := strings.TrimSpace(
+		p.PremineLiquidAddress,
+	)
 	if liquidAddr == "" {
 		liquidAddr = premineFallbackAddr
 	}
 
-	lockedAddr := strings.TrimSpace(p.PremineLockedAddress)
+	lockedAddr := strings.TrimSpace(
+		p.PremineLockedAddress,
+	)
 	if lockedAddr == "" {
 		lockedAddr = premineFallbackAddr
 	}
 
 	liquidPercent := p.PremineLiquidPercent
+	lockedPercent := p.PremineLockedPercent
+
+	if totalSupply == int(QCTotalSupplyHardCap) {
+		liquidPercent = 1
+		lockedPercent = 4
+	}
+
 	if liquidPercent < 0 {
 		liquidPercent = 0
 	}
@@ -108,7 +112,6 @@ func NewBlockchain(initialReward, totalSupply int) *Blockchain {
 		liquidPercent = 100
 	}
 
-	lockedPercent := p.PremineLockedPercent
 	if lockedPercent < 0 {
 		lockedPercent = 0
 	}
@@ -119,59 +122,99 @@ func NewBlockchain(initialReward, totalSupply int) *Blockchain {
 	var premineOutputs []TransactionOutput
 	premineAmount := 0
 
-	if totalSupply > 0 && liquidAddr != "" && liquidPercent > 0 {
-		liquidAmount := totalSupply * liquidPercent / 100
+	if totalSupply > 0 &&
+		liquidAddr != "" &&
+		liquidPercent > 0 {
+		liquidAmount :=
+			totalSupply * liquidPercent / 100
+
 		if liquidAmount > 0 {
-			premineOutputs = append(premineOutputs, TransactionOutput{
-				Amount:     liquidAmount,
-				PubKeyHash: wallet.Base58DecodeAddress(liquidAddr),
-			})
+			premineOutputs = append(
+				premineOutputs,
+				TransactionOutput{
+					Amount: liquidAmount,
+					PubKeyHash: wallet.Base58DecodeAddress(
+						liquidAddr,
+					),
+				},
+			)
+
 			premineAmount += liquidAmount
 		}
 	}
 
-	if totalSupply > 0 && lockedAddr != "" && lockedPercent > 0 {
-		lockedAmount := totalSupply * lockedPercent / 100
+	if totalSupply > 0 &&
+		lockedAddr != "" &&
+		lockedPercent > 0 {
+		lockedAmount :=
+			totalSupply * lockedPercent / 100
+
 		if lockedAmount > 0 {
-			premineOutputs = append(premineOutputs, TransactionOutput{
-				Amount:     lockedAmount,
-				PubKeyHash: wallet.Base58DecodeAddress(lockedAddr),
-			})
+			premineOutputs = append(
+				premineOutputs,
+				TransactionOutput{
+					Amount: lockedAmount,
+					PubKeyHash: wallet.Base58DecodeAddress(
+						lockedAddr,
+					),
+				},
+			)
+
 			premineAmount += lockedAmount
 		}
 	}
 
-	if len(premineOutputs) > 0 && premineAmount > 0 {
-		premTx := &Transaction{
+	if len(premineOutputs) > 0 &&
+		premineAmount > 0 {
+		premineTransaction := &Transaction{
 			ID:        nil,
 			Inputs:    []TransactionInput{},
 			Outputs:   premineOutputs,
-			Timestamp: time.Now(),
+			Timestamp: genesisTime,
 			Sender:    "COINBASE",
 			Amount:    float64(premineAmount),
 		}
-		premTx.ID = premTx.Hash()
-		txs = append(txs, premTx)
-	}
-	genesis := NewBlock(0, txs, []byte{}, "genesis", 1)
 
-	bc := &Blockchain{
+		premineTransaction.ID =
+			premineTransaction.Hash()
+
+		txs = append(
+			txs,
+			premineTransaction,
+		)
+	}
+
+	genesis, err :=
+		NewCanonicalGenesisBlockV1(txs)
+	if err != nil {
+		log.Panicf(
+			"create canonical genesis: %v",
+			err,
+		)
+	}
+
+	blockchain := &Blockchain{
 		Blocks:      []*Block{genesis},
 		UTXO:        map[string][]TransactionOutput{},
 		TotalSupply: totalSupply,
 		pendingTxs:  []*Transaction{},
 	}
-	bc.UpdateUTXOSet()
-
-	// AI'ye genesis’i bildir
+	blockchain.UpdateUTXOSet()
+	blockchain.rebuildTransactionLocationIndexesLocked()
 	if ai.Enabled() {
 		ai.OnBlockAdded(genesis)
 	}
 
-	return bc
+	return blockchain
 }
 
 func (bc *Blockchain) SetCoinbaseMaturity(n int) {
+	if bc == nil {
+		return
+	}
+
+	bc.stateMu.Lock()
+	defer bc.stateMu.Unlock()
 	if n < 0 {
 		n = 0
 	}
@@ -179,6 +222,12 @@ func (bc *Blockchain) SetCoinbaseMaturity(n int) {
 }
 
 func (bc *Blockchain) AddBlock(txs []*Transaction, miner string, difficulty int) *Block {
+	if bc == nil {
+		return nil
+	}
+
+	bc.stateMu.Lock()
+	defer bc.stateMu.Unlock()
 	// Blok içindeki işlemleri doğrula (coinbase hariç imza zorunlu)
 	if err := bc.validateBlockTxs(txs); err != nil {
 		log.Printf("rejecting block: %v", err)
@@ -186,10 +235,26 @@ func (bc *Blockchain) AddBlock(txs []*Transaction, miner string, difficulty int)
 	}
 
 	prev := bc.Blocks[len(bc.Blocks)-1]
-	nb := NewBlock(prev.Index+1, txs, prev.Hash, miner, difficulty)
+	nb, err := NewBlockAtProtocolV1(
+		prev.Index+1,
+		txs,
+		prev.Hash,
+		miner,
+		difficulty,
+		nil,
+		bc.ProtocolAtHeightV1(prev.Index+1),
+	)
+	if err != nil {
+		log.Printf("rejecting block: proof of work: %v", err)
+		return nil
+	}
+	if _, err := bc.ValidateBlockRewardWithFeesV1(nb); err != nil {
+		log.Printf("rejecting block: reward validation: %v", err)
+		return nil
+	}
 	bc.Blocks = append(bc.Blocks, nb)
 	bc.UpdateUTXOSet()
-
+	bc.indexConfirmedBlockTransactionsLocked(nb)
 	// AI'ye haber ver
 	if ai.Enabled() {
 		ai.OnBlockAdded(nb)
@@ -198,39 +263,107 @@ func (bc *Blockchain) AddBlock(txs []*Transaction, miner string, difficulty int)
 	return nb
 }
 
-func (bc *Blockchain) AddBlockFromPeer(blk *Block) error {
-	if blk == nil {
-		return ErrNilBlock
+// BLOCK_REJECT_SECURITY_EVENTS_V1
+func logPeerBlockReject(eventType string, blk *Block, err error) {
+	msg := "peer block rejected"
+	if err != nil {
+		msg = err.Error()
 	}
 
-	// 1) Temel blok güvenliği (timestamp, tx sayısı, outputs vb.)
-	if err := ValidateBlockBasic(blk); err != nil {
-		return fmt.Errorf("peer block basic validation failed: %w", err)
-	}
-
-	// 2) PoW doğrulaması
-	if !blk.ValidatePoW() {
-		return ErrInvalidPoW
-	}
-
-	// 3) Zincire bağlanırlık kontrolü
-	if len(bc.Blocks) > 0 {
-		last := bc.Blocks[len(bc.Blocks)-1]
-		if !bytes.Equal(blk.PrevHash, last.Hash) {
-			return ErrPrevHashMismatch
+	height := int64(-1)
+	hash := ""
+	if blk != nil {
+		height = int64(blk.Index)
+		if len(blk.Hash) > 0 {
+			hash = hex.EncodeToString(blk.Hash)
 		}
 	}
 
-	// 4) İşlem imzaları / yapısı
-	if err := bc.validateBlockTxs(blk.Transactions); err != nil {
-		return fmt.Errorf("peer block tx validation failed: %w", err)
+	_ = security.AppendEvent(".", security.NewEvent(
+		eventType,
+		security.SeverityHigh,
+		"blockchain_peer_block",
+		hash,
+		msg,
+		map[string]any{
+			"height": height,
+			"hash":   hash,
+		},
+	))
+}
+
+func (bc *Blockchain) addBlockFromPeerAfterStrictV2(blk *Block) error {
+	if bc == nil {
+		return fmt.Errorf("nil blockchain")
 	}
 
-	// 5) Bloku zincire ekle
+	bc.stateMu.Lock()
+	defer bc.stateMu.Unlock()
+	// Detach the submitted block and revalidate against current state at commit.
+	blk = cloneBlockV1(blk)
+	if err := bc.ValidatePeerBlockStrictV2(blk); err != nil {
+		return err
+	}
+	if blk == nil {
+		logPeerBlockReject("BLOCK_NIL_REJECTED", blk, ErrNilBlock)
+		return ErrNilBlock
+	}
+
+	if err := ValidateBlockBasic(blk); err != nil {
+		wrapped := fmt.Errorf("peer block basic validation failed: %w", err)
+		logPeerBlockReject("BLOCK_BASIC_VALIDATION_FAILED", blk, wrapped)
+		return wrapped
+	}
+
+	if err := bc.ValidateBlockPoWAtHeightV1(blk); err != nil {
+		logPeerBlockReject("BLOCK_INVALID_POW", blk, ErrInvalidPoW)
+		return ErrInvalidPoW
+	}
+
+	if len(bc.Blocks) > 0 {
+		last := bc.Blocks[len(bc.Blocks)-1]
+		if !bytes.Equal(blk.PrevHash, last.Hash) {
+			logPeerBlockReject("BLOCK_PREVHASH_REJECTED", blk, ErrPrevHashMismatch)
+			return ErrPrevHashMismatch
+		}
+	}
+	if err := bc.ValidateBlockSubsidyV1(blk); err != nil {
+		wrapped := fmt.Errorf(
+			"peer block subsidy validation failed: %w",
+			err,
+		)
+		logPeerBlockReject(
+			"BLOCK_SUBSIDY_VALIDATION_FAILED",
+			blk,
+			wrapped,
+		)
+		return wrapped
+	}
+
+	if err := bc.ValidateFounderVestingBlockV1(blk); err != nil {
+		wrapped := fmt.Errorf(
+			"peer block founder vesting validation failed: %w",
+			err,
+		)
+		logPeerBlockReject(
+			"BLOCK_FOUNDER_VESTING_REJECTED",
+			blk,
+			wrapped,
+		)
+		return wrapped
+	}
+
+	if err := bc.validateBlockTxsAtHeightV1(
+		blk.Transactions,
+		blk.Index,
+	); err != nil {
+		wrapped := fmt.Errorf("peer block tx validation failed: %w", err)
+		logPeerBlockReject("BLOCK_TX_VALIDATION_FAILED", blk, wrapped)
+		return wrapped
+	}
 	bc.Blocks = append(bc.Blocks, blk)
 	bc.UpdateUTXOSet()
-
-	// 6) AI'ye haber ver
+	bc.indexConfirmedBlockTransactionsLocked(blk)
 	if ai.Enabled() {
 		ai.OnBlockAdded(blk)
 	}
@@ -239,33 +372,135 @@ func (bc *Blockchain) AddBlockFromPeer(blk *Block) error {
 }
 
 func (bc *Blockchain) IsValidChain() bool {
-	for i := 1; i < len(bc.Blocks); i++ {
-		if !bc.Blocks[i].ValidatePoW() || !bytes.Equal(bc.Blocks[i].PrevHash, bc.Blocks[i-1].Hash) {
+	if bc == nil {
+		return false
+	}
+
+	if err := validateNFTMintChainUniquenessV1(bc.Blocks); err != nil {
+		return false
+	}
+
+	for i, block := range bc.Blocks {
+		if block == nil {
+			return false
+		}
+
+		if err := bc.validateNFTMintWithLocalContextV1(bc.Blocks[:i], block); err != nil {
+			return false
+		}
+
+		if i == 0 {
+			continue
+		}
+
+		if bc.ValidateBlockPoWAtHeightV1(block) != nil ||
+			!bytes.Equal(block.PrevHash, bc.Blocks[i-1].Hash) {
 			return false
 		}
 	}
+
 	return true
 }
 
 func (bc *Blockchain) GetHeight() int { return len(bc.Blocks) - 1 }
 
-func (bc *Blockchain) ReplaceChain(blocks []*Block) error {
+// FORK_REORG_SECURITY_ALERTS_V1
+func logChainReorgEvent(eventType string, severity security.EventSeverity, message string, localHeight int, incomingHeight int, meta map[string]any) {
+	if meta == nil {
+		meta = map[string]any{}
+	}
+	meta["localHeight"] = localHeight
+	meta["incomingHeight"] = incomingHeight
+
+	_ = security.AppendEvent(".", security.NewEvent(
+		eventType,
+		severity,
+		"blockchain_reorg",
+		"",
+		message,
+		meta,
+	))
+}
+
+func (bc *Blockchain) replaceChainAfterStrictV1(blocks []*Block) error {
+	if bc == nil {
+		return fmt.Errorf("nil blockchain")
+	}
+
+	bc.stateMu.Lock()
+	defer bc.stateMu.Unlock()
+	// Commit only a detached chain revalidated with current local NFT context.
+	blocks = cloneBlocksV1(blocks)
+	if err := bc.ValidateReplacementChainStrictV1(blocks); err != nil {
+		return err
+	}
+	localHeight := len(bc.Blocks) - 1
+	incomingHeight := len(blocks) - 1
+
+	logChainReorgEvent(
+		"FORK_REORG_ATTEMPT_DETECTED",
+		security.SeverityWarning,
+		"Incoming chain replacement attempt detected.",
+		localHeight,
+		incomingHeight,
+		map[string]any{},
+	)
+
 	if len(blocks) <= len(bc.Blocks) {
+		logChainReorgEvent(
+			"CHAIN_REPLACE_REJECTED_NOT_LONGER",
+			security.SeverityWarning,
+			"Incoming chain is not longer than local chain.",
+			localHeight,
+			incomingHeight,
+			map[string]any{},
+		)
 		return ErrIncomingChainNotLonger
 	}
+
 	for i := 1; i < len(blocks); i++ {
-		if !blocks[i].ValidatePoW() || !bytes.Equal(blocks[i].PrevHash, blocks[i-1].Hash) {
+		if bc.ValidateBlockPoWAtHeightV1(blocks[i]) != nil || !bytes.Equal(blocks[i].PrevHash, blocks[i-1].Hash) {
+			logChainReorgEvent(
+				"CHAIN_REPLACE_INVALID_POW_OR_PREVHASH",
+				security.SeverityHigh,
+				"Incoming chain failed PoW or PrevHash validation.",
+				localHeight,
+				incomingHeight,
+				map[string]any{
+					"failedAtIndex": i,
+				},
+			)
 			return ErrIncomingChainInvalid
 		}
-		// Zincir değiştirmede her bloğun işlemlerini denetle
+
 		if err := bc.validateBlockTxs(blocks[i].Transactions); err != nil {
-			return fmt.Errorf("incoming chain invalid tx: %w", err)
+			wrapped := fmt.Errorf("incoming chain invalid tx: %w", err)
+			logChainReorgEvent(
+				"CHAIN_REPLACE_INVALID_TX",
+				security.SeverityHigh,
+				wrapped.Error(),
+				localHeight,
+				incomingHeight,
+				map[string]any{
+					"failedAtIndex": i,
+				},
+			)
+			return wrapped
 		}
 	}
-	bc.Blocks = blocks
+	bc.Blocks = cloneBlocksV1(blocks)
 	bc.UpdateUTXOSet()
+	bc.pendingTxs = []*Transaction{}
+	bc.rebuildTransactionLocationIndexesLocked()
+	logChainReorgEvent(
+		"CHAIN_REPLACED_REORG_WARNING",
+		security.SeverityHigh,
+		"Local chain replaced by longer valid incoming chain.",
+		localHeight,
+		incomingHeight,
+		map[string]any{},
+	)
 
-	// AI'ye bütün zincirin değiştiğini bildir
 	if ai.Enabled() {
 		ai.OnChainReplaced(blocks)
 	}
@@ -384,35 +619,72 @@ func (bc *Blockchain) UpdateUTXOSet() {
 	bc.UTXO = utxo
 }
 
+// MEMPOOL_SECURITY_EVENTS_V1
+func logMempoolReject(eventType string, tx *Transaction, err error) {
+	msg := "mempool transaction rejected"
+	if err != nil {
+		msg = err.Error()
+	}
+
+	txid := ""
+	if tx != nil && len(tx.ID) > 0 {
+		txid = hex.EncodeToString(tx.ID)
+	}
+
+	_ = security.AppendEvent(".", security.NewEvent(
+		eventType,
+		security.SeverityWarning,
+		"blockchain_mempool",
+		txid,
+		msg,
+		map[string]any{
+			"txid": txid,
+		},
+	))
+}
+
+// AddTransaction documents the QuantumCoin component used by this module.
 // --- İMZA ZORUNLULUĞU: mempool’a eklemeden önce doğrula ---
 func (bc *Blockchain) AddTransaction(tx *Transaction) error {
 	if bc == nil {
-		return fmt.Errorf("nil blockchain")
-	}
-	if tx == nil {
-		return ErrNilTransaction
-	}
-
-	// --- Temel güvenlik kontrolleri (security.go) ---
-	if err := ValidateTransactionBasic(tx); err != nil {
+		err := fmt.Errorf("nil blockchain")
+		logMempoolReject("MEMPOOL_NIL_BLOCKCHAIN", tx, err)
 		return err
 	}
 
-	// Coinbase sadece blok üretiminde oluşturulmalı; mempool'a alınmaz.
+	bc.stateMu.Lock()
+	defer bc.stateMu.Unlock()
+	if tx == nil {
+		logMempoolReject("MEMPOOL_NIL_TX", tx, ErrNilTransaction)
+		return ErrNilTransaction
+	}
+
+	if err := ValidateTransactionBasic(tx); err != nil {
+		logMempoolReject("MEMPOOL_INVALID_TX_BASIC", tx, err)
+		return err
+	}
+
 	if tx.IsCoinbase() {
-		return fmt.Errorf("coinbase tx cannot be added to mempool")
+		err := fmt.Errorf("coinbase tx cannot be added to mempool")
+		logMempoolReject("MEMPOOL_COINBASE_REJECTED", tx, err)
+		return err
 	}
 
 	if len(tx.Inputs) == 0 {
-		return fmt.Errorf("empty inputs")
+		err := fmt.Errorf("empty inputs")
+		logMempoolReject("MEMPOOL_EMPTY_INPUTS", tx, err)
+		return err
 	}
 	if len(tx.Outputs) == 0 {
-		return fmt.Errorf("empty outputs")
+		err := fmt.Errorf("empty outputs")
+		logMempoolReject("MEMPOOL_EMPTY_OUTPUTS", tx, err)
+		return err
 	}
 
-	// Normal işlemler imzalı ve doğrulanmış olmalı.
 	if !tx.Verify() {
-		return fmt.Errorf("invalid tx signature")
+		err := fmt.Errorf("invalid tx signature")
+		logMempoolReject("MEMPOOL_INVALID_SIGNATURE", tx, err)
+		return err
 	}
 
 	if bc.UTXO == nil {
@@ -420,81 +692,35 @@ func (bc *Blockchain) AddTransaction(tx *Transaction) error {
 	}
 
 	if err := bc.validateTransactionSpend(tx); err != nil {
+		eventType := "MEMPOOL_SPEND_VALIDATION_REJECTED"
+		errText := err.Error()
+
+		switch {
+		case strings.Contains(errText, "input already pending in mempool"):
+			eventType = "MEMPOOL_DOUBLE_SPEND_ATTEMPT"
+		case strings.Contains(errText, "double spend inside transaction"):
+			eventType = "TX_INTERNAL_DOUBLE_SPEND_ATTEMPT"
+		case strings.Contains(errText, "missing utxo"):
+			eventType = "TX_MISSING_UTXO_REJECTED"
+		case strings.Contains(errText, "spent or empty utxo"):
+			eventType = "TX_SPENT_OR_EMPTY_UTXO_REJECTED"
+		case strings.Contains(errText, "coinbase output is not mature"):
+			eventType = "TX_COINBASE_MATURITY_REJECTED"
+		}
+
+		logMempoolReject(eventType, tx, err)
 		return err
 	}
-
 	bc.pendingTxs = append(bc.pendingTxs, tx)
+	bc.indexPendingTransactionLocked(tx)
 	return nil
 }
 
 // validateTransactionSpend normal transaction için UTXO, input/output toplamı
 // ve mempool double-spend kontrollerini yapar.
 func (bc *Blockchain) validateTransactionSpend(tx *Transaction) error {
-	if bc == nil || tx == nil {
-		return fmt.Errorf("nil blockchain or transaction")
-	}
-	if tx.IsCoinbase() {
-		return nil
-	}
-
-	inputTotal := 0
-	outputTotal := 0
-	seenInputs := make(map[string]bool)
-
-	for _, out := range tx.Outputs {
-		if out.Amount <= 0 {
-			return fmt.Errorf("invalid output amount")
-		}
-		outputTotal += out.Amount
-	}
-
-	for _, in := range tx.Inputs {
-		if len(in.TxID) == 0 || in.OutIndex < 0 {
-			return fmt.Errorf("invalid input outpoint")
-		}
-
-		outpoint := fmt.Sprintf("%x:%d", in.TxID, in.OutIndex)
-		if seenInputs[outpoint] {
-			return fmt.Errorf("double spend inside transaction: %s", outpoint)
-		}
-		seenInputs[outpoint] = true
-
-		if bc.pendingSpendsOutpoint(in.TxID, in.OutIndex) {
-			return fmt.Errorf("input already pending in mempool: %s", outpoint)
-		}
-
-		txID := hex.EncodeToString(in.TxID)
-		outs, ok := bc.UTXO[txID]
-		if !ok || in.OutIndex >= len(outs) {
-			return fmt.Errorf("missing utxo: %s", outpoint)
-		}
-
-		prevOut := outs[in.OutIndex]
-		if prevOut.Amount <= 0 {
-			return fmt.Errorf("spent or empty utxo: %s", outpoint)
-		}
-
-		if !bc.isCoinbaseOutputMature(in.TxID, in.OutIndex) {
-			return fmt.Errorf("coinbase output is not mature: %s", outpoint)
-		}
-
-		if len(in.PubKey) == 0 {
-			return fmt.Errorf("missing input pubkey: %s", outpoint)
-		}
-
-		pubKeyHash := wallet.HashPubKey(in.PubKey)
-		if !prevOut.IsLockedWithKey(pubKeyHash) {
-			return fmt.Errorf("input pubkey does not unlock utxo: %s", outpoint)
-		}
-
-		inputTotal += prevOut.Amount
-	}
-
-	if inputTotal < outputTotal {
-		return fmt.Errorf("insufficient input amount: input=%d output=%d", inputTotal, outputTotal)
-	}
-
-	return nil
+	_, err := bc.ValidateTransactionUTXOV1(tx, true)
+	return err
 }
 
 func (bc *Blockchain) pendingSpendsOutpoint(txID []byte, outIdx int) bool {
@@ -518,20 +744,22 @@ func (bc *Blockchain) pendingSpendsOutpoint(txID []byte, outIdx int) bool {
 }
 func (bc *Blockchain) GetSpendableBalance(address string) int {
 	pubKeyHash := wallet.Base58DecodeAddress(address)
-	best := bc.GetBestHeight()
 	spend := 0
 
-	for height, block := range bc.Blocks {
+	for _, block := range bc.Blocks {
+		if block == nil {
+			continue
+		}
 		for _, tx := range block.Transactions {
+			if tx == nil {
+				continue
+			}
 			for outIdx, out := range tx.Outputs {
 				if !out.IsLockedWithKey(pubKeyHash) || bc.isOutputSpent(tx.ID, outIdx) {
 					continue
 				}
-				if tx.IsCoinbase() && bc.coinbaseMaturity > 0 {
-					age := best - height
-					if age < bc.coinbaseMaturity {
-						continue
-					}
+				if !bc.isCoinbaseOutputMature(tx.ID, outIdx) {
+					continue
 				}
 				spend += out.Amount
 			}
@@ -554,62 +782,179 @@ func (bc *Blockchain) GetBalance(address string) int {
 }
 
 func (bc *Blockchain) TotalMinted() int {
+	if bc == nil || len(bc.Blocks) == 0 {
+		return 0
+	}
+
 	total := 0
-	for _, b := range bc.Blocks {
-		for _, tx := range b.Transactions {
-			if tx.IsCoinbase() {
-				for _, out := range tx.Outputs {
-					total += out.Amount
+	genesis := bc.Blocks[0]
+	if genesis != nil {
+		for _, tx := range genesis.Transactions {
+			if tx == nil || !tx.IsCoinbase() {
+				continue
+			}
+			for _, output := range tx.Outputs {
+				if output.Amount <= 0 {
+					continue
 				}
+				next := total + output.Amount
+				if next < total {
+					return total
+				}
+				total = next
 			}
 		}
 	}
+
+	for blockPosition := 1; blockPosition < len(bc.Blocks); blockPosition++ {
+		block := bc.Blocks[blockPosition]
+		if block == nil {
+			continue
+		}
+
+		subsidy := ExpectedSubsidyFromStateV1(
+			block.Index,
+			total,
+			bc.TotalSupply,
+		)
+		if subsidy <= 0 {
+			continue
+		}
+
+		next := total + subsidy
+		if next < total {
+			return total
+		}
+		total = next
+	}
+
 	return total
 }
 
 func (bc *Blockchain) MineBlock(miner string, difficulty int) (*Block, error) {
-	if len(bc.Blocks) == 0 {
+	if bc == nil {
+		return nil, ErrChainNotInitialized
+	}
+
+	bc.stateMu.Lock()
+	defer bc.stateMu.Unlock()
+	return bc.mineBlockWithNFTLockedV1(miner, difficulty, nil, nil)
+}
+
+// mineBlockWithNFTLockedV1 is the shared local mining engine. Its caller
+// owns stateMu; the existing QC subsidy, fee and mempool rules are reused.
+func (bc *Blockchain) mineBlockWithNFTLockedV1(miner string, difficulty int, records []NFTMintRecordV1, proofs []NFTAwardProofV1) (*Block, error) {
+	return bc.mineBlockWithNFTCommitLockedV1(miner, difficulty, records, proofs, "")
+}
+
+// The optional persistent path installs the validated candidate on disk before
+// the existing authoritative RAM/UTXO/index/mempool commit and advisory hooks.
+func (bc *Blockchain) mineBlockWithNFTCommitLockedV1(miner string, difficulty int, records []NFTMintRecordV1, proofs []NFTAwardProofV1, chainFile string) (*Block, error) {
+	if len(bc.Blocks) == 0 || bc.Blocks[len(bc.Blocks)-1] == nil {
 		return nil, ErrChainNotInitialized
 	}
 
 	// yalnız başarılı kazımdan sonra mined_balance.json yaz
 	var _minedOK bool
-	_minedReward := GetCurrentReward()
+	nextHeight := bc.Blocks[len(bc.Blocks)-1].Index + 1
+	if err := bc.validateLocalMiningProtocolV1(
+		nextHeight,
+	); err != nil {
+		return nil, fmt.Errorf(
+			"local mining protocol gate: %w",
+			err,
+		)
+	}
+	if bc.ProtocolAtHeightV1(nextHeight) == qconsensus.ProtocolNFTV4 {
+		if err := bc.ValidateExpectedDifficultyV1(&Block{Index: nextHeight, Difficulty: difficulty}); err != nil {
+			return nil, fmt.Errorf("local NFT mining difficulty: %w", err)
+		}
+	}
+	_minedRewardQC := bc.ExpectedSubsidyForHeightV1(nextHeight)
 
-	if _minedReward <= 0 {
-
+	if _minedRewardQC <= 0 {
 		return nil, fmt.Errorf("mining reward is zero")
-
 	}
 
-	if bc.TotalSupply > 0 && bc.TotalMinted()+_minedReward > bc.TotalSupply {
-
-		return nil, fmt.Errorf("total supply cap exceeded: minted=%d reward=%d supply=%d", bc.TotalMinted(), _minedReward, bc.TotalSupply)
-
-	}
 	defer func() {
-		if _minedOK && _minedReward > 0 {
+		//lint:ignore SA9003 mined balance side effect is intentionally disabled; canonical wallet balance must come only from blockchain/API.
+		if _minedOK && _minedRewardQC > 0 {
 			// AddMinedBalance disabled: canonical wallet balance must come only from blockchain/API.
 		}
 	}()
 
-	cbTx, err := newCoinbaseTx(miner)
+	pending := bc.PendingTxs()
+	verifiedFees, err := bc.CalculateBlockFeesV1(pending)
+	if err != nil {
+		return nil, fmt.Errorf("pending transaction fees: %w", err)
+	}
+
+	_minedReward, coinbaseTotal, err :=
+		bc.miningRewardUnitsForHeightV1(
+			nextHeight,
+			verifiedFees,
+		)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"mining reward denomination: %w",
+			err,
+		)
+	}
+	if _minedReward <= 0 {
+		return nil, fmt.Errorf("mining reward is zero")
+	}
+
+	cbTx, err := newCoinbaseTxWithRewardV1(
+		miner,
+		coinbaseTotal,
+		time.Now().UTC(),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("coinbase tx: %w", err)
 	}
 
 	// pending kopyasını al, coinbase ile birleştir ve doğrula
-	txs := append([]*Transaction{cbTx}, bc.PendingTxs()...)
+	txs := append([]*Transaction{cbTx}, pending...)
 	if err := bc.validateBlockTxs(txs); err != nil {
 		return nil, err
 	}
 
 	prev := bc.Blocks[len(bc.Blocks)-1]
-	nb := NewBlock(prev.Index+1, txs, prev.Hash, miner, difficulty)
-
-	bc.Blocks = append(bc.Blocks, nb)
+	var nb *Block
+	if len(records) != 0 || len(proofs) != 0 {
+		nb, err = NewNFTBlockWithAwardProofV1(prev.Index+1, txs, prev.Hash, miner, difficulty, records, proofs)
+	} else {
+		nb, err = NewBlockAtProtocolV1(prev.Index+1, txs, prev.Hash, miner, difficulty, nil, bc.ProtocolAtHeightV1(prev.Index+1))
+	}
+	if err != nil {
+		return nil, fmt.Errorf("mined block creation: %w", err)
+	}
+	committed := nb
+	if bc.ProtocolAtHeightV1(nextHeight) == qconsensus.ProtocolNFTV4 {
+		// Use the already implemented strict canonical gate before any mutation.
+		if err := bc.ValidatePeerBlockStrictV2(nb); err != nil {
+			return nil, fmt.Errorf("mined NFTV4 canonical validation: %w", err)
+		}
+		// Returned evidence and pending/caller pointers cannot mutate live state.
+		committed = cloneBlockV1(nb)
+	} else {
+		if _, err := bc.ValidateBlockRewardWithFeesV1(nb); err != nil {
+			return nil, fmt.Errorf("mined block reward: %w", err)
+		}
+		if err := bc.ValidateFounderVestingBlockV1(nb); err != nil {
+			return nil, fmt.Errorf("mined block founder vesting: %w", err)
+		}
+	}
+	if chainFile != "" {
+		if err := bc.persistNFTMiningCandidateLockedV1(committed, chainFile); err != nil {
+			return nil, err
+		}
+	}
+	bc.Blocks = append(bc.Blocks, committed)
 	bc.UpdateUTXOSet()
+	bc.indexConfirmedBlockTransactionsLocked(nb)
 	bc.pendingTxs = []*Transaction{} // mempool’u boşalt
+	bc.clearPendingTransactionIndexLocked()
 
 	_minedOK = true
 
@@ -617,7 +962,7 @@ func (bc *Blockchain) MineBlock(miner string, difficulty int) (*Block, error) {
 	if ai.Enabled() {
 		ai.OnBlockAdded(nb)
 
-		// === BURASI YENİ: bloktan AI bonusu üret ve dosyaya yaz ===
+		// AI_SAFE_BOUNDARY_V1_BLOCK_HOOK: bloktan advisory-only AI security review üret ve dosyaya yaz
 		lites := make([]ai.TxLite, 0, len(nb.Transactions))
 		for _, tx := range nb.Transactions {
 			if tx == nil {
@@ -631,14 +976,14 @@ func (bc *Blockchain) MineBlock(miner string, difficulty int) (*Block, error) {
 				Timestamp:     tx.Timestamp,
 			})
 		}
-		bon := ai.BuildAIBonuses(lites)
+		reviews := ai.BuildSecurityReviews(lites)
 
 		nodeDir := strings.TrimSpace(os.Getenv("QC_NODE_DIR"))
 		if nodeDir == "" {
 			nodeDir = "."
 		}
-		_ = ai.WriteAIBonusesTo(nodeDir, bon)
-		// === /YENİ ===
+		_ = ai.WriteAISecurityReviewsTo(nodeDir, reviews)
+		// === /AI_SAFE_BOUNDARY_V1_BLOCK_HOOK ===
 	}
 
 	return nb, nil
@@ -660,12 +1005,24 @@ func DeserializeBlockchain(data []byte) *Blockchain {
 	if bc.pendingTxs == nil {
 		bc.pendingTxs = []*Transaction{}
 	}
+	bc.rebuildTransactionLocationIndexesLocked()
 	return &bc
 }
 
 func (bc *Blockchain) SaveToFile(filename string) error {
+	if bc == nil {
+		return fmt.Errorf("nil blockchain")
+	}
+
+	// Serialize a coherent point-in-time view. Disk I/O itself happens
+	// after the read lock is released so writers are not blocked by fsync
+	// or filesystem latency.
+	bc.stateMu.RLock()
+	serialized := SerializeBlockchain(bc)
+	bc.stateMu.RUnlock()
+
 	tmp := filename + ".tmp"
-	if err := os.WriteFile(tmp, SerializeBlockchain(bc), 0o600); err != nil {
+	if err := os.WriteFile(tmp, serialized, 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmp, filename)
@@ -676,7 +1033,22 @@ func LoadBlockchainFromFile(filename string) (*Blockchain, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read blockchain file: %w", err)
 	}
-	return DeserializeBlockchain(data), nil
+	loaded := DeserializeBlockchain(data)
+	for index, block := range loaded.Blocks {
+		if block == nil {
+			return nil, fmt.Errorf("load blockchain NFT validation: nil block at index %d", index)
+		}
+		if len(block.NFTMintRecordsV1) == 0 && len(block.NFTAwardProofsV1) == 0 {
+			continue
+		}
+		if err := validateNFTMintAuthorizationV1(
+			block,
+			loaded.ProtocolAtHeightV1(block.Index),
+		); err != nil {
+			return nil, fmt.Errorf("load blockchain NFT validation at block[%d]: %w", index, err)
+		}
+	}
+	return loaded, nil
 }
 
 // Helpers
@@ -714,39 +1086,20 @@ func (bc *Blockchain) GetBlockByHash(hash []byte) *Block {
 }
 
 func (bc *Blockchain) isCoinbaseOutputMature(txid []byte, outIdx int) bool {
-	if bc == nil || bc.coinbaseMaturity <= 0 {
-		return true
-	}
-	if len(txid) == 0 || outIdx < 0 {
+	if bc == nil || len(txid) == 0 || outIdx < 0 {
 		return false
 	}
 
-	best := bc.GetBestHeight()
-
-	for height, block := range bc.Blocks {
-		if block == nil {
-			continue
-		}
-
-		for _, tx := range block.Transactions {
-			if tx == nil || !bytes.Equal(tx.ID, txid) {
-				continue
-			}
-
-			if !tx.IsCoinbase() {
-				return true
-			}
-
-			if outIdx >= len(tx.Outputs) {
-				return false
-			}
-
-			age := best - height
-			return age >= bc.coinbaseMaturity
-		}
+	origin, ok := bc.utxoOriginsV1()[outpointKeyV1(txid, outIdx)]
+	if !ok {
+		return false
 	}
 
-	return false
+	return bc.validateCoinbaseMaturityAtHeightV1(
+		origin,
+		outpointKeyV1(txid, outIdx),
+		bc.nextSpendHeightV1(),
+	) == nil
 }
 func (bc *Blockchain) isOutputSpent(txid []byte, outIdx int) bool {
 	for _, blk := range bc.Blocks {
@@ -766,7 +1119,10 @@ func (bc *Blockchain) isOutputSpent(txid []byte, outIdx int) bool {
 // Blok içindeki tüm işlemleri doğrula.
 // Coinbase için: temel security + en az 1 output.
 // Normal tx için: temel security + imza doğrulaması.
-func (bc *Blockchain) validateBlockTxs(txs []*Transaction) error {
+func (bc *Blockchain) validateBlockTxsAtHeightV1(
+	txs []*Transaction,
+	spendHeight int,
+) error {
 	if bc == nil {
 		return fmt.Errorf("nil blockchain")
 	}
@@ -774,49 +1130,51 @@ func (bc *Blockchain) validateBlockTxs(txs []*Transaction) error {
 		return fmt.Errorf("empty block transactions")
 	}
 
-	blockSpent := make(map[string]bool)
 	coinbaseCount := 0
-
-	for _, tx := range txs {
+	for txIndex, tx := range txs {
 		if tx == nil {
-			return fmt.Errorf("nil tx")
+			return fmt.Errorf("nil tx at index %d", txIndex)
 		}
 
 		if err := ValidateTransactionBasic(tx); err != nil {
-			return err
+			return fmt.Errorf("tx[%d] basic validation: %w", txIndex, err)
 		}
 
-		if tx.IsCoinbase() {
-			coinbaseCount++
-			if coinbaseCount > 1 {
-				return fmt.Errorf("multiple coinbase transactions in block")
-			}
-			if len(tx.Outputs) == 0 {
-				return fmt.Errorf("invalid coinbase (no outputs)")
-			}
+		if !tx.IsCoinbase() {
 			continue
 		}
 
-		if !tx.Verify() {
-			return fmt.Errorf("invalid tx signature")
+		coinbaseCount++
+		if coinbaseCount > 1 {
+			return fmt.Errorf("multiple coinbase transactions in block")
 		}
-
-		for _, in := range tx.Inputs {
-			if len(in.TxID) == 0 || in.OutIndex < 0 {
-				return fmt.Errorf("invalid input outpoint in block")
-			}
-
-			outpoint := fmt.Sprintf("%x:%d", in.TxID, in.OutIndex)
-			if blockSpent[outpoint] {
-				return fmt.Errorf("double spend inside block: %s", outpoint)
-			}
-			blockSpent[outpoint] = true
+		if len(tx.Outputs) == 0 {
+			return fmt.Errorf("invalid coinbase (no outputs)")
 		}
+	}
+
+	if _, err := bc.ValidateTransactionsUTXOAtHeightV1(
+		txs,
+		spendHeight,
+	); err != nil {
+		return fmt.Errorf("canonical UTXO validation failed: %w", err)
 	}
 
 	return nil
 }
 
+func (bc *Blockchain) validateBlockTxs(txs []*Transaction) error {
+	if bc == nil {
+		return fmt.Errorf("nil blockchain")
+	}
+
+	return bc.validateBlockTxsAtHeightV1(
+		txs,
+		bc.nextSpendHeightV1(),
+	)
+}
+
+// PendingTxs documents the QuantumCoin component used by this module.
 // pendingTxs'in güvenli kopyası (API/mine kullanımı için)
 func (bc *Blockchain) PendingTxs() []*Transaction {
 	if bc == nil || bc.pendingTxs == nil {

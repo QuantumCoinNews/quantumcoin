@@ -1,15 +1,15 @@
 package blockchain
 
 import (
-	"bytes"
-	"crypto/sha256"
+	"fmt"
 	"math/big"
+
+	qconsensus "quantumcoin/consensus"
 )
 
 const (
-	hashBits = 256
-	maxBits  = 255
-	maxNonce = int(^uint(0) >> 1) // platform int için güvenli üst sınır
+	hashBits = qconsensus.PoWHashBitsV1
+	maxBits  = qconsensus.MaxDifficultyBits
 )
 
 type ProofOfWork struct {
@@ -17,66 +17,196 @@ type ProofOfWork struct {
 	target *big.Int
 }
 
-func NewProofOfWork(b *Block) *ProofOfWork {
-	target := big.NewInt(1)
-
-	// Güvenli zorluk (G115 fix + mnd temizliği)
-	diff := b.Difficulty
-	if diff < 0 {
-		diff = 0
+func NewProofOfWork(
+	b *Block,
+) *ProofOfWork {
+	if b == nil {
+		return &ProofOfWork{}
 	}
-	if diff > maxBits {
-		diff = maxBits
-	}
-	shift := uint(hashBits - diff) // burada artık negatif/taşma yok
-	target.Lsh(target, shift)
 
-	return &ProofOfWork{block: b, target: target}
+	return &ProofOfWork{
+		block: b,
+		target: qconsensus.TargetFromDifficultyV1(
+			b.Difficulty,
+		),
+	}
 }
 
-func (pow *ProofOfWork) prepareData(nonce int) []byte {
-	return bytes.Join([][]byte{
-		pow.block.PrevHash,
-		pow.block.HashTransactions(),
-		intToHex(pow.block.Timestamp),
-		intToHex(int64(pow.block.Difficulty)),
-		intToHex(int64(nonce)),
-	}, []byte{})
-}
+func (pow *ProofOfWork) prepareData(
+	nonce int,
+) ([]byte, error) {
+	if pow == nil || pow.block == nil {
+		return nil, fmt.Errorf(
+			"%s: proof of work block is unavailable",
+			QCCanonicalPoWHashVersionV1,
+		)
+	}
 
-func (pow *ProofOfWork) Run() (int, []byte) {
-	var (
-		hash    [32]byte
-		hashInt big.Int
-		nonce   = 0
+	return SerializePoWHeaderV1(
+		pow.block,
+		nonce,
 	)
+}
 
-	for nonce < maxNonce {
-		data := pow.prepareData(nonce)
-		hash = sha256.Sum256(data)
-		hashInt.SetBytes(hash[:])
+func (pow *ProofOfWork) runNonceRangeV1(
+	startNonce uint64,
+	maxNonce uint64,
+) (int, []byte, error) {
+	if pow == nil || pow.block == nil {
+		return 0, nil, fmt.Errorf(
+			"%s: proof of work block is unavailable",
+			QCCanonicalPoWHashVersionV1,
+		)
+	}
+
+	if pow.target == nil {
+		return 0, nil, fmt.Errorf(
+			"%s: proof of work target is unavailable",
+			QCCanonicalPoWHashVersionV1,
+		)
+	}
+
+	if startNonce > maxNonce {
+		return 0, nil, fmt.Errorf(
+			"%s: invalid nonce range %d..%d",
+			QCCanonicalPoWHashVersionV1,
+			startNonce,
+			maxNonce,
+		)
+	}
+
+	if maxNonce > MaxConsensusNonceV1 {
+		return 0, nil, fmt.Errorf(
+			"%s: maximum nonce %d exceeds consensus maximum %d",
+			QCCanonicalPoWHashVersionV1,
+			maxNonce,
+			MaxConsensusNonceV1,
+		)
+	}
+
+	for nonce := startNonce; nonce <= maxNonce; nonce++ {
+		hash, err := ComputePoWHashUint64V1(
+			pow.block,
+			nonce,
+		)
+		if err != nil {
+			return 0, nil, fmt.Errorf(
+				"%s: compute nonce %d: %w",
+				QCCanonicalPoWHashVersionV1,
+				nonce,
+				err,
+			)
+		}
+
+		var hashInt big.Int
+		hashInt.SetBytes(
+			hash[:],
+		)
 
 		if hashInt.Cmp(pow.target) == -1 {
+			nonceInt, err := ConsensusNonceIntV1(
+				nonce,
+			)
+			if err != nil {
+				return 0, nil, fmt.Errorf(
+					"%s: convert nonce %d: %w",
+					QCCanonicalPoWHashVersionV1,
+					nonce,
+					err,
+				)
+			}
+
+			return nonceInt, append(
+				[]byte(nil),
+				hash[:]...,
+			), nil
+		}
+
+		if nonce == maxNonce {
 			break
 		}
-		nonce++
 	}
-	return nonce, hash[:]
+
+	return 0, nil, fmt.Errorf(
+		"%w: searched nonce range %d..%d",
+		ErrNonceExhausted,
+		startNonce,
+		maxNonce,
+	)
+}
+
+func (pow *ProofOfWork) runWithMaxNonceV1(
+	maxNonce uint64,
+) (int, []byte, error) {
+	return pow.runNonceRangeV1(
+		0,
+		maxNonce,
+	)
+}
+
+func (pow *ProofOfWork) Run() (
+	int,
+	[]byte,
+	error,
+) {
+	return pow.runWithMaxNonceV1(
+		MaxConsensusNonceV1,
+	)
+}
+
+func (pow *ProofOfWork) ValidateE() error {
+	if pow == nil || pow.block == nil {
+		return fmt.Errorf(
+			"%s: proof of work block is unavailable",
+			QCCanonicalPoWHashVersionV1,
+		)
+	}
+
+	if pow.target == nil {
+		return fmt.Errorf(
+			"%s: proof of work target is unavailable",
+			QCCanonicalPoWHashVersionV1,
+		)
+	}
+
+	hash, err := ComputePoWHashV1(
+		pow.block,
+		pow.block.Nonce,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"%s: compute stored nonce: %w",
+			QCCanonicalPoWHashVersionV1,
+			err,
+		)
+	}
+
+	var hashInt big.Int
+	hashInt.SetBytes(
+		hash[:],
+	)
+
+	if hashInt.Cmp(pow.target) != -1 {
+		return ErrInvalidPoW
+	}
+
+	return nil
 }
 
 func (pow *ProofOfWork) Validate() bool {
-	var hashInt big.Int
-	data := pow.prepareData(pow.block.Nonce)
-	sum := sha256.Sum256(data)
-	hashInt.SetBytes(sum[:])
-
-	return hashInt.Cmp(pow.target) == -1
+	return pow.ValidateE() == nil
 }
 
-// intToHex eski yardımcı (mevcut projede zaten vardı)
+// intToHex eski yardımcı; geriye dönük uyumluluk için korunur.
 func intToHex(num int64) []byte {
 	return []byte{
-		byte(num >> 56), byte(num >> 48), byte(num >> 40), byte(num >> 32),
-		byte(num >> 24), byte(num >> 16), byte(num >> 8), byte(num),
+		byte(num >> 56),
+		byte(num >> 48),
+		byte(num >> 40),
+		byte(num >> 32),
+		byte(num >> 24),
+		byte(num >> 16),
+		byte(num >> 8),
+		byte(num),
 	}
 }
