@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>QuantumCoin Kontrol Paneli</title>
+<style>
+:root{--zemin:#081020;--kart:#111c34;--kart2:#14213d;--cizgi:#263b6b;--yazi:#eef4ff;--soluk:#a8b8dc;--iyi:#65ff9a;--uyari:#ffd166}
+*{box-sizing:border-box}
+body{margin:0;background:var(--zemin);color:var(--yazi);font-family:Arial,Helvetica,sans-serif}
+header{padding:22px;background:linear-gradient(90deg,#111c34,#172a52);border-bottom:1px solid var(--cizgi);position:sticky;top:0;z-index:2}
+h1{margin:0;font-size:28px}
+.alt{color:var(--soluk);margin-top:6px;font-size:15px}
+.rozet{display:inline-block;margin:8px 6px 0 0;padding:6px 10px;border-radius:999px;background:var(--kart2);border:1px solid var(--cizgi);color:var(--soluk);font-size:13px}
+.bolum{padding:18px}
+.bolum h2{font-size:22px;margin:0 0 14px 0}
+.izgara{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:14px}
+.kart{background:var(--kart);border:1px solid var(--cizgi);border-radius:14px;padding:16px;box-shadow:0 10px 25px rgba(0,0,0,.25)}
+.kart h2{font-size:20px;margin:0 0 8px 0}
+.durum{font-weight:bold;margin-bottom:10px;font-size:18px}
+.iyi{color:var(--iyi)}
+.uyari{color:var(--uyari)}
+pre{white-space:pre-wrap;word-break:break-word;background:#071126;border:1px solid #1f3158;border-radius:10px;padding:12px;color:#dbe7ff;font-size:14px;line-height:1.35}
+footer{padding:18px;color:var(--soluk);border-top:1px solid var(--cizgi)}
+</style>
+</head>
+<body>
+<header>
+<h1>QuantumCoin Kontrol Paneli</h1>
+<div class="alt">Türkçe yerel kontrol ekranı · Okuma modu · Son güncelleme: 2026-06-25 22:34:53</div>
+<span class="rozet">Git/GitHub yok</span>
+<span class="rozet">Gerçek transfer yok</span>
+<span class="rozet">Mining yok</span>
+<span class="rozet">Public testnet yok</span>
+<span class="rozet">Private key yok</span>
+<span class="rozet">Yazma işlemi yok</span>
+</header>
+
+<section class="bolum">
+<h2>Canlı Durum Özeti</h2>
+<div class="izgara"><div class='kart'><h2>Ana API</h2><div class='durum iyi'>&#199;evrim i&#231;i</div><pre>Durum: &#199;evrim i&#231;i
+Ağ: mainnet
+Etiket: MAINNET
+Zincir dosyası: chain_data.dat
+Y&#252;kseklik: 32551
+Blok sayısı: 34940
+Eş sayısı: 0
+Madenci &#231;alışıyor mu: False
+API portu: 8082
+P2P portu: 3001</pre></div><div class='kart'><h2>Lokal Testnet</h2><div class='durum uyari'>Kapalı</div><pre>Durum: Kapalı
+Not: Bu normal olabilir. Lokal testnet s&#252;rekli a&#231;ık tutulmuyor.
+Bu panel testnet başlatmaz.</pre></div><div class='kart'><h2>Telegram Game API</h2><div class='durum uyari'>Kapalı veya endpoint farklı</div><pre>Durum: Kapalı veya sağlık endpointi farklı
+Not: 8082 &#252;zerinde /api/health endpointi yanıt vermedi.
+Bu panel herhangi bir servis başlatmaz.</pre></div></div>
+</section>
+
+<section class="bolum">
+<h2>Ana Merkezler</h2>
+<div class="izgara"><div class='kart'><h2>AI</h2><div class='durum iyi'>Ana merkez</div><pre>Risk yorumlama, &#246;neriler, anomali a&#231;ıklama, ekosistem durum yorumu ve onaylı otomasyon &#246;nerileri. AI consensus değildir; bakiye, arz veya transfer değiştiremez.</pre></div><div class='kart'><h2>Blokzincir</h2><div class='durum iyi'>Ana merkez</div><pre>Mainnet, lokal testnet, API, P2P, blok y&#252;ksekliği, işlem durumu, arz politikası, ekonomi ve burn g&#246;r&#252;n&#252;rl&#252;ğ&#252;.</pre></div><div class='kart'><h2>G&#252;venlik</h2><div class='durum iyi'>Ana merkez</div><pre>Guardrail, admin raporu, g&#252;venlik uyarıları, ş&#252;pheli işlem listesi, korunan dosya durumu, public exposure uyarıları ve sarı uyarılar.</pre></div><div class='kart'><h2>İzleme / Operasyon</h2><div class='durum iyi'>Ana merkez</div><pre>Monitoring klas&#246;r&#252; burayı besler: telemetri, olay kayıtları, alarm runbook, sağlık zaman &#231;izgisi, backup/rollback, checkpoint ve sonraki işlem kuyruğu.</pre></div><div class='kart'><h2>Telegram Game</h2><div class='durum iyi'>Ana merkez</div><pre>Space Miner, TGWT, oyuncu QC adres eşleşmesi, withdraw/precheck, admin review, aylık NFT aday g&#246;r&#252;n&#252;rl&#252;ğ&#252; ve ileride ship/store durumu.</pre></div><div class='kart'><h2>C&#252;zdan + Madenci</h2><div class='durum uyari'>Korunan ana merkez</div><pre>Release GUI ve madenci hattı korunur. Panel sadece izler. Private key g&#246;sterilmez. Release exe izinsiz değiştirilmez.</pre></div><div class='kart'><h2>Gelecek Mod&#252;ller</h2><div class='durum uyari'>Sonraki faz</div><pre>Token Factory, NFT Factory, Autopublisher, public testnet hazırlığı, mainnet hazırlığı ve gerekli yasal/operasyon notları burada duracak.</pre></div></div>
+</section>
+
+<section class="bolum">
+<h2>Güvenlik Politikası</h2>
+<div class="izgara"><div class='kart'><h2>Panel Kuralları</h2><div class='durum uyari'>Okuma modu</div><pre>Okuma modu aktif.
+Ger&#231;ek transfer yok.
+Mining butonu yok.
+Public testnet yok.
+Private key g&#246;sterimi yok.
+Release exe değişikliği yok.
+Admin/yazma işlemi yok.
+Git/GitHub işlemi yok.</pre></div></div>
+</section>
+
+<footer>
+Panel klasörü: C:\Projects\quantumcoin\release\qc_kontrol_paneli<br>
+Panel EXE: C:\Projects\quantumcoin\release\qc-kontrol-paneli.exe
+</footer>
+</body>
+</html>
