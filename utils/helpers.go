@@ -1,3 +1,4 @@
+// Package utils contains QuantumCoin project code for this module.
 package utils
 
 import (
@@ -5,6 +6,7 @@ import (
 	"encoding/gob"
 )
 
+// EncodeToBytes documents the QuantumCoin component used by this module.
 // EncodeToBytes: Gob encode any data to []byte
 func EncodeToBytes(data interface{}) ([]byte, error) {
 	var buff bytes.Buffer
@@ -16,6 +18,7 @@ func EncodeToBytes(data interface{}) ([]byte, error) {
 	return buff.Bytes(), nil
 }
 
+// DecodeFromBytes documents the QuantumCoin component used by this module.
 // DecodeFromBytes: Gob decode []byte to struct
 func DecodeFromBytes(data []byte, target interface{}) error {
 	dec := gob.NewDecoder(bytes.NewReader(data))

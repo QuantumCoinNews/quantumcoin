@@ -1,3 +1,4 @@
+// Package utils contains QuantumCoin project code for this module.
 package utils
 
 import (

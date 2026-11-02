@@ -1,3 +1,4 @@
+// Package utils contains QuantumCoin project code for this module.
 package utils
 
 import (
@@ -8,9 +9,11 @@ import (
 	"math/big"
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+	//lint:ignore SA1019 QuantumCoin address compatibility requires RIPEMD-160.
 	"golang.org/x/crypto/ripemd160"
 )
 
+// Pad32 documents the QuantumCoin component used by this module.
 // 32-byte left-pad
 func Pad32(b []byte) []byte {
 	if len(b) >= 32 {
@@ -21,6 +24,7 @@ func Pad32(b []byte) []byte {
 	return out
 }
 
+// MakeUncompressedPub documents the QuantumCoin component used by this module.
 // Uncompressed pub: 0x04 || X || Y  (65B)
 func MakeUncompressedPub(priv *ecdsa.PrivateKey) []byte {
 	pub := append([]byte{0x04}, Pad32(priv.PublicKey.X.Bytes())...)
@@ -28,6 +32,7 @@ func MakeUncompressedPub(priv *ecdsa.PrivateKey) []byte {
 	return pub
 }
 
+// PubKeyToECDSA documents the QuantumCoin component used by this module.
 // PubKey (uncompressed) -> *ecdsa.PublicKey (secp256k1)
 func PubKeyToECDSA(uncompressed []byte) *ecdsa.PublicKey {
 	if len(uncompressed) != 65 || uncompressed[0] != 0x04 {
@@ -42,12 +47,14 @@ func PubKeyToECDSA(uncompressed []byte) *ecdsa.PublicKey {
 	return &ecdsa.PublicKey{Curve: curve, X: x, Y: y}
 }
 
+// SignMessage documents the QuantumCoin component used by this module.
 // SHA256(msg) üstüne ECDSA imza, (r,s) döner
 func SignMessage(priv *ecdsa.PrivateKey, msg []byte) (r, s *big.Int, err error) {
 	h := sha256.Sum256(msg)
 	return ecdsa.Sign(rand.Reader, priv, h[:])
 }
 
+// VerifyMessage documents the QuantumCoin component used by this module.
 // Doğrulama: uncompressed pub ile (r,s)
 func VerifyMessage(uncompressed []byte, msg []byte, r, s *big.Int) bool {
 	pub := PubKeyToECDSA(uncompressed)
@@ -58,6 +65,7 @@ func VerifyMessage(uncompressed []byte, msg []byte, r, s *big.Int) bool {
 	return ecdsa.Verify(pub, h[:], r, s)
 }
 
+// PubKeyToAddress documents the QuantumCoin component used by this module.
 // Hash160(pub) -> Base58Check adres (version=0x00)
 func PubKeyToAddress(uncompressed []byte) string {
 	sha := sha256.Sum256(uncompressed)
@@ -75,6 +83,7 @@ func PubKeyToAddress(uncompressed []byte) string {
 	return string(Base58Encode(full))
 }
 
+// BytesToHex documents the QuantumCoin component used by this module.
 // Hex yardımcıları (isteğe bağlı)
 func BytesToHex(b []byte) string          { return hex.EncodeToString(b) }
 func HexToBytes(s string) ([]byte, error) { return hex.DecodeString(s) }
