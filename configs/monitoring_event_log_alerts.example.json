@@ -1,0 +1,30 @@
+{
+  "version": "QC_MONITORING_EVENT_LOG_ALERT_RUNBOOK_V1",
+  "eventLog": {
+    "enabled": true,
+    "storage": "local_jsonl_or_db_later",
+    "retentionDays": 30,
+    "readOnlyByDefault": true
+  },
+  "alertLevels": ["INFO", "WARNING", "CRITICAL"],
+  "criticalCategories": [
+    "api_down",
+    "chain_mismatch"
+  ],
+  "warningCategories": [
+    "auth_failure",
+    "payout_guard",
+    "nft_mint_guard",
+    "watch_verification_failure"
+  ],
+  "safeBoundary": {
+    "doesNotMint": true,
+    "doesNotSendFunds": true,
+    "doesNotChangeBalances": true,
+    "doesNotChangeChain": true,
+    "doesNotChangeSupply": true,
+    "doesNotStartMining": true,
+    "doesNotStopMining": true,
+    "requiresAdminReviewBeforeAction": true
+  }
+}

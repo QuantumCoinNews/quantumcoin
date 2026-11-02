@@ -1,0 +1,35 @@
+{
+  "version": "QC_QUEUE_WORKER_INTEGRATION_PLAN_V1",
+  "mode": "PLAN_ONLY_NO_WORKER_START",
+  "testnet": {
+    "queuePrefix": "qc_testnet",
+    "db": "telegram_game_testnet.db",
+    "deadLetterSuffix": "_dlq",
+    "auditLog": "queue_worker_events_testnet.jsonl"
+  },
+  "mainnet": {
+    "queuePrefix": "qc_mainnet",
+    "db": "telegram_game_mainnet.db",
+    "deadLetterSuffix": "_dlq",
+    "auditLog": "queue_worker_events_mainnet.jsonl"
+  },
+  "rules": {
+    "separateTestnetAndMainnet": true,
+    "idempotencyRequired": true,
+    "deadLetterRequired": true,
+    "auditLogRequired": true,
+    "adminApprovalForFinancialOrPublishingJobs": true,
+    "noWorkerAutoStartInThisStep": true,
+    "noAIAutoSettlement": true,
+    "noAIAutoMint": true
+  },
+  "safeBoundary": {
+    "doesNotStartWorkers": true,
+    "doesNotMint": true,
+    "doesNotSendFunds": true,
+    "doesNotChangeBalances": true,
+    "doesNotChangeChain": true,
+    "doesNotChangeSupply": true,
+    "planOnly": true
+  }
+}

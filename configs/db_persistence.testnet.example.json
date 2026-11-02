@@ -1,0 +1,33 @@
+{
+  "version": "QC_DB_PERSISTENCE_PLAN_V1",
+  "mode": "PLAN_ONLY_NO_LIVE_MIGRATION",
+  "testnet": {
+    "chainFile": "chain_data_testnet.dat",
+    "telegramGameDb": "telegram_game_testnet.db",
+    "eventLog": "admin_events_testnet.jsonl",
+    "monitoringLog": "monitoring_events_testnet.jsonl"
+  },
+  "mainnet": {
+    "chainFile": "chain_data.dat",
+    "telegramGameDb": "telegram_game_mainnet.db",
+    "eventLog": "admin_events_mainnet.jsonl",
+    "monitoringLog": "monitoring_events_mainnet.jsonl"
+  },
+  "rules": {
+    "separateTestnetAndMainnet": true,
+    "backupBeforeMigration": true,
+    "restoreTestRequired": true,
+    "schemaVersionRequired": true,
+    "appendOnlyLedgerForFinancialEvents": true,
+    "noInMemoryOnlyLedger": true,
+    "noAutoMigrationOnMainnetStartup": true
+  },
+  "safeBoundary": {
+    "doesNotMint": true,
+    "doesNotSendFunds": true,
+    "doesNotChangeBalances": true,
+    "doesNotChangeChain": true,
+    "doesNotChangeSupply": true,
+    "planOnly": true
+  }
+}

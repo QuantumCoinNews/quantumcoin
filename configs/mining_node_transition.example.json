@@ -1,0 +1,33 @@
+{
+  "version": "QC_MINING_PERIOD_BITCOIN_STYLE_CONTINUE_V1",
+  "mode": "MINING_PERIOD_BITCOIN_STYLE_CONTINUE_NO_MINT_EXECUTION",
+  "maxSupplyQc": 25500000,
+  "initialRewardQc": 50,
+  "primaryMiningPeriodYears": 10,
+  "halvingIntervalYears": 2,
+  "primaryRewardSchedule": [
+    { "index": 1, "fromYear": 0, "toYear": 2, "rewardQc": "50" },
+    { "index": 2, "fromYear": 2, "toYear": 4, "rewardQc": "25" },
+    { "index": 3, "fromYear": 4, "toYear": 6, "rewardQc": "12.5" },
+    { "index": 4, "fromYear": 6, "toYear": 8, "rewardQc": "6.25" },
+    { "index": 5, "fromYear": 8, "toYear": 10, "rewardQc": "3.125" }
+  ],
+  "postTenYearExampleSchedule": [
+    { "index": 6, "fromYear": 10, "toYear": 12, "rewardQc": "1.5625" },
+    { "index": 7, "fromYear": 12, "toYear": 14, "rewardQc": "0.78125" },
+    { "index": 8, "fromYear": 14, "toYear": 16, "rewardQc": "0.390625" }
+  ],
+  "transition": {
+    "ifFullyMinedWithinPrimaryPeriod": "NODE_FEE_MODE_AFTER_EMISSION_COMPLETE",
+    "ifNotFullyMinedAfterPrimaryPeriod": "WALLET_MINER_CONTINUES_WITH_BITCOIN_STYLE_HALVING_UNTIL_MAX_SUPPLY",
+    "walletMinerContinuesIfIncomplete": true,
+    "bitcoinStyleHalvingContinues": true,
+    "miningContinuesOnlyUntilMaxSupply": true,
+    "rewardMustBeCappedByRemainingSupply": true,
+    "autoMintRemainingForbidden": true,
+    "adminMintRemainingForbidden": true,
+    "nodeFeeModeEnabledAfterEmissionDone": true,
+    "nodeFeeOnlyNotForcedWhileSupplyRemains": true,
+    "maxSupplyAlwaysUnchanged": true
+  }
+}

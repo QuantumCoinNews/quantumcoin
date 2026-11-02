@@ -1,0 +1,59 @@
+{
+  "version": "QC_LOAD_TEST_SCRIPTS_SAFE_V1",
+  "mode": "SAFE_READ_ONLY_LOAD_TEST_PLAN",
+  "defaults": {
+    "requests": 20,
+    "concurrency": 2,
+    "method": "GET",
+    "localOnlyByDefault": true
+  },
+  "limits": {
+    "maxRequests": 500,
+    "maxConcurrency": 25
+  },
+  "targets": [
+    {
+      "name": "qc_node_health_local",
+      "baseUrl": "http://127.0.0.1:8082",
+      "endpoint": "/health"
+    },
+    {
+      "name": "qc_node_network_label_local",
+      "baseUrl": "http://127.0.0.1:8082",
+      "endpoint": "/api/network/label"
+    },
+    {
+      "name": "telegram_game_health_local",
+      "baseUrl": "http://127.0.0.1:8080",
+      "endpoint": "/health"
+    },
+    {
+      "name": "telegram_game_qc_health_bridge",
+      "baseUrl": "http://127.0.0.1:8080",
+      "endpoint": "/api/qc/health"
+    },
+    {
+      "name": "admin_panel_registry_local",
+      "baseUrl": "http://127.0.0.1:8080",
+      "endpoint": "/api/admin/panel/registry?limit=10&offset=0",
+      "requiresAdminToken": true
+    },
+    {
+      "name": "admin_monitoring_runbook_local",
+      "baseUrl": "http://127.0.0.1:8080",
+      "endpoint": "/api/admin/monitoring/runbook",
+      "requiresAdminToken": true
+    }
+  ],
+  "safeBoundary": {
+    "onlyGET": true,
+    "blocksMutatingEndpoints": true,
+    "doesNotMint": true,
+    "doesNotSendFunds": true,
+    "doesNotChangeBalances": true,
+    "doesNotChangeChain": true,
+    "doesNotChangeSupply": true,
+    "doesNotStartMining": true,
+    "doesNotStopMining": true
+  }
+}

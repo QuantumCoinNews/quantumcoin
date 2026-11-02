@@ -1,0 +1,31 @@
+{
+  "version": "QC_BURN_SINK_CONTROL_V1",
+  "mode": "BURN_SINK_CONTROL_NO_BURN_EXECUTION",
+  "burn": {
+    "maxSupplyQc": 25500000,
+    "burnAddressAlias": "QC_BURN_SINK",
+    "burnAddressFinalBeforeMainnet": true,
+    "burnAddressMustBeUnspendable": true,
+    "burnPrivateKeyMustNotExist": true,
+    "burnedSupplyReducesCirculatingSupply": true,
+    "burnDoesNotReduceMaxSupply": true,
+    "burnDoesNotMintReplacement": true,
+    "autoBurnForbidden": true,
+    "requiresExplicitApproval": true
+  },
+  "safeBoundary": {
+    "doesNotExecuteBurn": true,
+    "doesNotSendFunds": true,
+    "doesNotMint": true,
+    "doesNotMintReplacement": true,
+    "doesNotChangeBalances": true,
+    "doesNotChangeChain": true,
+    "doesNotChangeConsensus": true,
+    "doesNotChangeMaxSupply": true,
+    "doesNotChangeMiningReward": true,
+    "requiresUnspendableBurnAddress": true,
+    "requiresNoBurnPrivateKey": true,
+    "burnReducesCirculatingSupplyOnly": true,
+    "controlOnly": true
+  }
+}

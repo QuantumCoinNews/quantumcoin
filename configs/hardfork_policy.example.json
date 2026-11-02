@@ -1,0 +1,48 @@
+{
+  "version": "QC_HARDFORK_POLICY_V1",
+  "mode": "HARDFORK_POLICY_CONTROL_ONLY_NO_FORK_EXECUTION",
+  "hardforkAllowed": true,
+  "hardforkExecutionNow": false,
+  "allowedReasons": [
+    "CRITICAL_CONSENSUS_BUG",
+    "CHAIN_HALT_OR_FINALITY_FAILURE",
+    "CRITICAL_SECURITY_VULNERABILITY",
+    "CRYPTOGRAPHIC_ALGORITHM_BREAK_OR_URGENT_ROTATION",
+    "STATE_CORRUPTION_REPAIR_WITH_AUDITED_SNAPSHOT",
+    "NETWORK_WIDE_PROTOCOL_UPGRADE_WITH_PUBLIC_NOTICE"
+  ],
+  "forbiddenReasons": [
+    "CHANGE_MAX_SUPPLY",
+    "MINT_EXTRA_QC",
+    "RESET_FOUNDER_VESTING",
+    "BYPASS_BURN_RULES",
+    "STEAL_OR_REASSIGN_BALANCES",
+    "CHANGE_ECONOMY_FOR_CONVENIENCE",
+    "ADMIN_SHORTCUT",
+    "AI_AUTOMATION_ONLY",
+    "GAME_OR_TGWT_REQUEST_ONLY"
+  ],
+  "requirements": {
+    "requiresFounderApproval": true,
+    "requiresAdminMultistepApproval": true,
+    "requiresPublicNotice": true,
+    "requiresTestnetRehearsal": true,
+    "requiresMigrationHeight": true,
+    "requiresSnapshotHash": true,
+    "requiresRollbackPlan": true,
+    "requiresNodeUpgradeWindow": true,
+    "requiresReleaseBinaryHashes": true,
+    "requiresPostForkAudit": true
+  },
+  "immutables": {
+    "hardforkCannotChangeMaxSupply": true,
+    "hardforkCannotMintExtraQc": true,
+    "hardforkCannotBypassFounderVesting": true,
+    "hardforkCannotBypassBurnRules": true,
+    "hardforkCannotStealOrReassignBalances": true,
+    "hardforkCannotAutoRunByAi": true,
+    "hardforkCannotAutoRunByWorker": true,
+    "hardforkCannotAutoRunByGame": true,
+    "hardforkCannotAutoRunByAdminPanelOnly": true
+  }
+}

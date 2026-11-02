@@ -1,0 +1,25 @@
+{
+  "version": "QC_NETWORK_FEE_POLICY_V1",
+  "mode": "MICRO_FEE_POLICY_FINAL_PARAMS_BEFORE_MAINNET",
+  "maxSupplyQc": 25500000,
+  "baseFeeTargetQc": "0.000001",
+  "congestionCeilingQc": "0.00001",
+  "feeRecipient": "BLOCK_PRODUCER_MINER_OR_NODE_OPERATOR",
+  "miningActiveFeeDestination": "BLOCK_REWARD_PLUS_TX_FEES_TO_BLOCK_PRODUCER",
+  "afterEmissionDoneFeeDestination": "TX_FEES_ONLY_TO_NODE_OR_BLOCK_PRODUCER",
+  "rules": {
+    "feeIsNewMint": false,
+    "feeChangesMaxSupply": false,
+    "feeGoesToFounder": false,
+    "feeGoesToBurnByDefault": false,
+    "feeBurnOptionalFutureGovernanceOnly": true,
+    "feeMustStayMicroLow": true,
+    "finalFeeParamsRequiredBeforeMainnet": true,
+    "aiCannotChangeFee": true,
+    "adminPanelCannotAutoChangeFee": true,
+    "gameCannotChangeFee": true,
+    "workerCannotChangeFee": true,
+    "nftCannotChangeFee": true,
+    "tgwtCannotChangeFee": true
+  }
+}

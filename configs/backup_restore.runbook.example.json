@@ -1,0 +1,42 @@
+{
+  "version": "QC_BACKUP_RESTORE_RUNBOOK_V1",
+  "mode": "RUNBOOK_ONLY_NO_LIVE_RESTORE",
+  "testnet": {
+    "backupRoot": "_backups/testnet",
+    "manifest": "backup_manifest_testnet.json",
+    "chainFile": "chain_data_testnet.dat",
+    "telegramGameDb": "telegram_game_testnet.db",
+    "adminEventLog": "admin_events_testnet.jsonl",
+    "monitoringEventLog": "monitoring_events_testnet.jsonl"
+  },
+  "mainnet": {
+    "backupRoot": "_backups/mainnet",
+    "manifest": "backup_manifest_mainnet.json",
+    "chainFile": "chain_data.dat",
+    "telegramGameDb": "telegram_game_mainnet.db",
+    "adminEventLog": "admin_events_mainnet.jsonl",
+    "monitoringEventLog": "monitoring_events_mainnet.jsonl"
+  },
+  "rules": {
+    "separateTestnetAndMainnet": true,
+    "manifestRequired": true,
+    "hashCheckRequired": true,
+    "sizeCheckRequired": true,
+    "restoreDryRunRequired": true,
+    "adminApprovalRequired": true,
+    "noLiveRestoreInThisStep": true,
+    "noOverwriteWithoutExplicitApproval": true,
+    "privateKeysNeverPrintedInReports": true
+  },
+  "safeBoundary": {
+    "doesNotRunLiveRestore": true,
+    "doesNotDeleteData": true,
+    "doesNotOverwriteData": true,
+    "doesNotMint": true,
+    "doesNotSendFunds": true,
+    "doesNotChangeBalances": true,
+    "doesNotChangeChain": true,
+    "doesNotChangeSupply": true,
+    "runbookOnly": true
+  }
+}

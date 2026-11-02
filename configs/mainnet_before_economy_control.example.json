@@ -1,0 +1,44 @@
+{
+  "version": "QC_MAINNET_BEFORE_ECONOMY_CONTROL_V1",
+  "mode": "PRE_MAINNET_ECONOMY_CONTROL_NO_LAUNCH",
+  "economy": {
+    "totalSupplyQc": 25500000,
+    "founderTotalBasisPoints": 500,
+    "founderLiquidBasisPoints": 100,
+    "founderLockedBasisPoints": 400,
+    "founderWalletBindingRequired": true,
+    "founderWalletAddressFinalBeforeMainnet": true,
+    "initialMiningRewardQc": 50,
+    "coinbaseMaturityBlocks": 10
+  },
+  "rules": {
+    "totalSupplyImmutable": true,
+    "founderTotalFivePercent": true,
+    "founderLiquidOnePercent": true,
+    "founderLockedFourPercent": true,
+    "founderWalletBindingRequired": true,
+    "founderWalletAddressFinalBeforeMainnet": true,
+    "aiCannotMint": true,
+    "aiCannotChangeBalances": true,
+    "aiCannotChangeConsensus": true,
+    "nftCannotChangeQcSupply": true,
+    "tgwtCannotChangeQcSupply": true,
+    "watchEarnCannotChangeQcSupply": true,
+    "queueWorkerCannotSendFundsWithoutAdminApproval": true,
+    "noMainnetLaunchInThisStep": true
+  },
+  "safeBoundary": {
+    "doesNotLaunchMainnet": true,
+    "doesNotMint": true,
+    "doesNotSendFunds": true,
+    "doesNotChangeBalances": true,
+    "doesNotChangeChain": true,
+    "doesNotChangeConsensus": true,
+    "doesNotChangeSupply": true,
+    "doesNotChangeMiningReward": true,
+    "preMainnetControlOnly": true,
+    "requiresFinalHumanApproval": true,
+    "requiresFounderWalletBinding": true,
+    "requiresFinalFounderWalletAddress": true
+  }
+}

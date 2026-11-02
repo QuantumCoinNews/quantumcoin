@@ -1,0 +1,18 @@
+{
+  "version": "QC_TESTNET_CONFIG_SKELETON_V1",
+  "network": "testnet",
+  "network_magic": "QC_TESTNET_V1",
+  "chain_file": "chain_data_testnet.dat",
+  "http_port": ":18082",
+  "p2p_port": ":13001",
+  "total_supply": 25500000,
+  "default_difficulty_bits": 8,
+  "genesis_unix": 1725158400,
+  "public_api_requires_token": true,
+  "public_cors_requires_allowlist": true,
+  "dev_miner_endpoints_disabled": true,
+  "separate_chain_file_required": true,
+  "faucet_enabled": false,
+  "premine_enabled": false,
+  "notes": "Pre-testnet skeleton only. Do not treat as active public testnet launch."
+}
