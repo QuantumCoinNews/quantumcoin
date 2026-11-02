@@ -659,6 +659,166 @@ body.mine-open #panel-watch{
 }
 </style>
 
+
+<script>
+/* TG_WEBAPP_IDENTITY_UI_BRIDGE_V1
+   Telegram WebApp identity bridge.
+   - Uses Telegram.WebApp.initData when available.
+   - Calls backend read-only /api/telegram/identity/verify.
+   - Stores verified playerId in both known localStorage keys.
+   - Does not mine, transfer, mint, or change balances.
+*/
+(function(){
+  "use strict";
+
+  var PLAYER_KEYS = ["qc_player_id_v1", "qc_player_id"];
+  var DEFAULT_DEV_PLAYER_ID = "dev_user";
+
+  function apiBase(){
+    try {
+      if (typeof window.QC_API_BASE === "string" && window.QC_API_BASE) return window.QC_API_BASE;
+    } catch(e){}
+    return "";
+  }
+
+  function storageGet(key){
+    try { return localStorage.getItem(key); } catch(e){ return null; }
+  }
+
+  function storageSet(key, value){
+    try { localStorage.setItem(key, value); } catch(e){}
+  }
+
+  function setPlayerIdEverywhere(pid, source){
+    if (!pid) return;
+    PLAYER_KEYS.forEach(function(k){ storageSet(k, pid); });
+    window.QC_PLAYER_ID = pid;
+    window.QC_PLAYER_ID_SOURCE = source || "unknown";
+  }
+
+  function currentStoredPlayerId(){
+    for (var i=0; i<PLAYER_KEYS.length; i++){
+      var v = storageGet(PLAYER_KEYS[i]);
+      if (v && String(v).trim()) return String(v).trim();
+    }
+    return DEFAULT_DEV_PLAYER_ID;
+  }
+
+  window.QCGetPlayerId = function(){
+    return window.QC_PLAYER_ID || currentStoredPlayerId();
+  };
+
+  window.getPlayerId = function(){
+    return window.QCGetPlayerId();
+  };
+
+  async function verifyTelegramIdentity(){
+    var tg = null;
+    try { tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null; } catch(e){ tg = null; }
+
+    var initData = "";
+    try { initData = tg && tg.initData ? String(tg.initData) : ""; } catch(e){ initData = ""; }
+
+    window.QC_TG_IDENTITY = {
+      ok: false,
+      checked: false,
+      telegramAvailable: !!tg,
+      initDataAvailable: !!initData,
+      playerId: currentStoredPlayerId(),
+      source: "dev_local_fallback",
+      safeBoundary: {
+        readOnly: true,
+        changesDb: false,
+        changesBalances: false,
+        startsMining: false,
+        changesChain: false
+      }
+    };
+
+    if (!initData) {
+      setPlayerIdEverywhere(currentStoredPlayerId(), "dev_local_fallback");
+      window.QC_TG_IDENTITY.checked = true;
+      return window.QC_TG_IDENTITY;
+    }
+
+    try {
+      var res = await fetch(apiBase() + "/api/telegram/identity/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({ initData: initData })
+      });
+
+      var data = await res.json();
+
+      if (data && data.ok && data.playerId) {
+        setPlayerIdEverywhere(data.playerId, "telegram_initData_verified");
+        window.QC_TG_IDENTITY = {
+          ok: true,
+          checked: true,
+          telegramAvailable: true,
+          initDataAvailable: true,
+          playerId: data.playerId,
+          telegramUser: data.telegramUser || null,
+          hashOk: !!data.hashOk,
+          source: "telegram_initData_verified",
+          safeBoundary: data.safeBoundary || {
+            readOnly: true,
+            changesDb: false,
+            changesBalances: false,
+            startsMining: false,
+            changesChain: false
+          }
+        };
+      } else {
+        setPlayerIdEverywhere(currentStoredPlayerId(), "dev_local_fallback_after_verify_fail");
+        window.QC_TG_IDENTITY = {
+          ok: false,
+          checked: true,
+          telegramAvailable: true,
+          initDataAvailable: true,
+          playerId: currentStoredPlayerId(),
+          error: data && data.error ? data.error : "identity_verify_failed",
+          source: "dev_local_fallback_after_verify_fail",
+          safeBoundary: data && data.safeBoundary ? data.safeBoundary : {
+            readOnly: true,
+            changesDb: false,
+            changesBalances: false,
+            startsMining: false,
+            changesChain: false
+          }
+        };
+      }
+
+      return window.QC_TG_IDENTITY;
+    } catch(err) {
+      setPlayerIdEverywhere(currentStoredPlayerId(), "dev_local_fallback_after_verify_error");
+      window.QC_TG_IDENTITY = {
+        ok: false,
+        checked: true,
+        telegramAvailable: true,
+        initDataAvailable: true,
+        playerId: currentStoredPlayerId(),
+        error: "identity_verify_request_failed",
+        detail: String(err && err.message ? err.message : err),
+        source: "dev_local_fallback_after_verify_error",
+        safeBoundary: {
+          readOnly: true,
+          changesDb: false,
+          changesBalances: false,
+          startsMining: false,
+          changesChain: false
+        }
+      };
+      return window.QC_TG_IDENTITY;
+    }
+  }
+
+  window.QCVerifyTelegramIdentity = verifyTelegramIdentity;
+  window.QC_TELEGRAM_IDENTITY_READY = verifyTelegramIdentity();
+})();
+</script>
+
 </head>
 
 <body>
@@ -790,6 +950,15 @@ body.mine-open #panel-watch{
                 Write it down and keep it safe.
               </p>
             </div>
+            <!-- NFT_STATUS_UI_V1: read-only monthly NFT status. No mint, no winner selection, no chain write. -->
+            <div class="wallet-section" id="nftStatusSection">
+              <div class="wallet-section-title">Monthly Rare NFT Status</div>
+              <div class="wallet-status" id="nftStatusLine">NFT status not loaded yet.</div>
+              <div class="wallet-note" id="nftStatusDetail">
+                Read-only status only. Minting, winner selection, and chain metadata are not triggered from this UI.
+              </div>
+            </div>
+
           </div>
         </div>
       </div>
@@ -5135,7 +5304,7 @@ window.addEventListener("load", () => {
 <!-- QC_BACKEND_WALLET_BRIDGE_V1 -->
 <script>
 (function(){
-  const QC_API_BASE = "http://127.0.0.1:8080";
+  const QC_API_BASE = "";
   const QC_PLAYER_ID_KEY = "qc_player_id_v1";
 
   function $(id){
@@ -5249,7 +5418,7 @@ window.addEventListener("load", () => {
 <!-- QC_BACKEND_MINING_BRIDGE_V1 -->
 <script>
 (function(){
-  const QC_API_BASE = window.QC_API_BASE || "http://127.0.0.1:8080";
+  const QC_API_BASE = window.QC_API_BASE || "";
   const QC_PLAYER_ID_KEY = "qc_player_id_v1";
 
   let activeMiningSession = null;
@@ -5304,11 +5473,34 @@ window.addEventListener("load", () => {
     const playerId = getPlayerId();
     const zoneId = zoneCodeFromId(siteId);
     const shipId = getActiveShipId();
+    let nftSessionId = "";
+    let nftInitData = "";
+
+    try {
+      const tg = window.Telegram && window.Telegram.WebApp;
+      const identity = window.QC_TG_IDENTITY;
+      if (tg && tg.initData && identity && identity.ok &&
+          String(identity.playerId) === String(playerId)) {
+        nftInitData = String(tg.initData);
+        const opened = await qcApiPost("/api/v1/nft/monthly/session/start", {
+          playerId,
+          initData: nftInitData
+        });
+        if (opened && opened.ok && opened.sessionId) {
+          nftSessionId = String(opened.sessionId);
+        }
+      }
+    } catch (err) {
+      console.warn("QC NFT session start unavailable:", err);
+    }
 
     const data = await qcApiPost("/api/mine/start", {
       playerId,
       zoneId,
-      shipId
+      shipId,
+      siteId,
+      initData: nftInitData,
+      nftSessionId
     });
 
     activeMiningSession = {
@@ -5317,7 +5509,9 @@ window.addEventListener("load", () => {
       shipId,
       siteId,
       startedAt: Date.now(),
-      startedResponse: data
+      startedResponse: data,
+      nftSessionId,
+      nftInitData
     };
 
     window.QC_BACKEND_MINING_LAST = {
@@ -5343,12 +5537,32 @@ window.addEventListener("load", () => {
 
     const durationSec = Math.max(1, Math.round((Date.now() - s.startedAt) / 1000));
 
-    const data = await qcApiPost("/api/mine/finish", {
-      playerId: s.playerId,
-      zoneId: s.zoneId,
-      shipId: s.shipId,
-      durationSec
-    });
+    let data;
+    try {
+      data = await qcApiPost("/api/mine/finish", {
+        playerId: s.playerId,
+        zoneId: s.zoneId,
+        shipId: s.shipId,
+        siteId: s.siteId,
+        durationSec
+      });
+    } finally {
+      if (s.nftSessionId && s.nftInitData) {
+        try {
+          const nftDone = await qcApiPost(
+            "/api/v1/nft/monthly/session/complete",
+            {
+              playerId: s.playerId,
+              initData: s.nftInitData,
+              sessionId: s.nftSessionId
+            }
+          );
+          window.QC_NFT_MONTHLY_LAST = nftDone;
+        } catch (err) {
+          console.warn("QC NFT session completion unavailable:", err);
+        }
+      }
+    }
 
     window.QC_BACKEND_MINING_LAST = {
       ok: true,
@@ -5478,7 +5692,7 @@ window.addEventListener("load", () => {
 
 <script>
 (function(){
-  const API_BASE = window.QC_API_BASE || "http://127.0.0.1:8080";
+  const API_BASE = window.QC_API_BASE || "";
   const PLAYER_KEY = "qc_player_id_v1";
 
   function getPlayerId(){
@@ -5637,7 +5851,7 @@ window.addEventListener("load", () => {
   }
 
   function apiBase(){
-    return String(window.API_BASE || window.QC_API_BASE || "http://127.0.0.1:8080").replace(/\/$/, "");
+    return String(window.API_BASE || window.QC_API_BASE || "").replace(/\/$/, "");
   }
 
   function playerId(){
@@ -5778,7 +5992,7 @@ window.addEventListener("load", () => {
 <!-- QC_WALLET_SEND_UI_BRIDGE_V1 -->
 <script>
 (function(){
-  const API_BASE = String(window.QC_API_BASE || "http://127.0.0.1:8080").replace(/\/$/, "");
+  const API_BASE = String(window.QC_API_BASE || "").replace(/\/$/, "");
   const PLAYER_KEY = "qc_player_id_v1";
 
   function $(id){ return document.getElementById(id); }
@@ -6100,7 +6314,7 @@ window.addEventListener("load", () => {
   const API_BASE =
     window.QC_API_BASE ||
     window.API_BASE ||
-    "http://127.0.0.1:8080";
+    "";
 
   function $(id){ return document.getElementById(id); }
 
@@ -6365,7 +6579,7 @@ window.addEventListener("load", () => {
   const API_BASE =
     window.QC_API_BASE ||
     window.API_BASE ||
-    "http://127.0.0.1:8080";
+    "";
 
   function $(id){ return document.getElementById(id); }
 
@@ -6434,7 +6648,7 @@ window.addEventListener("load", () => {
   const API_BASE =
     window.QC_API_BASE ||
     window.API_BASE ||
-    "http://127.0.0.1:8080";
+    "";
 
   function $(id){ return document.getElementById(id); }
 
@@ -8673,79 +8887,48 @@ window.WATCH_REWARDED_AD_POLICY_V1 = {
 })();
 </script>
 
+</body>
+</ht
+
 
 <script>
-/* PUBLIC_GIT_SAFE_PRIVHEX_UI_DISABLED_V1
-   Public GitHub safety layer.
-   Private-key based DEV send UI is disabled in the public repo version.
-   Final wallet signing must use a secure wallet flow, not raw priv_hex submission.
+/* TG_WEBAPP_IDENTITY_UI_FINAL_OVERRIDE_V1
+   Final playerId override after all legacy UI scripts.
+   Keeps Telegram-verified playerId active even if older getPlayerId()
+   definitions were declared later in the file.
 */
-(function PUBLIC_GIT_SAFE_PRIVHEX_UI_DISABLED_V1(){
-  if (window.__publicGitSafePrivhexUiDisabledV1) return;
-  window.__publicGitSafePrivhexUiDisabledV1 = true;
+(function(){
+  "use strict";
 
-  function disablePrivHexUI(){
-    const priv = document.getElementById("qcSendPrivHex");
-    const btn  = document.getElementById("btnSendQC");
-
-    if (priv) {
-      priv.value = "";
-      priv.disabled = true;
-      priv.placeholder = "Disabled in public GitHub build";
-      priv.style.opacity = ".55";
-    }
-
-    if (btn) {
-      btn.disabled = true;
-      btn.textContent = "Send QC disabled in public build";
-      btn.title = "Private-key based DEV send is disabled in the public GitHub version.";
-    }
-
-    const mount = priv ? priv.parentElement : null;
-    if (mount && !document.getElementById("publicGitPrivhexWarningV1")) {
-      const note = document.createElement("div");
-      note.id = "publicGitPrivhexWarningV1";
-      note.style.margin = "8px 0 10px";
-      note.style.fontSize = "12px";
-      note.style.lineHeight = "1.45";
-      note.style.opacity = ".78";
-      note.textContent = "Public GitHub build: private-key based DEV send is disabled. Final signing must use a secure wallet flow.";
-      mount.appendChild(note);
-    }
+  function fallbackPlayerId(){
+    try { return localStorage.getItem("qc_player_id_v1") || localStorage.getItem("qc_player_id") || "dev_user"; }
+    catch(e){ return "dev_user"; }
   }
 
-  document.addEventListener("DOMContentLoaded", () => {
-    setTimeout(disablePrivHexUI, 500);
-    setTimeout(disablePrivHexUI, 1500);
-  });
+  function effectivePlayerId(){
+    try {
+      if (window.QC_PLAYER_ID && String(window.QC_PLAYER_ID).trim()) return String(window.QC_PLAYER_ID).trim();
+      if (typeof window.QCGetPlayerId === "function") return window.QCGetPlayerId();
+    } catch(e){}
+    return fallbackPlayerId();
+  }
 
-  document.addEventListener("click", (ev) => {
-    const walletNav = ev.target && ev.target.closest ? ev.target.closest('[data-nav="wallet"]') : null;
-    if (walletNav) {
-      setTimeout(disablePrivHexUI, 300);
-      setTimeout(disablePrivHexUI, 900);
-    }
-  });
+  function applyFinalOverride(){
+    window.getPlayerId = function(){ return effectivePlayerId(); };
+    window.QCGetEffectivePlayerId = function(){ return effectivePlayerId(); };
+    window.QC_PLAYER_ID_FINAL_OVERRIDE_ACTIVE = true;
+  }
 
-  setInterval(disablePrivHexUI, 2500);
+  applyFinalOverride();
+
+  try { document.addEventListener("DOMContentLoaded", applyFinalOverride); } catch(e){}
+  try { window.addEventListener("load", applyFinalOverride); } catch(e){}
+
+  setTimeout(applyFinalOverride, 0);
+  setTimeout(applyFinalOverride, 250);
+  setTimeout(applyFinalOverride, 1000);
 })();
 </script>
 
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

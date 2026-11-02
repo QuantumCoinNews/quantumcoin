@@ -1,0 +1,77 @@
+{
+  "metadata": "{\"name\":\"client-contract-test-only\"}\n",
+  "program": {
+    "success": true,
+    "version": "QC_NFT_GAME_PROGRAM_HTTP_V1",
+    "verified": true,
+    "gameActivatedAt": 1788220800,
+    "networkID": "test-only-nft-startup",
+    "legacyGenesisHex": "617c4708ade559a23f78206be5eb18e84c7e7d8fc373d56c87b5eb0e33a2c598",
+    "campaignID": "telegram-monthly",
+    "firstAwardPeriod": "2026-10",
+    "awardPeriods": [
+      "2026-10",
+      "2026-11",
+      "2026-12",
+      "2027-01",
+      "2027-02",
+      "2027-03",
+      "2027-04",
+      "2027-05",
+      "2027-06",
+      "2027-07",
+      "2027-08",
+      "2027-09"
+    ],
+    "awardCount": 12,
+    "maxAwardsPerMonth": 1,
+    "mintProtocolActive": true
+  },
+  "receipt": {
+    "success": true,
+    "version": "QC_NFT_MONTHLY_MINT_RECEIPT_V1",
+    "persisted": true,
+    "alreadyMinted": false,
+    "tokenID": "ace0a2cbb13c0859e623cf1250b58063449134bbf5ba2efd67a952cb5dbec5ae",
+    "recordDigest": "31a0ef116e0f67a81f1915bbb6d3a68161cf5cb6be823b70c4c68eade5dd1020",
+    "networkID": "test-only-nft-startup",
+    "legacyGenesisHex": "617c4708ade559a23f78206be5eb18e84c7e7d8fc373d56c87b5eb0e33a2c598",
+    "campaignID": "telegram-monthly",
+    "awardPeriod": "2026-10",
+    "serial": 1,
+    "recipientPubKeyHash": "1111111111111111111111111111111111111111",
+    "metadataHash": "1efd10a87cf0405add42e43a80a474b2ca079c3c37e27d45930f858e997631f5",
+    "mintHeight": 1,
+    "mintBlockHash": "000045d7cb7d07024b22dcc338f99670912f7738c215448f2789c89e7fcf5f04",
+    "chainHeight": 1,
+    "chainTipHash": "000045d7cb7d07024b22dcc338f99670912f7738c215448f2789c89e7fcf5f04",
+    "persistedHeight": 1,
+    "persistedTipHash": "000045d7cb7d07024b22dcc338f99670912f7738c215448f2789c89e7fcf5f04"
+  },
+  "request": {
+    "version": "QC_NFT_MONTHLY_MINT_REQUEST_V1",
+    "record": {
+      "networkID": "test-only-nft-startup",
+      "campaignID": "telegram-monthly",
+      "awardPeriod": "2026-10",
+      "serial": 1,
+      "recipientPubKeyHash": "1111111111111111111111111111111111111111",
+      "metadataHash": "1efd10a87cf0405add42e43a80a474b2ca079c3c37e27d45930f858e997631f5"
+    },
+    "decision": {
+      "networkID": "test-only-nft-startup",
+      "legacyGenesisHex": "617c4708ade559a23f78206be5eb18e84c7e7d8fc373d56c87b5eb0e33a2c598",
+      "recordDigest": "31a0ef116e0f67a81f1915bbb6d3a68161cf5cb6be823b70c4c68eade5dd1020"
+    },
+    "approvals": [
+      {
+        "publicKey": "04c22ea17d75aa8d044087501703dd5e42a3755773e3e9c8a2e8a4ec9c3134cac0f981523de0ffefa5116dade845072cdbf1732af8ee099cc61619da5fe0b7defc",
+        "signature": "202081490e59cb862966eb107d8a96bb17b0ea9e9b145f1e54d37525bcdce44bd4202def76a254aab064792d5e87df568a493b430955708a8cf601ae8467c1f2e378"
+      },
+      {
+        "publicKey": "049f81f272d05e44bf62fa2773fe7100941a7d23981c1b7391bb9ddf0f071f5fffea9e8c90e123e28f031b82d370394011a4cff248f44119e8612ec86c3a685422",
+        "signature": "20291da2358cb68efa4877b02dc636a224d979f390e0a4bc95a869f636364745ec2060c3ff6bd0e038a42736a4340cc3bc7928d3273060bee36b1182f93e04453aac"
+      }
+    ]
+  }
+}

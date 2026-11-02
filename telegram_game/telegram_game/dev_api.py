@@ -1,12 +1,17 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import os
+from pathlib import Path
 import asyncio
 import urllib.request
 import sqlite3, time, threading, secrets, json, random
 import json
+import urllib.parse
+import hashlib
+import hmac
 from typing import Optional, Dict, Any
 from telegram_game.utils.qc_api import (
     fetch_health as qc_fetch_health,
@@ -17,6 +22,7 @@ from telegram_game.utils.qc_api import (
 )
 
 APP_DB = "dev_api_state.db"
+_NFT_REPOSITORY_ROOT_V1 = Path(__file__).resolve().parents[2]
 ONLINE_TTL_SEC = 90
 
 UNIT = 1_000_000  # TGWT micro-unit
@@ -27,6 +33,1050 @@ DROP_CHANCE = 0.002     # 0.2%
 DROP_AMOUNT_U = 1 * UNIT
 
 app = FastAPI(title="Space Miner Dev API", version="0.4")
+
+# ACTION_BURST_GUARD_V1
+# Purpose: lightweight player+endpoint+client burst guard for sensitive action endpoints.
+# Boundary: this middleware does not mine, mint, transfer, change balances, change chain, or change supply.
+
+_QC_ACTION_BURST_EVENTS_V1 = {}
+_QC_ACTION_BURST_BLOCKS_V1 = []
+
+_QC_ACTION_BURST_POLICY_V1 = {
+    "/api/security/action-burst/test-ping": {"limit": 2, "windowSec": 10, "category": "safe_test"},
+    "/api/mine/start": {"limit": 6, "windowSec": 20, "category": "mining_session"},
+    "/api/mine/finish": {"limit": 4, "windowSec": 20, "category": "mining_reward"},
+    "/api/wallet/send-qc": {"limit": 3, "windowSec": 30, "category": "chain_send"},
+    "/api/wallet/link-qc-address": {"limit": 5, "windowSec": 60, "category": "wallet_link"},
+    "/api/withdraw/request": {"limit": 3, "windowSec": 60, "category": "withdraw"},
+    "/api/withdraw/mark-pending": {"limit": 4, "windowSec": 60, "category": "withdraw_admin"},
+    "/api/withdraw/mock-confirm": {"limit": 4, "windowSec": 60, "category": "withdraw_admin"},
+    "/api/withdraw/real-payout-precheck": {"limit": 3, "windowSec": 60, "category": "withdraw_admin"},
+    "/api/v1/withdraw/request": {"limit": 3, "windowSec": 60, "category": "tgwt_withdraw"},
+    "/api/settlement/mark-pending": {"limit": 4, "windowSec": 60, "category": "settlement_admin"},
+    "/api/settlement/mock-confirm": {"limit": 4, "windowSec": 60, "category": "settlement_admin"},
+    "/api/watch/claim": {"limit": 8, "windowSec": 60, "category": "claim"},
+    "/api/social/claim": {"limit": 8, "windowSec": 60, "category": "claim"},
+    "/api/store/buy": {"limit": 5, "windowSec": 60, "category": "store"},
+    "/api/settings": {"limit": 10, "windowSec": 60, "category": "settings"},
+    "/api/telegram/identity/verify": {"limit": 12, "windowSec": 60, "category": "identity"},
+    "/api/nft/wallet/challenge": {"limit": 4, "windowSec": 60, "category": "nft_wallet"},
+    "/api/nft/wallet/prove": {"limit": 8, "windowSec": 60, "category": "nft_wallet"},
+    "/api/v1/nft/monthly/candidate": {"limit": 5, "windowSec": 60, "category": "nft_candidate"},
+    "/api/admin/nft/monthly/review": {"limit": 8, "windowSec": 60, "category": "nft_admin"},
+    "/api/admin/nft/monthly/ai-review": {"limit": 8, "windowSec": 60, "category": "nft_admin"},
+    "/api/admin/nft/monthly/select-winner": {"limit": 4, "windowSec": 60, "category": "nft_admin"},
+    "/api/admin/nft/monthly/freeze-pool": {"limit": 2, "windowSec": 60, "category": "nft_admin"},
+    "/api/admin/nft/monthly/register-draw-commitment": {"limit": 4, "windowSec": 60, "category": "nft_admin"},
+    "/api/admin/nft/monthly/draw-winner": {"limit": 4, "windowSec": 60, "category": "nft_admin"},
+    "/api/admin/nft/monthly/publish-draw-commitment": {"limit": 2, "windowSec": 60, "category": "nft_admin"},
+    "/api/admin/nft/monthly/draw-from-beacon": {"limit": 4, "windowSec": 60, "category": "nft_admin"},
+    "/api/admin/nft/monthly/final-approval-statement": {"limit": 4, "windowSec": 60, "category": "nft_admin"},
+    "/api/admin/nft/monthly/controlled-mint": {"limit": 2, "windowSec": 60, "category": "nft_admin"},
+}
+
+
+def _qc_action_burst_now_v1() -> int:
+    import time
+    return int(time.time())
+
+
+def _qc_action_burst_client_v1(request) -> str:
+    try:
+        xf = request.headers.get("x-forwarded-for") or request.headers.get("X-Forwarded-For")
+        if xf:
+            return xf.split(",")[0].strip()[:80]
+    except Exception:
+        pass
+
+    try:
+        if request.client and request.client.host:
+            return str(request.client.host)[:80]
+    except Exception:
+        pass
+
+    return "unknown-client"
+
+
+def _qc_action_burst_extract_player_v1(body_bytes: bytes) -> str:
+    try:
+        import json
+        if not body_bytes:
+            return "unknown-player"
+        data = json.loads(body_bytes.decode("utf-8", errors="replace"))
+        for key in ("playerId", "player_id", "userId", "user_id", "id"):
+            val = data.get(key)
+            if val is not None and str(val).strip():
+                return str(val).strip()[:120]
+    except Exception:
+        pass
+    return "unknown-player"
+
+
+def _qc_action_burst_key_v1(path: str, client: str, player: str) -> str:
+    return "%s|%s|%s" % (path, client, player)
+
+
+def _qc_action_burst_prune_v1(key: str, now: int, window_sec: int):
+    events = _QC_ACTION_BURST_EVENTS_V1.get(key, [])
+    events = [t for t in events if now - int(t) <= int(window_sec)]
+    _QC_ACTION_BURST_EVENTS_V1[key] = events
+    return events
+
+
+def _qc_action_burst_block_response_v1(path: str, client: str, player: str, policy: dict, current_count: int):
+    from fastapi.responses import JSONResponse
+
+    now = _qc_action_burst_now_v1()
+    row = {
+        "ts": now,
+        "path": path,
+        "client": client,
+        "player": player,
+        "limit": int(policy.get("limit", 1)),
+        "windowSec": int(policy.get("windowSec", 60)),
+        "currentCount": int(current_count),
+        "category": policy.get("category", "action"),
+    }
+
+    _QC_ACTION_BURST_BLOCKS_V1.append(row)
+    del _QC_ACTION_BURST_BLOCKS_V1[:-50]
+
+    return JSONResponse(
+        status_code=429,
+        content={
+            "ok": False,
+            "error": "action_burst_rate_limited",
+            "message": "Action burst blocked before reaching endpoint logic.",
+            "diagnosticVersion": "ACTION_BURST_GUARD_V1",
+            "path": path,
+            "playerId": player,
+            "client": client,
+            "limit": row["limit"],
+            "windowSec": row["windowSec"],
+            "currentCount": row["currentCount"],
+            "safeBoundary": {
+                "readOnly": False,
+                "startsMining": False,
+                "changesChain": False,
+                "changesBalances": False,
+                "mints": False,
+                "changesSupply": False,
+                "sendsTransactions": False,
+                "adminAction": False,
+                "reason": "Blocked before endpoint logic; no chain/reward/balance path reached."
+            }
+        }
+    )
+
+
+@app.middleware("http")
+async def _qc_action_burst_guard_v1(request, call_next):
+    path = getattr(request.url, "path", "")
+    method = getattr(request, "method", "")
+
+    if method.upper() not in ("POST", "PUT", "PATCH", "DELETE") or path not in _QC_ACTION_BURST_POLICY_V1:
+        return await call_next(request)
+
+    body_bytes = await request.body()
+
+    async def _qc_action_burst_receive_v1():
+        return {"type": "http.request", "body": body_bytes, "more_body": False}
+
+    request._receive = _qc_action_burst_receive_v1
+
+    policy = _QC_ACTION_BURST_POLICY_V1[path]
+    now = _qc_action_burst_now_v1()
+    client = _qc_action_burst_client_v1(request)
+    player = _qc_action_burst_extract_player_v1(body_bytes)
+    key = _qc_action_burst_key_v1(path, client, player)
+
+    events = _qc_action_burst_prune_v1(key, now, int(policy.get("windowSec", 60)))
+    limit = int(policy.get("limit", 1))
+
+    if len(events) >= limit:
+        return _qc_action_burst_block_response_v1(path, client, player, policy, len(events))
+
+    events.append(now)
+    _QC_ACTION_BURST_EVENTS_V1[key] = events
+
+    return await call_next(request)
+
+
+@app.get("/api/security/action-burst/status")
+def _qc_security_action_burst_status_v1(limit: int = 50):
+    import time
+
+    safe_limit = max(1, min(int(limit or 50), 100))
+    now = int(time.time())
+
+    counters = []
+    for key, events in list(_QC_ACTION_BURST_EVENTS_V1.items()):
+        parts = key.split("|", 2)
+        path = parts[0] if len(parts) > 0 else ""
+        client = parts[1] if len(parts) > 1 else ""
+        player = parts[2] if len(parts) > 2 else ""
+        policy = _QC_ACTION_BURST_POLICY_V1.get(path, {})
+        window_sec = int(policy.get("windowSec", 60))
+        active = [int(t) for t in events if now - int(t) <= window_sec]
+        _QC_ACTION_BURST_EVENTS_V1[key] = active
+        counters.append({
+            "path": path,
+            "client": client,
+            "player": player,
+            "count": len(active),
+            "limit": int(policy.get("limit", 0)),
+            "windowSec": window_sec,
+            "category": policy.get("category", "action"),
+        })
+
+    counters = sorted(counters, key=lambda r: (r["path"], r["player"]))[:safe_limit]
+
+    return {
+        "ok": True,
+        "diagnosticVersion": "ACTION_BURST_GUARD_V1",
+        "enabled": True,
+        "protectedPathCount": len(_QC_ACTION_BURST_POLICY_V1),
+        "protectedPaths": [
+            {"path": p, **cfg}
+            for p, cfg in sorted(_QC_ACTION_BURST_POLICY_V1.items())
+        ],
+        "activeCounters": counters,
+        "recentBlocks": list(reversed(_QC_ACTION_BURST_BLOCKS_V1[-safe_limit:])),
+        "summary": {
+            "activeCounterCount": len(counters),
+            "recentBlockCount": len(_QC_ACTION_BURST_BLOCKS_V1),
+            "hasRecentBlocks": len(_QC_ACTION_BURST_BLOCKS_V1) > 0,
+        },
+        "safeBoundary": {
+            "readOnly": True,
+            "startsMining": False,
+            "changesChain": False,
+            "changesBalances": False,
+            "mints": False,
+            "changesSupply": False,
+            "sendsTransactions": False,
+            "adminAction": False
+        }
+    }
+
+
+@app.post("/api/security/action-burst/test-ping")
+def _qc_security_action_burst_test_ping_v1(payload: dict = None):
+    payload = payload or {}
+    return {
+        "ok": True,
+        "diagnosticVersion": "ACTION_BURST_GUARD_V1",
+        "testOnly": True,
+        "playerId": payload.get("playerId") or payload.get("player_id") or "unknown-player",
+        "safeBoundary": {
+            "readOnly": True,
+            "startsMining": False,
+            "changesChain": False,
+            "changesBalances": False,
+            "mints": False,
+            "changesSupply": False,
+            "sendsTransactions": False,
+            "adminAction": False
+        }
+    }
+
+
+
+# RATE_LIMIT_STATUS_V1
+# Purpose: read-only rate-limit/burst visibility endpoint for Telegram Game API.
+# Boundary: this endpoint does not mine, mint, transfer, change balances, change chain, or change supply.
+
+def _qc_rate_limit_db_path_v1() -> str:
+    from pathlib import Path
+    return str(Path(__file__).resolve().parents[1] / "dev_api_state.db")
+
+
+def _qc_rate_limit_source_text_v1() -> str:
+    try:
+        from pathlib import Path
+        return Path(__file__).read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return ""
+
+
+def _qc_rate_limit_count_v1(pattern: str, text: str) -> int:
+    try:
+        import re
+        return len(re.findall(pattern, text, re.I))
+    except Exception:
+        return 0
+
+
+def _qc_rate_limit_rows_v1(conn, sql: str, args=()):
+    try:
+        return [dict(r) for r in conn.execute(sql, args).fetchall()]
+    except Exception as exc:
+        return [{"error": str(exc), "sql": sql}]
+
+
+def _qc_rate_limit_endpoint_audit_v1(text: str, limit: int = 50):
+    import re
+
+    endpoint_re = re.compile(
+        r'@app\.(get|post|put|delete|patch)\(\"([^\"]+)\"[^\n]*\)\s*\n(?:async\s+)?def\s+([A-Za-z0-9_]+)\s*\(',
+        re.M,
+    )
+    matches = list(endpoint_re.finditer(text))
+    rows = []
+
+    for i, m in enumerate(matches):
+        start = m.start()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        block = text[start:end]
+        method = m.group(1).upper()
+        path = m.group(2)
+        function = m.group(3)
+        low = (path + " " + function + " " + block).lower()
+
+        is_action = method in ("POST", "PUT", "PATCH", "DELETE")
+        is_publicish = any(
+            k in low
+            for k in [
+                "wallet", "mine", "withdraw", "settlement", "watch",
+                "social", "claim", "send", "store", "ship", "telegram",
+                "identity", "admin", "nft", "dev/reset", "tx",
+            ]
+        )
+
+        if not is_action:
+            continue
+
+        has_rate = bool(re.search(r"rate[_ -]?limit|ratelimit|limiter|too many|429|burst|throttle|cooldown", block, re.I))
+        has_ip = bool(re.search(r"client\.host|request\.client|x-forwarded-for|remote_addr|ip[_ -]?address", block, re.I))
+        has_idem = bool(re.search(r"idempot|requestId|request_id|nonce|replay", block, re.I))
+        has_player = bool(re.search(r"playerId|player_id|get_player|require_player|telegram.*player|identity", block, re.I))
+        has_state_effect = bool(re.search(r"mine|send-qc|tx/send|withdraw|settlement|reward_records|total_qc|qc_balance|real_payout", block, re.I))
+        has_admin = bool(re.search(r"admin|ADMIN|dev guard|DEV", block, re.I))
+
+        risk = []
+        if is_publicish and not has_rate:
+            risk.append("no_clear_rate_limit_or_burst_marker")
+        if is_publicish and not has_ip:
+            risk.append("no_clear_ip_client_marker")
+        if has_state_effect and not has_idem:
+            risk.append("state_changing_without_clear_idempotency_marker")
+        if is_publicish and not has_player and not has_admin:
+            risk.append("no_clear_player_or_admin_guard")
+
+        if risk:
+            rows.append(
+                {
+                    "method": method,
+                    "path": path,
+                    "function": function,
+                    "line": text[: m.start()].count("\n") + 1,
+                    "risk": risk,
+                }
+            )
+
+    return rows[: max(1, min(int(limit or 50), 100))]
+
+
+@app.get("/api/security/rate-limit/status")
+def _qc_security_rate_limit_status_v1(limit: int = 50):
+    import sqlite3
+
+    safe_limit = max(1, min(int(limit or 50), 100))
+    text = _qc_rate_limit_source_text_v1()
+
+    source_signals = {
+        "diagnosticVersion": "RATE_LIMIT_STATUS_V1",
+        "rateLimitTotal": _qc_rate_limit_count_v1(r"rate[_ -]?limit|ratelimit|limiter", text),
+        "burstTotal": _qc_rate_limit_count_v1(r"burst", text),
+        "throttleTotal": _qc_rate_limit_count_v1(r"throttle", text),
+        "cooldownTotal": _qc_rate_limit_count_v1(r"cooldown", text),
+        "tooManyTotal": _qc_rate_limit_count_v1(r"too many|429", text),
+        "ipClientTotal": _qc_rate_limit_count_v1(r"client\.host|request\.client|x-forwarded-for|remote_addr|ip[_ -]?address", text),
+        "abuseSpamTotal": _qc_rate_limit_count_v1(r"abuse|anti[_ -]?abuse|spam|anti[_ -]?spam", text),
+        "playerGuardTotal": _qc_rate_limit_count_v1(r"playerId|player_id|get_player|require_player", text),
+        "telegramIdentityTotal": _qc_rate_limit_count_v1(r"TG_WEBAPP_IDENTITY|telegram/identity|initData", text),
+        "idempotencyTotal": _qc_rate_limit_count_v1(r"idempot|requestId|request_id|nonce|replay", text),
+        "conflictDetectorTotal": _qc_rate_limit_count_v1(r"CONFLICT_DETECTOR_STATUS_V1|conflict", text),
+        "safeBoundaryTotal": _qc_rate_limit_count_v1(r"safeBoundary|safe_boundary", text),
+    }
+
+    endpoint_risk_rows = _qc_rate_limit_endpoint_audit_v1(text, safe_limit)
+
+    conn = sqlite3.connect(_qc_rate_limit_db_path_v1())
+    conn.row_factory = sqlite3.Row
+
+    table_names = set(
+        r["name"]
+        for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    )
+
+    players = []
+    mining_sessions = []
+    idempotency_recent = []
+    open_withdraws = []
+    tgwt_nonce_count = 0
+    reward_count_dev_user = 0
+
+    if "players" in table_names:
+        players = _qc_rate_limit_rows_v1(
+            conn,
+            """
+            SELECT player_id, qc_address, total_qc, total_xp, sessions, last_seen
+            FROM players
+            WHERE player_id IN ('dev_user','dev_user_2')
+            ORDER BY player_id
+            """,
+        )
+
+    if "mining_sessions" in table_names:
+        mining_sessions = _qc_rate_limit_rows_v1(
+            conn,
+            """
+            SELECT player_id, site_id, started_at
+            FROM mining_sessions
+            ORDER BY player_id, site_id
+            LIMIT ?
+            """,
+            (safe_limit,),
+        )
+
+    if "action_idempotency_v1" in table_names:
+        idempotency_recent = _qc_rate_limit_rows_v1(
+            conn,
+            """
+            SELECT id, action, player_id, site_id, request_id, status,
+                   created_at, completed_at, response_status
+            FROM action_idempotency_v1
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (safe_limit,),
+        )
+
+    if "withdraw_requests" in table_names:
+        open_withdraws = _qc_rate_limit_rows_v1(
+            conn,
+            """
+            SELECT id, user_id, asset, amount_u, status, created_at
+            FROM withdraw_requests
+            WHERE status NOT IN ('CONFIRMED','REJECTED','CANCELLED')
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (safe_limit,),
+        )
+
+    if "tgwt_nonces" in table_names:
+        try:
+            tgwt_nonce_count = conn.execute("SELECT COUNT(*) FROM tgwt_nonces").fetchone()[0]
+        except Exception:
+            tgwt_nonce_count = -1
+
+    if "reward_records" in table_names:
+        try:
+            reward_count_dev_user = conn.execute(
+                "SELECT COUNT(*) FROM reward_records WHERE player_id='dev_user'"
+            ).fetchone()[0]
+        except Exception:
+            reward_count_dev_user = -1
+
+    conn.close()
+
+    central_guard_detected = (
+        source_signals["rateLimitTotal"] > 0
+        and source_signals["idempotencyTotal"] > 0
+    )
+
+    ip_guard_visible = source_signals["ipClientTotal"] > 0
+    burst_guard_visible = (
+        source_signals["burstTotal"] > 0
+        or source_signals["throttleTotal"] > 0
+        or source_signals["cooldownTotal"] > 0
+        or source_signals["tooManyTotal"] > 0
+    )
+
+    known_gaps = []
+    if not ip_guard_visible:
+        known_gaps.append("IP/client based guard is not clearly visible in source.")
+    if not burst_guard_visible:
+        known_gaps.append("Burst/throttle/cooldown markers are not clearly visible in source.")
+    if endpoint_risk_rows:
+        known_gaps.append("Some action endpoints still need explicit rate-limit/IP/idempotency review.")
+
+    return {
+        "ok": True,
+        "diagnosticVersion": "RATE_LIMIT_STATUS_V1",
+        "sourceSignals": source_signals,
+        "summary": {
+            "centralGuardDetected": central_guard_detected,
+            "ipGuardVisible": ip_guard_visible,
+            "burstGuardVisible": burst_guard_visible,
+            "actionRiskCount": len(endpoint_risk_rows),
+            "knownGapCount": len(known_gaps),
+            "openWithdrawCount": len(open_withdraws),
+            "miningSessionCount": len(mining_sessions),
+            "idempotencyRecentCount": len(idempotency_recent),
+            "tgwtNonceCount": tgwt_nonce_count,
+            "rewardCountDevUser": reward_count_dev_user,
+        },
+        "actionRiskRows": endpoint_risk_rows,
+        "knownGaps": known_gaps,
+        "runtimeDb": {
+            "tablesSeen": sorted(list(table_names)),
+            "players": players,
+            "miningSessions": mining_sessions,
+            "idempotencyRecent": idempotency_recent,
+            "openWithdraws": open_withdraws,
+        },
+        "safeBoundary": {
+            "readOnly": True,
+            "startsMining": False,
+            "changesChain": False,
+            "changesBalances": False,
+            "mints": False,
+            "changesSupply": False,
+            "sendsTransactions": False,
+            "adminAction": False
+        }
+    }
+
+
+
+# CONFLICT_DETECTOR_STATUS_V1
+# Purpose: read-only conflict/double-spend status endpoint for Telegram Game transaction paths.
+# Boundary: this endpoint does not mint, mine, transfer, change balances, change chain, or change supply.
+
+def _qc_conflict_db_path_v1() -> str:
+    from pathlib import Path
+    return str(Path(__file__).resolve().parents[1] / "dev_api_state.db")
+
+
+def _qc_conflict_rows_v1(conn, sql: str, args=()):
+    try:
+        return [dict(r) for r in conn.execute(sql, args).fetchall()]
+    except Exception as exc:
+        return [{"error": str(exc), "sql": sql}]
+
+
+def _qc_conflict_table_exists_v1(conn, table: str) -> bool:
+    try:
+        row = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (table,),
+        ).fetchone()
+        return row is not None
+    except Exception:
+        return False
+
+
+def _qc_conflict_table_cols_v1(conn, table: str):
+    try:
+        return [r["name"] for r in conn.execute("PRAGMA table_info(%s)" % table).fetchall()]
+    except Exception:
+        return []
+
+
+def _qc_conflict_has_error_rows_v1(rows) -> bool:
+    try:
+        return any(isinstance(r, dict) and "error" in r for r in rows)
+    except Exception:
+        return True
+
+
+@app.get("/api/security/conflicts/status")
+def _qc_security_conflicts_status_v1(limit: int = 20):
+    import sqlite3
+
+    safe_limit = max(1, min(int(limit or 20), 100))
+
+    conn = sqlite3.connect(_qc_conflict_db_path_v1())
+    conn.row_factory = sqlite3.Row
+
+    table_names = set(
+        r["name"]
+        for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    )
+
+    duplicate_qc_addresses = []
+    duplicate_reward_groups = []
+    duplicate_qc_tx_ids = []
+    qc_tx_status_counts = []
+    qc_tx_recent = []
+    withdraw_status_groups = []
+    open_withdraws = []
+    ready_for_chain_rewards = []
+    idempotency_recent = []
+
+    if "players" in table_names:
+        duplicate_qc_addresses = _qc_conflict_rows_v1(
+            conn,
+            """
+            SELECT qc_address, COUNT(*) AS count, GROUP_CONCAT(player_id) AS players
+            FROM players
+            WHERE COALESCE(qc_address, '') != ''
+            GROUP BY qc_address
+            HAVING COUNT(*) > 1
+            ORDER BY count DESC
+            LIMIT ?
+            """,
+            (safe_limit,),
+        )
+
+    if "reward_records" in table_names:
+        duplicate_reward_groups = _qc_conflict_rows_v1(
+            conn,
+            """
+            SELECT player_id, source, amount, target_qc_address, chain_height, created_at,
+                   COUNT(*) AS count, GROUP_CONCAT(reward_id) AS reward_ids
+            FROM reward_records
+            GROUP BY player_id, source, amount, target_qc_address, chain_height, created_at
+            HAVING COUNT(*) > 1
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (safe_limit,),
+        )
+
+        ready_for_chain_rewards = _qc_conflict_rows_v1(
+            conn,
+            """
+            SELECT reward_id, player_id, amount, settlement_status, target_qc_address,
+                   chain_height, created_at
+            FROM reward_records
+            WHERE settlement_status='READY_FOR_CHAIN'
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (safe_limit,),
+        )
+
+    if "qc_tx_records" in table_names:
+        qc_cols = _qc_conflict_table_cols_v1(conn, "qc_tx_records")
+
+        tx_col = None
+        for c in ["tx_hash", "txid", "tx_id"]:
+            if c in qc_cols:
+                tx_col = c
+                break
+
+        if tx_col:
+            duplicate_qc_tx_ids = _qc_conflict_rows_v1(
+                conn,
+                """
+                SELECT {tx_col} AS tx_key, COUNT(*) AS count, GROUP_CONCAT(rowid) AS rowids
+                FROM qc_tx_records
+                WHERE COALESCE({tx_col}, '') != ''
+                GROUP BY {tx_col}
+                HAVING COUNT(*) > 1
+                ORDER BY count DESC
+                LIMIT ?
+                """.format(tx_col=tx_col),
+                (safe_limit,),
+            )
+
+        if "status" in qc_cols:
+            qc_tx_status_counts = _qc_conflict_rows_v1(
+                conn,
+                """
+                SELECT status, COUNT(*) AS count
+                FROM qc_tx_records
+                GROUP BY status
+                ORDER BY count DESC
+                """,
+            )
+
+        select_cols = [
+            c for c in [
+                "tx_id", "txid", "tx_hash", "player_id", "from_address",
+                "to_address", "amount", "status", "created_at", "confirmed_at"
+            ]
+            if c in qc_cols
+        ]
+        if select_cols:
+            qc_tx_recent = _qc_conflict_rows_v1(
+                conn,
+                "SELECT %s FROM qc_tx_records ORDER BY rowid DESC LIMIT ?" % ", ".join(select_cols),
+                (safe_limit,),
+            )
+        else:
+            qc_tx_recent = _qc_conflict_rows_v1(
+                conn,
+                "SELECT * FROM qc_tx_records ORDER BY rowid DESC LIMIT ?",
+                (safe_limit,),
+            )
+
+    if "withdraw_requests" in table_names:
+        withdraw_status_groups = _qc_conflict_rows_v1(
+            conn,
+            """
+            SELECT user_id, asset, amount_u, status, COUNT(*) AS count, GROUP_CONCAT(id) AS ids
+            FROM withdraw_requests
+            GROUP BY user_id, asset, amount_u, status
+            HAVING COUNT(*) > 1
+            ORDER BY count DESC
+            LIMIT ?
+            """,
+            (safe_limit,),
+        )
+
+        open_withdraws = _qc_conflict_rows_v1(
+            conn,
+            """
+            SELECT id, user_id, asset, amount_u, status, created_at
+            FROM withdraw_requests
+            WHERE status NOT IN ('CONFIRMED','REJECTED','CANCELLED')
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (safe_limit,),
+        )
+
+    if "action_idempotency_v1" in table_names:
+        idempotency_recent = _qc_conflict_rows_v1(
+            conn,
+            """
+            SELECT id, action, player_id, site_id, request_id, status,
+                   created_at, completed_at, response_status
+            FROM action_idempotency_v1
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (safe_limit,),
+        )
+
+    conn.close()
+
+    duplicate_groups = {
+        "duplicateQcAddressCount": len(duplicate_qc_addresses),
+        "duplicateRewardGroupCount": len(duplicate_reward_groups),
+        "duplicateQcTxIdCount": len(duplicate_qc_tx_ids),
+        "withdrawStatusGroupCount": len(withdraw_status_groups),
+    }
+
+    error_flags = {
+        "duplicateQcAddressesQueryError": _qc_conflict_has_error_rows_v1(duplicate_qc_addresses),
+        "duplicateRewardGroupsQueryError": _qc_conflict_has_error_rows_v1(duplicate_reward_groups),
+        "duplicateQcTxIdsQueryError": _qc_conflict_has_error_rows_v1(duplicate_qc_tx_ids),
+        "withdrawStatusGroupsQueryError": _qc_conflict_has_error_rows_v1(withdraw_status_groups),
+    }
+
+    has_duplicate_conflict = (
+        duplicate_groups["duplicateQcAddressCount"] > 0
+        or duplicate_groups["duplicateRewardGroupCount"] > 0
+        or duplicate_groups["duplicateQcTxIdCount"] > 0
+        or duplicate_groups["withdrawStatusGroupCount"] > 0
+    )
+
+    return {
+        "ok": True,
+        "diagnosticVersion": "CONFLICT_DETECTOR_STATUS_V1",
+        "tablesSeen": sorted(list(table_names)),
+        "summary": {
+            **duplicate_groups,
+            "openWithdrawCount": len(open_withdraws),
+            "readyForChainRewardCount": len(ready_for_chain_rewards),
+            "idempotencyRecentCount": len(idempotency_recent),
+            "hasDuplicateConflict": has_duplicate_conflict,
+            **error_flags,
+        },
+        "duplicateQcAddresses": duplicate_qc_addresses,
+        "duplicateRewardGroups": duplicate_reward_groups,
+        "duplicateQcTxIds": duplicate_qc_tx_ids,
+        "withdrawStatusGroups": withdraw_status_groups,
+        "qcTxStatusCounts": qc_tx_status_counts,
+        "qcTxRecent": qc_tx_recent,
+        "openWithdraws": open_withdraws,
+        "readyForChainRewards": ready_for_chain_rewards,
+        "idempotencyRecent": idempotency_recent,
+        "safeBoundary": {
+            "readOnly": True,
+            "startsMining": False,
+            "changesChain": False,
+            "changesBalances": False,
+            "mints": False,
+            "changesSupply": False,
+            "sendsTransactions": False,
+            "adminAction": False
+        }
+    }
+
+
+
+# IDEMPOTENCY_REPLAY_GUARD_V1
+# Purpose: block duplicate/replayed POST /api/mine/finish before a second chain mine or reward insert can happen.
+# Boundary: this guard does not mint, transfer, change supply, change consensus, or mine by itself.
+
+def _qc_idem_db_path_v1() -> str:
+    from pathlib import Path
+    return str(Path(__file__).resolve().parents[1] / "dev_api_state.db")
+
+
+def _qc_idem_now_v1() -> int:
+    import time
+    return int(time.time())
+
+
+def _qc_idem_connect_v1():
+    import sqlite3
+    return sqlite3.connect(_qc_idem_db_path_v1(), timeout=30, isolation_level=None)
+
+
+def _qc_idem_ensure_v1(conn) -> None:
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS action_idempotency_v1 (
+        id TEXT PRIMARY KEY,
+        action TEXT NOT NULL,
+        key_hash TEXT NOT NULL,
+        player_id TEXT,
+        site_id TEXT,
+        request_id TEXT,
+        session_started_at TEXT,
+        status TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        completed_at INTEGER,
+        response_status INTEGER,
+        note TEXT,
+        UNIQUE(action, key_hash)
+    )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_action_idem_v1_player ON action_idempotency_v1(player_id, action, created_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_action_idem_v1_status ON action_idempotency_v1(status, created_at)")
+
+
+def _qc_idem_session_started_at_v1(conn, player_id: str, site_id: str) -> str:
+    try:
+        row = conn.execute(
+            """
+            SELECT started_at
+            FROM mining_sessions
+            WHERE player_id = ? AND site_id = ?
+            ORDER BY started_at DESC
+            LIMIT 1
+            """,
+            (player_id, int(site_id)),
+        ).fetchone()
+        if row and row[0] is not None:
+            return str(row[0])
+    except Exception:
+        return ""
+    return ""
+
+
+def _qc_idem_key_hash_v1(action: str, raw_key: str) -> str:
+    import hashlib
+    payload = (action + "::" + raw_key).encode("utf-8", errors="replace")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _qc_idem_block_response_v1(player_id: str, site_id: str, request_id: str, key_hash: str):
+    from starlette.responses import JSONResponse
+    return JSONResponse(
+        status_code=409,
+        content={
+            "ok": False,
+            "error": "idempotency_replay_blocked",
+            "message": "Duplicate mine/finish request blocked before chain action.",
+            "diagnosticVersion": "IDEMPOTENCY_REPLAY_GUARD_V1",
+            "action": "mine_finish",
+            "playerId": player_id,
+            "siteId": site_id,
+            "requestId": request_id,
+            "keyHash": key_hash,
+            "safeBoundary": {
+                "readOnly": False,
+                "startsMining": False,
+                "changesChain": False,
+                "changesBalances": False,
+                "mints": False,
+                "changesSupply": False,
+                "reason": "Replay was blocked before reaching the chain/reward path."
+            },
+        },
+    )
+
+
+@app.middleware("http")
+async def _qc_mine_finish_idempotency_guard_v1(request, call_next):
+    if request.method.upper() != "POST" or request.url.path != "/api/mine/finish":
+        return await call_next(request)
+
+    import json
+    import sqlite3
+
+    body = await request.body()
+
+    async def _receive():
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    request._receive = _receive
+
+    try:
+        data = json.loads(body.decode("utf-8") if body else "{}")
+        if not isinstance(data, dict):
+            data = {}
+    except Exception:
+        data = {}
+
+    player_id = str(data.get("playerId") or data.get("player_id") or "").strip()
+    site_id = str(data.get("siteId") or data.get("site_id") or "").strip()
+    request_id = str(
+        data.get("requestId")
+        or data.get("request_id")
+        or data.get("idempotencyKey")
+        or data.get("idempotency_key")
+        or ""
+    ).strip()
+
+    reserved_id = ""
+
+    if player_id and site_id:
+        conn = _qc_idem_connect_v1()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            _qc_idem_ensure_v1(conn)
+
+            session_started_at = _qc_idem_session_started_at_v1(conn, player_id, site_id)
+
+            # If the client provides requestId/idempotencyKey, replay is blocked by that key.
+            # If no requestId exists, we protect concurrent duplicate finish calls for the same active session.
+            raw_key = request_id or ("auto-session:%s:%s:%s" % (player_id, site_id, session_started_at or "no_active_session"))
+            key_hash = _qc_idem_key_hash_v1("mine_finish", raw_key)
+            now = _qc_idem_now_v1()
+            reserved_id = "idem_" + key_hash[:32]
+
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO action_idempotency_v1
+                    (id, action, key_hash, player_id, site_id, request_id, session_started_at, status, created_at, note)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        reserved_id,
+                        "mine_finish",
+                        key_hash,
+                        player_id,
+                        site_id,
+                        request_id,
+                        session_started_at,
+                        "IN_PROGRESS",
+                        now,
+                        "reserved before /api/mine/finish reached chain/reward code",
+                    ),
+                )
+                conn.execute("COMMIT")
+            except sqlite3.IntegrityError:
+                conn.execute("ROLLBACK")
+                return _qc_idem_block_response_v1(player_id, site_id, request_id, key_hash)
+        except Exception:
+            try:
+                conn.execute("ROLLBACK")
+            except Exception:
+                pass
+            raise
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    response = await call_next(request)
+
+    if reserved_id:
+        try:
+            conn2 = _qc_idem_connect_v1()
+            _qc_idem_ensure_v1(conn2)
+            conn2.execute(
+                """
+                UPDATE action_idempotency_v1
+                SET status = ?, completed_at = ?, response_status = ?, note = ?
+                WHERE id = ?
+                """,
+                (
+                    "COMPLETED",
+                    _qc_idem_now_v1(),
+                    int(getattr(response, "status_code", 0) or 0),
+                    "endpoint completed after idempotency reservation",
+                    reserved_id,
+                ),
+            )
+            conn2.close()
+        except Exception:
+            pass
+
+    return response
+
+
+@app.get("/api/security/idempotency/status")
+def _qc_idempotency_status_v1(limit: int = 10):
+    import sqlite3
+
+    conn = _qc_idem_connect_v1()
+    conn.row_factory = sqlite3.Row
+    _qc_idem_ensure_v1(conn)
+
+    rows = [
+        dict(r)
+        for r in conn.execute(
+            """
+            SELECT id, action, player_id, site_id, request_id, session_started_at,
+                   status, created_at, completed_at, response_status, note
+            FROM action_idempotency_v1
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (max(1, min(int(limit or 10), 50)),),
+        ).fetchall()
+    ]
+
+    total = conn.execute("SELECT COUNT(*) FROM action_idempotency_v1").fetchone()[0]
+    conn.close()
+
+    return {
+        "ok": True,
+        "diagnosticVersion": "IDEMPOTENCY_REPLAY_GUARD_V1",
+        "table": "action_idempotency_v1",
+        "totalRows": total,
+        "latestRows": rows,
+        "safeBoundary": {
+            "readOnly": True,
+            "startsMining": False,
+            "changesChain": False,
+            "changesBalances": False,
+            "mints": False,
+            "changesSupply": False
+        }
+    }
+
+
+
+# TG_DEV_UI_STATIC_ROUTES_V1
+# Serve the Space Miner UI and assets from the canonical QuantumCoin repo path.
+_BASE_DIR = Path(__file__).resolve().parent
+_DEV_UI_DIR = _BASE_DIR / "dev_ui"
+_GAME_HTML = _DEV_UI_DIR / "space_miner_prototype.html"
+_ASSETS_DIR = _DEV_UI_DIR / "assets"
+
+if _ASSETS_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=str(_ASSETS_DIR)), name="space_miner_assets")
+
+if _DEV_UI_DIR.exists():
+    app.mount("/dev_ui", StaticFiles(directory=str(_DEV_UI_DIR)), name="space_miner_dev_ui")
+
+@app.get("/", include_in_schema=False)
+def space_miner_root():
+    if _GAME_HTML.exists():
+        return FileResponse(str(_GAME_HTML), media_type="text/html")
+    return HTMLResponse("<h1>Space Miner UI not found</h1>", status_code=404)
+
+@app.get("/game", include_in_schema=False)
+def space_miner_game():
+    return space_miner_root()
+
 
 # DEV CORS (en sorunsuz)
 app.add_middleware(
@@ -210,6 +1260,8 @@ class MineStartIn(BaseModel):
     playerId: str
     siteId: int = 1
     displayName: Optional[str] = None
+    initData: Optional[str] = None
+    nftSessionId: Optional[str] = None
 
 
 class MineFinishIn(BaseModel):
@@ -255,7 +1307,156 @@ class StoreBuyIn(BaseModel):
     nonce: str
 
 
+
+class TelegramIdentityVerifyIn(BaseModel):
+    # TG_WEBAPP_IDENTITY_V1
+    initData: str
+
+
 # ------------------- Helpers -------------------
+
+
+# TG_WEBAPP_IDENTITY_V1
+# Read-only Telegram WebApp initData verification helpers.
+# This does not mint, mine, transfer, or change balances.
+def _telegram_bot_token() -> str:
+    return (
+        os.getenv("TELEGRAM_BOT_TOKEN")
+        or os.getenv("QC_TELEGRAM_BOT_TOKEN")
+        or os.getenv("TELEGRAM_GAME_BOT_TOKEN")
+        or ""
+    ).strip()
+
+
+def _telegram_auth_required() -> bool:
+    raw = (
+        os.getenv("QC_TG_WEBAPP_AUTH_REQUIRED")
+        or os.getenv("TELEGRAM_WEBAPP_AUTH_REQUIRED")
+        or "0"
+    )
+    return str(raw).strip().lower() in ("1", "true", "yes", "on", "required")
+
+
+def _telegram_player_id_from_user(tg_user: dict) -> str:
+    uid = str((tg_user or {}).get("id") or "").strip()
+    if not uid:
+        return ""
+    return "tg_" + uid
+
+
+def _validate_telegram_webapp_init_data(init_data: str, max_age_sec: int = 86400) -> dict:
+    raw = (init_data or "").strip()
+    if not raw:
+        return {"ok": False, "error": "empty_initData"}
+
+    bot_token = _telegram_bot_token()
+    if not bot_token:
+        return {
+            "ok": False,
+            "error": "telegram_bot_token_not_configured",
+            "message": "Set TELEGRAM_BOT_TOKEN or QC_TELEGRAM_BOT_TOKEN before enforcing Telegram WebApp identity.",
+        }
+
+    try:
+        pairs = urllib.parse.parse_qsl(raw, keep_blank_values=True, strict_parsing=False)
+        data = dict(pairs)
+    except Exception as e:
+        return {"ok": False, "error": "initData_parse_failed", "detail": str(e)}
+
+    received_hash = (data.get("hash") or "").strip()
+    if not received_hash:
+        return {"ok": False, "error": "missing_hash"}
+
+    check_items = []
+    for key in sorted(k for k in data.keys() if k != "hash"):
+        check_items.append(f"{key}={data[key]}")
+    data_check_string = "\n".join(check_items)
+
+    secret_key = hmac.new(
+        b"WebAppData",
+        bot_token.encode("utf-8"),
+        hashlib.sha256,
+    ).digest()
+
+    computed_hash = hmac.new(
+        secret_key,
+        data_check_string.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+    if not hmac.compare_digest(computed_hash, received_hash):
+        return {"ok": False, "error": "invalid_hash"}
+
+    auth_date_raw = str(data.get("auth_date") or "0").strip()
+    try:
+        auth_date = int(auth_date_raw)
+    except Exception:
+        auth_date = 0
+
+    now_ts = _now()
+    if auth_date <= 0:
+        return {"ok": False, "error": "invalid_auth_date"}
+
+    age_sec = max(0, now_ts - auth_date)
+    if max_age_sec > 0 and age_sec > max_age_sec:
+        return {
+            "ok": False,
+            "error": "auth_date_expired",
+            "ageSec": age_sec,
+            "maxAgeSec": max_age_sec,
+        }
+
+    tg_user = {}
+    user_raw = data.get("user") or ""
+    if user_raw:
+        try:
+            tg_user = json.loads(user_raw)
+        except Exception as e:
+            return {"ok": False, "error": "user_json_parse_failed", "detail": str(e)}
+
+    player_id = _telegram_player_id_from_user(tg_user)
+
+    if not player_id:
+        return {"ok": False, "error": "telegram_user_id_missing"}
+
+    return {
+        "ok": True,
+        "playerId": player_id,
+        "telegramUser": {
+            "id": tg_user.get("id"),
+            "username": tg_user.get("username"),
+            "first_name": tg_user.get("first_name"),
+            "last_name": tg_user.get("last_name"),
+            "language_code": tg_user.get("language_code"),
+        },
+        "authDate": auth_date,
+        "ageSec": age_sec,
+        "hashOk": True,
+        "rawKeys": sorted(data.keys()),
+    }
+
+
+def _nft_verified_player_id_v1(init_data: str, claimed_player_id: str) -> str:
+    """Bind an NFT player ID to current, signed Telegram WebApp data."""
+    verified = _validate_telegram_webapp_init_data(init_data, max_age_sec=86400)
+    if not verified.get("ok"):
+        return ""
+
+    player_id = str(verified.get("playerId") or "")
+    claimed = str(claimed_player_id or "").strip()
+    if not player_id or not claimed:
+        return ""
+    if not hmac.compare_digest(player_id, claimed):
+        return ""
+
+    # The shared validator checks age; reject signatures dated in the future.
+    try:
+        auth_date = int(verified.get("authDate") or 0)
+    except (TypeError, ValueError):
+        return ""
+    if auth_date > _now() + 60:
+        return ""
+    return player_id
 
 def _touch_player(conn, pid: str, name: Optional[str]):
     ts = _now()
@@ -481,6 +1682,33 @@ def _ensure_qc_address_column(conn):
         conn.execute("ALTER TABLE players ADD COLUMN qc_address TEXT DEFAULT ''")
 
 
+
+def _ensure_unique_qc_address_index(conn):
+    # QC_ADDRESS_UNIQUE_GUARD_V1
+    # One non-empty QC address can belong to only one Telegram Game player.
+    _ensure_qc_address_column(conn)
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_players_qc_address_unique_nonempty
+        ON players(qc_address)
+        WHERE COALESCE(qc_address, '') != ''
+        """
+    )
+
+
+def _find_qc_address_owner(conn, address: str) -> str:
+    # QC_ADDRESS_UNIQUE_GUARD_V1
+    _ensure_qc_address_column(conn)
+    addr = (address or "").strip()
+    if not addr:
+        return ""
+    row = conn.execute(
+        "SELECT player_id FROM players WHERE qc_address=? LIMIT 1",
+        (addr,),
+    ).fetchone()
+    return ((row[0] if row else "") or "").strip()
+
+
 def _wallet_payload(conn, pid: str) -> Dict[str, Any]:
     totals = _get_player_totals(conn, pid)
     xpinfo = _xp_to_level(totals["xp"])
@@ -567,6 +1795,47 @@ def _ensure_withdraw_batch_tables(conn):
 QC_GAME_MINER_BLOCK_REWARD = 50.0
 QC_GAME_MINER_CLIENT_TYPE = "GAME_MINER"
 QC_GAME_MINER_REWARD_MODE = "NETWORK_BLOCK_REWARD"
+# QC_GAME_MINING_MODE_V1
+# REAL_CHAIN: dev-local real release node mining.
+# TESTNET_SIMULATED: testnet-safe game mining; does not call chain /api/mine.
+# DISABLED: mining endpoint returns a guarded disabled response.
+QC_GAME_MINING_MODE_REAL_CHAIN = "REAL_CHAIN"
+QC_GAME_MINING_MODE_TESTNET_SIMULATED = "TESTNET_SIMULATED"
+QC_GAME_MINING_MODE_DISABLED = "DISABLED"
+
+QC_GAME_MINER_TESTNET_CLIENT_TYPE = "GAME_MINER_TESTNET"
+QC_GAME_MINER_TESTNET_REWARD_MODE = "TESTNET_SIMULATED_NO_CHAIN_BLOCK"
+
+
+def _get_game_mining_mode() -> str:
+    raw = (
+        os.getenv("QC_GAME_MINING_MODE")
+        or os.getenv("TELEGRAM_GAME_MINING_MODE")
+        or QC_GAME_MINING_MODE_REAL_CHAIN
+    )
+    mode = str(raw or "").strip().upper()
+
+    if mode in ("TESTNET", "SIMULATED", "TESTNET_SIM", "TESTNET_SIMULATED"):
+        return QC_GAME_MINING_MODE_TESTNET_SIMULATED
+
+    if mode in ("OFF", "DISABLE", "DISABLED", "NONE"):
+        return QC_GAME_MINING_MODE_DISABLED
+
+    return QC_GAME_MINING_MODE_REAL_CHAIN
+
+
+def _simulated_game_mine_result(target_qc_address: str, qc_health: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "ok": True,
+        "success": True,
+        "simulated": True,
+        "mode": QC_GAME_MINING_MODE_TESTNET_SIMULATED,
+        "height": _current_chain_height_from_qc_health(qc_health),
+        "reward": QC_GAME_MINER_BLOCK_REWARD,
+        "block_hash": "",
+        "targetAddress": target_qc_address,
+        "note": "TESTNET_SIMULATED_NO_CHAIN_BLOCK: real chain /api/mine was not called.",
+    }
 
 
 def _fetch_qc_node_health_sync(timeout: float = 2.5) -> Dict[str, Any]:
@@ -782,37 +2051,11 @@ def presence_heartbeat(inp: HeartbeatIn):
 
 @app.post("/api/session/complete")
 def session_complete(inp: SessionCompleteIn):
-    with _lock:
-        conn = _db()
-        _touch_player(conn, inp.playerId, inp.displayName)
-
-        conn.execute(
-            """
-            UPDATE players
-            SET total_qc = total_qc + ?,
-                total_xp = total_xp + ?,
-                sessions = sessions + 1
-            WHERE player_id = ?
-            """,
-            (float(inp.qcEarned or 0), float(inp.xpEarned or 0), inp.playerId),
-        )
-
-        conn.commit()
-
-        online = _online_now(conn)
-        total = _total_players(conn)
-        rank = _rank_for(conn, inp.playerId)
-        my_total = _get_player_totals(conn, inp.playerId)["qc"]
-        conn.close()
-
+    # Legacy client-reported completion is not verified game activity.
     return {
-        "ok": True,
-        "totalPlayers": total,
-        "onlineNow": online,
-        "yourRank": rank,
-        "yourTotalEarnedQC": my_total,
+        "ok": False,
+        "error": "unverified_session_complete_disabled",
     }
-
 
 @app.post("/api/social/claim")
 def social_claim(inp: SocialClaimIn):
@@ -1100,13 +2343,187 @@ def save_settings(inp: SettingsIn):
     return {"ok": True, "playerId": inp.playerId, "lang": row[0], "theme": row[1]}
 
 
+
+
+# TG_WEBAPP_IDENTITY_V1
+@app.get("/api/telegram/identity/status")
+def telegram_identity_status():
+    token_configured = bool(_telegram_bot_token())
+    auth_required = bool(_telegram_auth_required())
+    return {
+        "ok": True,
+        "diagnosticVersion": "TG_WEBAPP_IDENTITY_V1",
+        "tokenConfigured": token_configured,
+        "authRequired": auth_required,
+        "devFallbackAllowed": not auth_required,
+        "playerIdSource": "telegram_initData_when_verified",
+        "safeBoundary": {
+            "readOnly": True,
+            "changesDb": False,
+            "changesBalances": False,
+            "startsMining": False,
+            "changesChain": False,
+        },
+    }
+
+
+@app.post("/api/telegram/identity/verify")
+def telegram_identity_verify(inp: TelegramIdentityVerifyIn):
+    result = _validate_telegram_webapp_init_data(inp.initData)
+    return {
+        "ok": bool(result.get("ok")),
+        "diagnosticVersion": "TG_WEBAPP_IDENTITY_V1",
+        **result,
+        "safeBoundary": {
+            "readOnly": True,
+            "changesDb": False,
+            "changesBalances": False,
+            "startsMining": False,
+            "changesChain": False,
+        },
+    }
+
+
+# QC_GAME_CHAIN_BRIDGE_STATUS_V1
+# Read-only bridge diagnostics for Telegram Game -> QuantumCoin node.
+# This endpoint does not mine, transfer, mint, or change balances.
+@app.get("/api/bridge/status")
+async def bridge_status(playerId: str = "dev_user"):
+    player_id = (playerId or "").strip() or "dev_user"
+
+    try:
+        from telegram_game.config import get_api_base
+        qc_api_base = get_api_base().rstrip("/")
+    except Exception as e:
+        qc_api_base = ""
+        cfg_error = str(e)
+    else:
+        cfg_error = ""
+
+    with _lock:
+        conn = _db()
+        _touch_player(conn, player_id, None)
+        _ensure_qc_address_column(conn)
+        target_qc_address = _get_player_qc_address(conn, player_id)
+        conn.commit()
+        conn.close()
+
+    qc_health = _fetch_qc_node_health_sync()
+    real_qc = {
+        "ok": False,
+        "linked": bool(target_qc_address),
+        "error": "qc_address_not_linked" if not target_qc_address else "",
+    }
+
+    if target_qc_address:
+        try:
+            real_qc = await qc_fetch_address_balance(target_qc_address)
+        except Exception as e:
+            real_qc = {
+                "ok": False,
+                "linked": True,
+                "address": target_qc_address,
+                "error": "qc_balance_fetch_failed",
+                "detail": str(e),
+            }
+
+    return {
+        "ok": bool(qc_health.get("ok")),
+        "mode": "QC_REAL_GAME_MINE_BRIDGE_V1",
+        "gameMiningMode": _get_game_mining_mode(),
+        "diagnosticVersion": "QC_GAME_CHAIN_BRIDGE_STATUS_V1",
+        "playerId": player_id,
+        "qcApiBase": qc_api_base,
+        "configError": cfg_error,
+        "qcApiHealth": qc_health,
+        "linked": bool(target_qc_address),
+        "targetQcAddress": target_qc_address,
+        "realQc": real_qc,
+        "safeBoundary": {
+            "readOnly": True,
+            "requiresLinkedAddress": True,
+            "minesToLinkedAddressOnly": True,
+            "changesBalances": False,
+            "changesChain": False,
+            "startsMining": False,
+            "frontendUsesSameOriginGameApi": True
+        }
+    }
+
+# QC_GAME_MINING_MODE_STATUS_V1
+@app.get("/api/mining/mode")
+def mining_mode_status():
+    mode = _get_game_mining_mode()
+    return {
+        "ok": True,
+        "diagnosticVersion": "QC_GAME_MINING_MODE_STATUS_V1",
+        "miningMode": mode,
+        "realChainMining": mode == QC_GAME_MINING_MODE_REAL_CHAIN,
+        "testnetSimulated": mode == QC_GAME_MINING_MODE_TESTNET_SIMULATED,
+        "disabled": mode == QC_GAME_MINING_MODE_DISABLED,
+        "safeBoundary": {
+            "readOnly": True,
+            "startsMining": False,
+            "changesChain": False,
+            "changesBalances": False,
+            "testnetModeDoesNotCallChainMine": True,
+        },
+    }
 # ------------------- Mining dev endpoints -------------------
+
+def _nft_record_game_start_action_v1(conn, player_id, init_data, session_id):
+    verified = _nft_verified_player_id_v1(init_data, player_id)
+    if not verified or not session_id:
+        return False
+
+    _ensure_monthly_nft_game_session_tables_v1(conn)
+    ts = _now()
+    active = conn.execute(
+        "SELECT 1 FROM monthly_nft_game_sessions "
+        "WHERE session_id=? AND user_id=? AND status='STARTED' "
+        "AND started_at<=? AND expires_at>=?",
+        (session_id, verified, ts, ts),
+    ).fetchone()
+    if not active:
+        return False
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS monthly_nft_game_actions (
+            session_id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            action_type TEXT NOT NULL,
+            recorded_at INTEGER NOT NULL
+        )
+    """)
+    inserted = conn.execute(
+        "INSERT OR IGNORE INTO monthly_nft_game_actions "
+        "(session_id, user_id, action_type, recorded_at) "
+        "VALUES(?,?,'MINE_START',?)",
+        (session_id, verified, ts),
+    ).rowcount
+    return inserted == 1
+
 
 @app.post("/api/mine/start")
 def mine_start(inp: MineStartIn):
     with _lock:
         conn = _db()
         _touch_player(conn, inp.playerId, inp.displayName)
+        _ensure_qc_address_column(conn)
+
+        # QC_USER_LOCK_MINE_START_REQUIRES_LINKED_ADDRESS_V1
+        # A player without a linked QC address cannot even open a mining session.
+        target_qc_address = _get_player_qc_address(conn, inp.playerId)
+        if not target_qc_address:
+            conn.execute("DELETE FROM mining_sessions WHERE player_id=?", (inp.playerId,))
+            conn.commit()
+            conn.close()
+            return {
+                "ok": False,
+                "error": "qc_address_not_linked",
+                "message": "Link or create a QC wallet address before starting game mining.",
+                "playerId": inp.playerId,
+            }
 
         conn.execute(
             """
@@ -1119,6 +2536,15 @@ def mine_start(inp: MineStartIn):
             (inp.playerId, int(inp.siteId), _now()),
         )
         conn.commit()
+        if inp.initData and inp.nftSessionId:
+            try:
+                _nft_record_game_start_action_v1(
+                    conn, inp.playerId, inp.initData, inp.nftSessionId
+                )
+                conn.commit()
+            except sqlite3.Error:
+                # NFT evidence fails closed without undoing the accepted game start.
+                conn.rollback()
         payload = _wallet_payload(conn, inp.playerId)
         conn.close()
 
@@ -1142,6 +2568,10 @@ def mine_finish(inp: MineFinishIn):
         target_qc_address = _get_player_qc_address(conn, inp.playerId)
 
         if not target_qc_address:
+            # QC_USER_LOCK_MINE_FINISH_CLEARS_UNLINKED_SESSION_V1
+            # Defensive cleanup: no stale mining session may remain for an unlinked player.
+            conn.execute("DELETE FROM mining_sessions WHERE player_id=?", (inp.playerId,))
+            conn.commit()
             conn.close()
             return {
                 "ok": False,
@@ -1150,29 +2580,48 @@ def mine_finish(inp: MineFinishIn):
                 "playerId": inp.playerId,
             }
 
-        # QC_REAL_GAME_MINE_BRIDGE_V1
-        # Telegram Game artık oyun ödülünü sahte yazmıyor:
-        # bağlı QC adresi ile gerçek QuantumCoin node /api/mine çağrılır.
-        try:
-            qc_mine_result = asyncio.run(qc_fetch_mine_block(target_qc_address))
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            try:
-                qc_mine_result = loop.run_until_complete(qc_fetch_mine_block(target_qc_address))
-            finally:
-                loop.close()
+        mining_mode = _get_game_mining_mode()
 
-        if not bool(qc_mine_result.get("success") or qc_mine_result.get("ok")):
+        if mining_mode == QC_GAME_MINING_MODE_DISABLED:
             conn.close()
             return {
                 "ok": False,
-                "error": "qc_real_mine_failed",
+                "error": "game_mining_disabled",
                 "playerId": inp.playerId,
                 "targetQcAddress": target_qc_address,
-                "qcMineResult": qc_mine_result,
+                "miningMode": mining_mode,
+                "message": "Telegram Game mining is disabled by server policy.",
             }
 
-        qc_health = _fetch_qc_node_health_sync()
+        # QC_REAL_GAME_MINE_BRIDGE_V1 + QC_GAME_MINING_MODE_V1
+        # REAL_CHAIN calls QuantumCoin node /api/mine.
+        # TESTNET_SIMULATED does not call chain /api/mine.
+        if mining_mode == QC_GAME_MINING_MODE_TESTNET_SIMULATED:
+            qc_health = _fetch_qc_node_health_sync()
+            qc_mine_result = _simulated_game_mine_result(target_qc_address, qc_health)
+        else:
+            try:
+                qc_mine_result = asyncio.run(qc_fetch_mine_block(target_qc_address))
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                try:
+                    qc_mine_result = loop.run_until_complete(qc_fetch_mine_block(target_qc_address))
+                finally:
+                    loop.close()
+
+            if not bool(qc_mine_result.get("success") or qc_mine_result.get("ok")):
+                conn.close()
+                return {
+                    "ok": False,
+                    "error": "qc_real_mine_failed",
+                    "playerId": inp.playerId,
+                    "targetQcAddress": target_qc_address,
+                    "miningMode": mining_mode,
+                    "qcMineResult": qc_mine_result,
+                }
+
+            qc_health = _fetch_qc_node_health_sync()
+
         chain_height = int(qc_mine_result.get("height") or _current_chain_height_from_qc_health(qc_health) or 0)
         block_hash = str(qc_mine_result.get("block_hash") or qc_mine_result.get("blockHash") or "")
         qc = float(qc_mine_result.get("reward") or QC_GAME_MINER_BLOCK_REWARD)
@@ -1183,9 +2632,14 @@ def mine_finish(inp: MineFinishIn):
         else:
             xp = float(inp.xpEarned or 0.0)
 
-        block_reward = QC_GAME_MINER_BLOCK_REWARD
-        mining_client_type = QC_GAME_MINER_CLIENT_TYPE
-        network_reward_mode = QC_GAME_MINER_REWARD_MODE
+        if mining_mode == QC_GAME_MINING_MODE_TESTNET_SIMULATED:
+            block_reward = 0.0
+            mining_client_type = QC_GAME_MINER_TESTNET_CLIENT_TYPE
+            network_reward_mode = QC_GAME_MINER_TESTNET_REWARD_MODE
+        else:
+            block_reward = QC_GAME_MINER_BLOCK_REWARD
+            mining_client_type = QC_GAME_MINER_CLIENT_TYPE
+            network_reward_mode = QC_GAME_MINER_REWARD_MODE
 
         conn.execute(
             """
@@ -1209,7 +2663,9 @@ def mine_finish(inp: MineFinishIn):
             meta={
                 "durationSec": duration,
                 "startedAt": started_at,
-                "mode": "GAME_MINER_NETWORK_REWARD",
+                "mode": "GAME_MINER_NETWORK_REWARD" if mining_mode == QC_GAME_MINING_MODE_REAL_CHAIN else "GAME_MINER_TESTNET_SIMULATED",
+                "miningMode": mining_mode,
+                "simulated": bool(qc_mine_result.get("simulated")),
                 "qcNodeHealth": qc_health,
                 "qcMineResult": qc_mine_result,
                 "blockHash": block_hash,
@@ -1221,6 +2677,19 @@ def mine_finish(inp: MineFinishIn):
             network_reward_mode=network_reward_mode,
         )
 
+        if mining_mode == QC_GAME_MINING_MODE_TESTNET_SIMULATED:
+            conn.execute(
+                """
+                UPDATE reward_records
+                SET settlement_status='TESTNET_SIMULATED',
+                    settlement_note='TESTNET_SIMULATED_NO_CHAIN_BLOCK: no real chain settlement; /api/mine was not called.',
+                    block_reward=0,
+                    mining_client_type=?,
+                    network_reward_mode=?
+                WHERE reward_id=?
+                """,
+                (QC_GAME_MINER_TESTNET_CLIENT_TYPE, QC_GAME_MINER_TESTNET_REWARD_MODE, reward_id),
+            )
         conn.execute("DELETE FROM mining_sessions WHERE player_id=?", (inp.playerId,))
 
         settlement_row = conn.execute(
@@ -1259,6 +2728,7 @@ def mine_finish(inp: MineFinishIn):
         "blockHash": block_hash,
         "miningClientType": mining_client_type,
         "networkRewardMode": network_reward_mode,
+        "miningMode": mining_mode,
     }
 
 
@@ -1864,6 +3334,7 @@ class WalletSendQCIn(BaseModel):
 
 @app.post("/api/wallet/link-qc-address")
 async def link_qc_address(inp: LinkQCAddressIn):
+    # QC_ADDRESS_UNIQUE_GUARD_V1
     player_id = (inp.playerId or "").strip()
     address = (inp.address or "").strip()
 
@@ -1889,6 +3360,20 @@ async def link_qc_address(inp: LinkQCAddressIn):
         conn = _db()
         _touch_player(conn, player_id, None)
         _ensure_qc_address_column(conn)
+        _ensure_unique_qc_address_index(conn)
+
+        existing_owner = _find_qc_address_owner(conn, address)
+        if existing_owner and existing_owner != player_id:
+            conn.close()
+            return {
+                "ok": False,
+                "playerId": player_id,
+                "address": address,
+                "ownerPlayerId": existing_owner,
+                "error": "qc_address_already_linked",
+                "message": "This QC address is already linked to another Telegram Game player.",
+            }
+
         conn.execute(
             "UPDATE players SET qc_address=?, last_seen=? WHERE player_id=?",
             (address, _now(), player_id),
@@ -1946,18 +3431,6 @@ async def wallet_real_balance(playerId: str):
 # QC_WALLET_SEND_QC_V1
 @app.post("/api/wallet/send-qc")
 async def wallet_send_qc(inp: WalletSendQCIn):
-
-    # PUBLIC_GIT_SAFE_PRIVHEX_API_DISABLED_V1
-    # Private-key based DEV send is disabled by default in public GitHub builds.
-    # To use locally during controlled development only, set:
-    # QC_ENABLE_DEV_PRIVHEX_SEND=1
-    if os.getenv("QC_ENABLE_DEV_PRIVHEX_SEND", "").strip().lower() not in ("1", "true", "yes"):
-        return {
-            "ok": False,
-            "error": "disabled_public_build",
-            "message": "Private-key based DEV send is disabled in the public GitHub build. Use secure wallet signing in final builds."
-        }
-
     player_id = (inp.playerId or "").strip()
     to_address = (inp.toAddress or "").strip()
     amount_str = str(inp.amount or "").strip()
@@ -2956,7 +4429,7 @@ def qc_withdraw_mock_confirm(inp: QCWithdrawBatchIn):
 
 # QC_REAL_PAYOUT_TXSTATUS_READY_V1
 async def qc_check_tx_status_endpoint_ready():
-    base = (os.environ.get("QC_API_BASE") or "http://127.0.0.1:8082").rstrip("/")
+    base = (__import__("telegram_game.config", fromlist=["get_api_base"]).get_api_base()).rstrip("/")
     url = base + "/api/tx/status?id=__precheck__"
 
     try:
@@ -2986,12 +4459,19 @@ async def qc_check_tx_status_endpoint_ready():
 
         data = _json.loads(raw)
 
+        # QC_REAL_PAYOUT_TXSTATUS_READY_V2
+        # Core /api/tx/status endpoint readiness means:
+        # - JSON parsed
+        # - ok=true
+        # - id/txid echoes the requested precheck id
+        # - mempool/block status fields exist
+        # confirmedHeight is accepted; a real tx is not required for endpoint readiness.
         ready = (
             data.get("ok") is True
-            and data.get("id") == "__precheck__"
+            and (data.get("id") == "__precheck__" or data.get("txid") == "__precheck__")
             and "inBlock" in data
             and "inMempool" in data
-            and "height" in data
+            and ("confirmedHeight" in data or "height" in data)
         )
 
         return {
@@ -3838,3 +5318,1268 @@ def watch_claim(inp: WatchClaimIn):
         "message": "DEV TEST ONLY: +1 TGWT added as pending. Final Watch & Earn will require verified Google Rewarded Ads completion before TGWT reward."
     }
 
+
+# TG_MONTHLY_NFT_CANDIDATE_POOL_V1
+# Advisory-only monthly rare NFT candidate pool.
+# This does not mint NFT, does not change QC/TGWT balances, and does not write chain metadata.
+NFT_MONTHLY_POLICY_VERSION = "TG_MONTHLY_NFT_CANDIDATE_POOL_V1"
+NFT_DEFAULT_TYPE = "rare"
+
+
+class MonthlyNFTSessionStartIn(BaseModel):
+    playerId: str
+    initData: str
+
+
+def _ensure_monthly_nft_game_session_tables_v1(conn):
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS monthly_nft_game_sessions (
+            session_id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            started_at INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL,
+            completed_at INTEGER,
+            status TEXT NOT NULL CHECK(status IN ('STARTED', 'COMPLETED', 'EXPIRED'))
+        )
+    """)
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_monthly_nft_one_active_session_v1 "
+        "ON monthly_nft_game_sessions(user_id) WHERE status='STARTED'"
+    )
+
+
+@app.post("/api/v1/nft/monthly/session/start")
+def nft_monthly_session_start(inp: MonthlyNFTSessionStartIn):
+    user_id = (inp.playerId or "").strip()
+    verified = _nft_verified_player_id_v1(inp.initData, user_id)
+    if not verified:
+        return {"ok": False, "error": "telegram_identity_required"}
+
+    ts = _now()
+    session_id = "nfts_" + secrets.token_hex(24)
+    with _lock:
+        conn = _db()
+        _ensure_monthly_nft_game_session_tables_v1(conn)
+        conn.execute(
+            "UPDATE monthly_nft_game_sessions SET status='EXPIRED' "
+            "WHERE user_id=? AND status='STARTED' AND expires_at<=?",
+            (verified, ts),
+        )
+        active = conn.execute(
+            "SELECT session_id FROM monthly_nft_game_sessions "
+            "WHERE user_id=? AND status='STARTED' LIMIT 1",
+            (verified,),
+        ).fetchone()
+        if active:
+            conn.commit()
+            conn.close()
+            return {
+                "ok": True,
+                "sessionId": active[0],
+                "status": "STARTED",
+                "reused": True,
+            }
+
+        try:
+            conn.execute(
+                "INSERT INTO monthly_nft_game_sessions"
+                "(session_id, user_id, started_at, expires_at, completed_at, status) "
+                "VALUES(?,?,?,?,NULL,'STARTED')",
+                (session_id, verified, ts, ts + 3600),
+            )
+            conn.commit()
+        except sqlite3.IntegrityError:
+            conn.rollback()
+            conn.close()
+            return {"ok": False, "error": "session_already_active"}
+        conn.close()
+
+    return {"ok": True, "sessionId": session_id, "status": "STARTED"}
+
+
+class MonthlyNFTSessionCompleteIn(BaseModel):
+    playerId: str
+    initData: str
+    sessionId: str
+
+
+def _ensure_monthly_nft_verified_game_sessions_v1(conn):
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS monthly_nft_verified_game_sessions (
+            session_id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            period TEXT NOT NULL,
+            completed_at INTEGER NOT NULL,
+            activity_verified INTEGER NOT NULL DEFAULT 0
+                CHECK(activity_verified IN (0, 1))
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_monthly_nft_verified_user_period_v1 "
+        "ON monthly_nft_verified_game_sessions(user_id, period, completed_at)"
+    )
+
+
+@app.post("/api/v1/nft/monthly/session/complete")
+def nft_monthly_session_complete(inp: MonthlyNFTSessionCompleteIn):
+    user_id = (inp.playerId or "").strip()
+    session_id = (inp.sessionId or "").strip()
+    verified = _nft_verified_player_id_v1(inp.initData, user_id)
+    if not verified or not session_id:
+        return {"ok": False, "error": "telegram_identity_or_session_required"}
+
+    ts = _now()
+    with _lock:
+        conn = _db()
+        try:
+            _ensure_monthly_nft_game_session_tables_v1(conn)
+            row = conn.execute(
+                "SELECT user_id, started_at, expires_at, status "
+                "FROM monthly_nft_game_sessions WHERE session_id=?",
+                (session_id,),
+            ).fetchone()
+            if not row or row[0] != verified or row[3] != "STARTED":
+                conn.close()
+                return {"ok": False, "error": "session_not_active"}
+
+            started_at, expires_at = int(row[1]), int(row[2])
+            if ts < started_at + 60:
+                conn.close()
+                return {"ok": False, "error": "session_too_short"}
+            if ts > expires_at:
+                conn.close()
+                return {"ok": False, "error": "session_expired"}
+
+            has_actions = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' "
+                "AND name='monthly_nft_game_actions'"
+            ).fetchone()
+            action = None
+            if has_actions:
+                action = conn.execute(
+                    "SELECT 1 FROM monthly_nft_game_actions "
+                    "WHERE session_id=? AND user_id=? AND action_type='MINE_START' "
+                    "AND recorded_at>=? AND recorded_at<=?",
+                    (session_id, verified, started_at, ts),
+                ).fetchone()
+            if not action:
+                conn.close()
+                return {"ok": False, "error": "verified_game_action_required"}
+
+            changed = conn.execute(
+                "UPDATE monthly_nft_game_sessions "
+                "SET status='COMPLETED', completed_at=? "
+                "WHERE session_id=? AND user_id=? AND status='STARTED'",
+                (ts, session_id, verified),
+            ).rowcount
+            if changed != 1:
+                conn.rollback()
+                conn.close()
+                return {"ok": False, "error": "session_already_completed"}
+
+            _ensure_monthly_nft_verified_game_sessions_v1(conn)
+            period = _nft_month_key(ts)
+            conn.execute(
+                "INSERT INTO monthly_nft_verified_game_sessions "
+                "(session_id, user_id, period, completed_at, activity_verified) "
+                "VALUES(?,?,?,?,1)",
+                (session_id, verified, period, ts),
+            )
+            conn.commit()
+            conn.close()
+        except sqlite3.Error:
+            conn.rollback()
+            conn.close()
+            return {"ok": False, "error": "session_store_unavailable"}
+
+    return {
+        "ok": True,
+        "sessionId": session_id,
+        "period": period,
+        "status": "COMPLETED",
+        "activityVerified": True,
+    }
+
+
+class MonthlyNFTCandidateIn(BaseModel):
+    userId: str
+    source: str = "manual"
+    activity: Optional[Dict[str, Any]] = None
+    period: Optional[str] = None
+
+
+class MonthlyNFTAdminReviewIn(BaseModel):
+    candidateId: str
+    action: str
+    note: Optional[str] = None
+    reviewer: Optional[str] = "admin"
+
+
+def _nft_month_key(ts: Optional[int] = None) -> str:
+    import datetime
+    if ts is None:
+        ts = _now()
+    dt = datetime.datetime.utcfromtimestamp(int(ts))
+    return f"{dt.year:04d}-{dt.month:02d}"
+
+
+def _nft_verified_mainnet_activation_at_v1():
+    # Compatibility name: this is Telegram Game activation, not a mainnet date.
+    from telegram_game.utils.nft_program_bridge_v1 import fetch_verified_nft_game_program_v1
+
+    program = fetch_verified_nft_game_program_v1()
+    return program["gameActivatedAt"] if program is not None else None
+
+
+def _monthly_nft_award_periods_from_activation_v1(activation_at):
+    from telegram_game.utils.nft_program_bridge_v1 import monthly_nft_periods_from_game_activation_v1
+
+    return monthly_nft_periods_from_game_activation_v1(activation_at)
+
+
+def _ensure_monthly_nft_tables(conn):
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS monthly_nft_candidates (
+            candidate_id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            period TEXT NOT NULL,
+            nft_type TEXT NOT NULL DEFAULT 'rare',
+            source TEXT NOT NULL DEFAULT '',
+            activity_json TEXT NOT NULL DEFAULT '{}',
+            score REAL NOT NULL DEFAULT 0,
+            ai_review_status TEXT NOT NULL DEFAULT 'PENDING_AI_REVIEW',
+            ai_risk_level TEXT NOT NULL DEFAULT 'UNKNOWN',
+            admin_status TEXT NOT NULL DEFAULT 'PENDING_ADMIN_REVIEW',
+            admin_note TEXT NOT NULL DEFAULT '',
+            winner_status TEXT NOT NULL DEFAULT 'NOT_SELECTED',
+            minted_status TEXT NOT NULL DEFAULT 'NOT_MINTED',
+            policy_version TEXT NOT NULL DEFAULT 'TG_MONTHLY_NFT_CANDIDATE_POOL_V1',
+            created_at INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(user_id, period)
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_monthly_nft_period_status ON monthly_nft_candidates(period, admin_status, winner_status)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_monthly_nft_user_period ON monthly_nft_candidates(user_id, period)"
+    )
+
+
+def _monthly_nft_candidate_row_to_dict(row):
+    if not row:
+        return None
+    activity = {}
+    try:
+        activity = json.loads(row[5] or "{}")
+    except Exception:
+        activity = {}
+    return {
+        "candidateId": row[0],
+        "userId": row[1],
+        "period": row[2],
+        "nftType": row[3],
+        "source": row[4],
+        "activity": activity,
+        "score": float(row[6] or 0),
+        "aiReviewStatus": row[7],
+        "aiRiskLevel": row[8],
+        "adminStatus": row[9],
+        "adminNote": row[10],
+        "winnerStatus": row[11],
+        "mintedStatus": row[12],
+        "policyVersion": row[13],
+        "createdAt": int(row[14] or 0),
+        "updatedAt": int(row[15] or 0),
+    }
+
+
+
+# TG_MONTHLY_NFT_CANDIDATE_PLAYER_TOUCH_FIX_V1
+def _nft_safe_ensure_player(conn, user_id: str):
+    user_id = (user_id or "").strip()
+    if not user_id:
+        return None
+
+    # Existing project helper. Keeps last_seen fresh.
+    try:
+        return _touch_player(conn, user_id, "")
+    except TypeError:
+        try:
+            return _touch_player(conn, user_id)
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    # Safe fallback: create minimal player row without changing balances.
+    ts = _now()
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO players(player_id, display_name, last_seen)
+        VALUES(?,?,?)
+        """,
+        (user_id, user_id, ts),
+    )
+    conn.execute("UPDATE players SET last_seen=? WHERE player_id=?", (ts, user_id))
+    return None
+
+
+def _monthly_nft_verified_session_count_v1(conn, user_id: str, period: str) -> int:
+    """Read only server-recorded evidence; no client activity or player counter."""
+    import datetime
+
+    try:
+        month_start = datetime.datetime.strptime(period, "%Y-%m").replace(
+            tzinfo=datetime.timezone.utc
+        )
+        if month_start.strftime("%Y-%m") != period:
+            return 0
+        if month_start.month == 12:
+            month_end = month_start.replace(year=month_start.year + 1, month=1)
+        else:
+            month_end = month_start.replace(month=month_start.month + 1)
+
+        exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='monthly_nft_verified_game_sessions'"
+        ).fetchone()
+        if not exists:
+            return 0
+
+        row = conn.execute(
+            "SELECT COUNT(*) FROM monthly_nft_verified_game_sessions "
+            "WHERE user_id=? AND period=? AND activity_verified=1 "
+            "AND completed_at>=? AND completed_at<? AND completed_at<=?",
+            (user_id, period, int(month_start.timestamp()), int(month_end.timestamp()), _now()),
+        ).fetchone()
+        return int(row[0]) if row else 0
+    except (ValueError, OverflowError, sqlite3.DatabaseError):
+        return 0
+
+def _monthly_nft_candidate_select_sql():
+    return """
+        SELECT candidate_id, user_id, period, nft_type, source, activity_json,
+               score, ai_review_status, ai_risk_level, admin_status, admin_note,
+               winner_status, minted_status, policy_version, created_at, updated_at
+        FROM monthly_nft_candidates
+    """
+
+
+@app.post("/api/v1/nft/monthly/candidate")
+def nft_monthly_candidate_create(inp: MonthlyNFTCandidateIn):
+    user_id = (inp.userId or "").strip()
+    if not user_id:
+        return {"ok": False, "error": "missing_user"}
+
+    period = (inp.period or "").strip() or _nft_month_key()
+    if period not in _monthly_nft_award_periods_from_activation_v1(
+        _nft_verified_mainnet_activation_at_v1()
+    ):
+        return {
+            "ok": False,
+            "error": "monthly_nft_program_not_active_or_period_outside",
+            "period": period,
+        }
+    source = (inp.source or "manual").strip()[:64]
+    activity = inp.activity or {}
+    ts = _now()
+    candidate_id = "nftc_" + secrets.token_hex(16)
+
+    with _lock:
+        conn = _db()
+        _ensure_monthly_nft_tables(conn)
+        verified_sessions = _monthly_nft_verified_session_count_v1(
+            conn, user_id, period
+        )
+        if verified_sessions < 1:
+            conn.close()
+            return {
+                "ok": False,
+                "error": "verified_game_session_required",
+                "period": period,
+            }
+        source = "server_verified_game_session"
+        activity = {"verifiedCompletedGameSessions": verified_sessions}
+        _nft_safe_ensure_player(conn, user_id)
+
+        existing = conn.execute(
+            _monthly_nft_candidate_select_sql() + " WHERE user_id=? AND period=? LIMIT 1",
+            (user_id, period),
+        ).fetchone()
+
+        if existing:
+            conn.close()
+            return {
+                "ok": True,
+                "alreadyExists": True,
+                "candidate": _monthly_nft_candidate_row_to_dict(existing),
+                "policy": {
+                    "period": "monthly",
+                    "maxAwardsPerMonth": 1,
+                    "requiresAIReview": True,
+                    "requiresAdmin": True,
+                    "minting": "disabled_until_admin_approved_policy_path",
+                },
+            }
+
+        conn.execute(
+            """
+            INSERT INTO monthly_nft_candidates(
+                candidate_id, user_id, period, nft_type, source, activity_json,
+                score, ai_review_status, ai_risk_level, admin_status, admin_note,
+                winner_status, minted_status, policy_version, created_at, updated_at
+            )
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                candidate_id,
+                user_id,
+                period,
+                NFT_DEFAULT_TYPE,
+                source,
+                json.dumps(activity, ensure_ascii=False),
+                0.0,
+                "PENDING_AI_REVIEW",
+                "UNKNOWN",
+                "PENDING_ADMIN_REVIEW",
+                "",
+                "NOT_SELECTED",
+                "NOT_MINTED",
+                NFT_MONTHLY_POLICY_VERSION,
+                ts,
+                ts,
+            ),
+        )
+        row = conn.execute(
+            _monthly_nft_candidate_select_sql() + " WHERE candidate_id=?",
+            (candidate_id,),
+        ).fetchone()
+        conn.commit()
+        conn.close()
+
+    return {
+        "ok": True,
+        "candidate": _monthly_nft_candidate_row_to_dict(row),
+        "policy": {
+            "period": "monthly",
+            "maxAwardsPerMonth": 1,
+            "requiresAIReview": True,
+            "requiresAdmin": True,
+            "minting": "disabled_until_admin_approved_policy_path",
+        },
+    }
+
+
+@app.get("/api/v1/nft/monthly/status")
+def nft_monthly_candidate_status(userId: str, period: Optional[str] = None):
+    user_id = (userId or "").strip()
+    if not user_id:
+        return {"ok": False, "error": "missing_user"}
+
+    pkey = (period or "").strip() or _nft_month_key()
+
+    with _lock:
+        conn = _db()
+        _ensure_monthly_nft_tables(conn)
+        row = conn.execute(
+            _monthly_nft_candidate_select_sql() + " WHERE user_id=? AND period=? LIMIT 1",
+            (user_id, pkey),
+        ).fetchone()
+        conn.close()
+
+    return {
+        "ok": True,
+        "userId": user_id,
+        "period": pkey,
+        "candidate": _monthly_nft_candidate_row_to_dict(row),
+        "policyVersion": NFT_MONTHLY_POLICY_VERSION,
+    }
+
+
+@app.get("/api/admin/nft/monthly/candidates")
+def admin_nft_monthly_candidates(period: Optional[str] = None, limit: int = 100):
+    pkey = (period or "").strip() or _nft_month_key()
+    limit = max(1, min(int(limit or 100), 500))
+
+    with _lock:
+        conn = _db()
+        _ensure_monthly_nft_tables(conn)
+        rows = conn.execute(
+            _monthly_nft_candidate_select_sql()
+            + " WHERE period=? ORDER BY created_at DESC LIMIT ?",
+            (pkey, limit),
+        ).fetchall()
+        conn.close()
+
+    return {
+        "ok": True,
+        "period": pkey,
+        "count": len(rows),
+        "candidates": [_monthly_nft_candidate_row_to_dict(r) for r in rows],
+        "policy": {
+            "maxAwardsPerMonth": 1,
+            "requiresAIReview": True,
+            "requiresAdmin": True,
+            "minting": "not_performed_by_this_endpoint",
+        },
+    }
+
+
+# TG_MONTHLY_NFT_ADMIN_APPROVAL_V1
+# Admin approval only: APPROVE / REJECT / HOLD.
+# Safe boundary: no NFT mint, no winner selection, no chain metadata write, no QC/TGWT balance change.
+@app.post("/api/admin/nft/monthly/review")
+def admin_nft_monthly_review(inp: MonthlyNFTAdminReviewIn):
+    cid = (inp.candidateId or "").strip()
+    action = (inp.action or "").strip().upper()
+    note = (inp.note or "").strip()
+    reviewer = (inp.reviewer or "admin").strip()
+
+    if not cid:
+        return {"ok": False, "error": "missing_candidate_id"}
+
+    allowed = {
+        "APPROVE": "APPROVED_BY_ADMIN",
+        "REJECT": "REJECTED_BY_ADMIN",
+        "NEEDS_AI_REVIEW": "PENDING_AI_REVIEW",
+        "HOLD": "ON_HOLD",
+    }
+
+    if action not in allowed:
+        return {"ok": False, "error": "invalid_action", "allowed": list(allowed.keys())}
+
+    ts = _now()
+    admin_status = allowed[action]
+    admin_note = f"{reviewer}: {note}"[:512]
+
+    with _lock:
+        conn = _db()
+        _ensure_monthly_nft_tables(conn)
+        row = conn.execute(
+            _monthly_nft_candidate_select_sql() + " WHERE candidate_id=? LIMIT 1",
+            (cid,),
+        ).fetchone()
+        if not row:
+            conn.close()
+            return {"ok": False, "error": "candidate_not_found"}
+
+        winner_status = row[11]
+        minted_status = row[12]
+        if winner_status == "SELECTED_MONTHLY_WINNER" or minted_status != "NOT_MINTED":
+            conn.close()
+            return {"ok": False, "error": "candidate_selection_locked"}
+
+        # Safe boundary: approval does not select winner and does not mint.
+        if action == "APPROVE":
+            winner_status = "APPROVED_CANDIDATE_NOT_WINNER"
+            minted_status = "NOT_MINTED"
+        elif action == "REJECT":
+            winner_status = "NOT_SELECTED"
+            minted_status = "NOT_MINTED"
+
+        changed = conn.execute(
+            """
+            UPDATE monthly_nft_candidates
+            SET admin_status=?, admin_note=?, winner_status=?, minted_status=?, updated_at=?
+            WHERE candidate_id=? AND winner_status!='SELECTED_MONTHLY_WINNER'
+              AND minted_status='NOT_MINTED'
+            """,
+            (admin_status, admin_note, winner_status, minted_status, ts, cid),
+        ).rowcount
+        if changed != 1:
+            conn.rollback()
+            conn.close()
+            return {"ok": False, "error": "candidate_selection_locked"}
+        updated = conn.execute(
+            _monthly_nft_candidate_select_sql() + " WHERE candidate_id=? LIMIT 1",
+            (cid,),
+        ).fetchone()
+        conn.commit()
+        conn.close()
+
+    return {
+        "ok": True,
+        "candidate": _monthly_nft_candidate_row_to_dict(updated),
+        "safeBoundary": {
+            "minted": False,
+            "winnerSelected": False,
+            "balanceChanged": False,
+            "chainMetadataWritten": False,
+            "qcSupplyChanged": False,
+            "tgwtBalanceChanged": False,
+            "note": "Admin approval only. Winner selection and mint path remain separate.",
+        },
+    }
+
+
+# TG_MONTHLY_NFT_AI_REVIEW_V1
+# Local advisory-only AI review for monthly rare NFT candidates.
+# This does not select winners, does not mint NFT, does not change balances, and does not write chain metadata.
+NFT_AI_REVIEW_VERSION = "TG_MONTHLY_NFT_AI_VERIFIED_ACTIVITY_V1"
+
+
+class MonthlyNFTAIReviewIn(BaseModel):
+    candidateId: Optional[str] = None
+    userId: Optional[str] = None
+    period: Optional[str] = None
+    reviewer: Optional[str] = "local_ai"
+
+
+def _monthly_nft_find_candidate(conn, candidate_id: str = "", user_id: str = "", period: str = ""):
+    _ensure_monthly_nft_tables(conn)
+
+    candidate_id = (candidate_id or "").strip()
+    user_id = (user_id or "").strip()
+    period = (period or "").strip() or _nft_month_key()
+
+    if candidate_id:
+        return conn.execute(
+            _monthly_nft_candidate_select_sql() + " WHERE candidate_id=? LIMIT 1",
+            (candidate_id,),
+        ).fetchone()
+
+    if user_id:
+        return conn.execute(
+            _monthly_nft_candidate_select_sql() + " WHERE user_id=? AND period=? LIMIT 1",
+            (user_id, period),
+        ).fetchone()
+
+    return None
+
+
+def _monthly_nft_local_ai_score(candidate: dict, verified_sessions: int = 0) -> dict:
+    """Local advisory rule, not an external AI or a fraud/ownership proof.
+
+    Only the caller's fresh server DB count is evidence. Candidate JSON,
+    old mining counters and realBlockFound never contribute to this result.
+    One verified completion implements the current active-user minimum;
+    completing more sessions does not increase draw weight or this score.
+    """
+    eligible = (
+        type(verified_sessions) is int and verified_sessions > 0
+        and candidate.get("nftType") == "rare"
+        and isinstance(candidate.get("userId"), str)
+        and bool(candidate["userId"])
+        and candidate["userId"] == candidate["userId"].strip()
+    )
+    return {
+        "score": 0.65 if eligible else 0.0,
+        "aiReviewStatus": "AI_REVIEW_PASSED" if eligible else "AI_REVIEW_FLAGGED",
+        "aiRiskLevel": "LOW" if eligible else "HIGH",
+        "reason": (
+            "Server-verified monthly game activity meets the active-user minimum; manual admin review is required."
+            if eligible else "No valid server-verified monthly activity for this candidate."
+        ),
+        "reviewVersion": NFT_AI_REVIEW_VERSION,
+        "verifiedSessionCount": verified_sessions,
+        "evidenceSource": "monthly_nft_verified_game_sessions",
+    }
+
+
+@app.post("/api/admin/nft/monthly/ai-review")
+def admin_nft_monthly_ai_review(inp: MonthlyNFTAIReviewIn):
+    candidate_id = (inp.candidateId or "").strip()
+    user_id = (inp.userId or "").strip()
+    period = (inp.period or "").strip() or _nft_month_key()
+    reviewer = (inp.reviewer or "local_ai").strip()
+
+    if not candidate_id and not user_id:
+        return {"ok": False, "error": "candidateId_or_userId_required"}
+    periods = _monthly_nft_award_periods_from_activation_v1(
+        _nft_verified_mainnet_activation_at_v1()
+    )
+    if not periods:
+        return {"ok": False, "error": "monthly_nft_program_not_active_or_period_outside"}
+
+    with _lock:
+        conn = None
+        try:
+            conn = _db()
+            # A selection in another process must not race this review.
+            conn.execute("BEGIN IMMEDIATE")
+            row = _monthly_nft_find_candidate(conn, candidate_id, user_id, period)
+            if not row:
+                return {"ok": False, "error": "candidate_not_found"}
+            cand = _monthly_nft_candidate_row_to_dict(row)
+            if cand["winnerStatus"] == "SELECTED_MONTHLY_WINNER" or cand["mintedStatus"] != "NOT_MINTED":
+                return {"ok": False, "error": "candidate_selection_locked"}
+            if cand["period"] not in periods:
+                return {"ok": False, "error": "monthly_nft_program_not_active_or_period_outside"}
+
+            count = _monthly_nft_verified_session_count_v1(conn, cand["userId"], cand["period"])
+            review = _monthly_nft_local_ai_score(cand, count)
+            ts = _now()
+            existing_note = (cand.get("adminNote") or "").strip()
+            ai_note = f"{reviewer}: {review['reviewVersion']} {review['aiReviewStatus']} risk={review['aiRiskLevel']} score={review['score']} - {review['reason']}"
+            admin_note = ((existing_note + " | ") if existing_note else "") + ai_note
+            changed = conn.execute(
+                """
+                UPDATE monthly_nft_candidates
+                SET score=?, ai_review_status=?, ai_risk_level=?, admin_note=?,
+                    activity_json=?, source='server_verified_game_session',
+                    admin_status='PENDING_ADMIN_REVIEW', winner_status='NOT_SELECTED', updated_at=?
+                WHERE candidate_id=? AND winner_status!='SELECTED_MONTHLY_WINNER'
+                  AND minted_status='NOT_MINTED'
+                """,
+                (float(review["score"]), review["aiReviewStatus"], review["aiRiskLevel"], admin_note[:512],
+                 json.dumps({"verifiedCompletedGameSessions": count}), ts, cand["candidateId"]),
+            ).rowcount
+            if changed != 1:
+                return {"ok": False, "error": "candidate_selection_locked"}
+            updated = conn.execute(
+                _monthly_nft_candidate_select_sql() + " WHERE candidate_id=? LIMIT 1",
+                (cand["candidateId"],),
+            ).fetchone()
+            conn.commit()
+        except sqlite3.Error:
+            return {"ok": False, "error": "monthly_ai_review_store_unavailable"}
+        finally:
+            if conn is not None:
+                if conn.in_transaction:
+                    conn.rollback()
+                conn.close()
+
+    return {
+        "ok": True,
+        "candidate": _monthly_nft_candidate_row_to_dict(updated),
+        "aiReview": review,
+        "safeBoundary": {
+            "minted": False, "winnerSelected": False, "balanceChanged": False,
+            "chainMetadataWritten": False, "qcSupplyChanged": False, "tgwtBalanceChanged": False,
+            "note": "Local advisory activity check only; fresh admin approval and separate selection are required.",
+        },
+    }
+
+
+
+
+# TG_MONTHLY_NFT_WINNER_SELECTION_V1
+# Retired manual selection: validation errors or disabled, never a winner write.
+# Safe boundary: no NFT mint, no chain metadata write, no QC/TGWT balance change.
+class MonthlyNFTWinnerSelectIn(BaseModel):
+    candidateId: str
+    reviewer: Optional[str] = "admin"
+    note: Optional[str] = ""
+
+
+@app.post("/api/admin/nft/monthly/select-winner")
+def admin_nft_monthly_select_winner(inp: MonthlyNFTWinnerSelectIn):
+    from telegram_game.utils.nft_selection_identity_v1 import select_monthly_winner_identity_v1
+
+    cid = (inp.candidateId or "").strip()
+    if not cid:
+        return {"ok": False, "error": "missing_candidate_id"}
+    periods = _monthly_nft_award_periods_from_activation_v1(
+        _nft_verified_mainnet_activation_at_v1()
+    )
+    with _lock:
+        return select_monthly_winner_identity_v1(
+            _db, cid, periods, _now(), (inp.reviewer or "admin").strip(),
+            (inp.note or "").strip(), _ensure_monthly_nft_tables,
+            _monthly_nft_candidate_row_to_dict,
+        )
+
+
+# QMA_0070_CANDIDATE_FREEZE_V1
+# Admin-only; freezing does not draw a winner, mint, or change balances.
+class NFTWalletChallengeIn(BaseModel):
+    playerId: str
+    initData: str
+    period: str
+
+
+class NFTWalletProofIn(BaseModel):
+    playerId: str
+    initData: str
+    nonce: str
+    publicKey: str
+    signature: str
+
+
+@app.post("/api/nft/wallet/challenge")
+def nft_wallet_challenge_v1(inp: NFTWalletChallengeIn):
+    from telegram_game.utils.nft_program_bridge_v1 import fetch_verified_nft_game_program_v1
+    from telegram_game.utils.nft_wallet_proof_v1 import issue_wallet_challenge_v1
+    user = _nft_verified_player_id_v1(inp.initData, inp.playerId)
+    if not user:
+        return {"ok": False, "error": "telegram_identity_required"}
+    return issue_wallet_challenge_v1(_db, fetch_verified_nft_game_program_v1(), user, inp.period, _now())
+
+
+@app.post("/api/nft/wallet/prove")
+def nft_wallet_prove_v1(inp: NFTWalletProofIn):
+    from telegram_game.utils.nft_program_bridge_v1 import fetch_verified_nft_game_program_v1
+    from telegram_game.utils.nft_wallet_proof_v1 import consume_wallet_challenge_v1
+    user = _nft_verified_player_id_v1(inp.initData, inp.playerId)
+    if not user:
+        return {"ok": False, "error": "telegram_identity_required"}
+    return consume_wallet_challenge_v1(_db, fetch_verified_nft_game_program_v1(), user,
+                                      inp.nonce, inp.publicKey, inp.signature, _now())
+
+
+class MonthlyNFTPoolFreezeIn(BaseModel):
+    period: str
+
+
+@app.post("/api/admin/nft/monthly/freeze-pool")
+def admin_nft_monthly_freeze_pool_v1(inp: MonthlyNFTPoolFreezeIn):
+    from telegram_game.utils.nft_draw_freeze_v1 import freeze_monthly_pool_v1
+
+    periods = _monthly_nft_award_periods_from_activation_v1(
+        _nft_verified_mainnet_activation_at_v1()
+    )
+    with _lock:
+        return freeze_monthly_pool_v1(
+            _db, (inp.period or "").strip(), periods, _now(),
+            _ensure_monthly_nft_tables, _monthly_nft_candidate_row_to_dict,
+        )
+
+
+@app.get("/api/admin/nft/monthly/frozen-pool")
+def admin_nft_monthly_frozen_pool_v1(period: str):
+    from telegram_game.utils.nft_draw_freeze_v1 import read_monthly_pool_v1
+
+    with _lock:
+        return read_monthly_pool_v1(_db, (period or "").strip())
+
+
+# TG_MONTHLY_NFT_CONTROLLED_MINT_PATH_V1
+# The existing admin middleware protects this route. Neither flag alone can
+# authorize an award: signed node evidence, player binding and final catalog
+# commitments are checked by the bridge. Installation never enables minting.
+class MonthlyNFTDrawCommitmentIn(BaseModel):
+    period: str
+    publication: Dict[str, Any]
+
+
+class MonthlyNFTVerifiedDrawIn(BaseModel):
+    period: str
+    beacon: Dict[str, Any]
+
+
+def _monthly_nft_evidence_context_v1():
+    from telegram_game.utils.nft_program_bridge_v1 import fetch_verified_nft_game_program_v1
+    from telegram_game.utils.nft_draw_evidence_v1 import load_policy_v1
+    program = fetch_verified_nft_game_program_v1()
+    return program, load_policy_v1(program)
+
+
+@app.get("/api/admin/nft/monthly/draw-commitment")
+def admin_nft_draw_commitment_v1(period: str):
+    from contextlib import closing
+    from telegram_game.utils.nft_draw_evidence_v1 import pool, commitment_v1, require_pool_wallets
+    try:
+        program, policy = _monthly_nft_evidence_context_v1()
+        with closing(_db()) as conn:
+            conn.execute("BEGIN")
+            frozen = pool(conn, period)
+            require_pool_wallets(conn, frozen, program)
+            commitment = commitment_v1(frozen, program, policy)
+        return {"ok": True, "commitment": commitment, "winnerSelected": False}
+    except (OSError, sqlite3.Error, ValueError, TypeError, KeyError):
+        return {"ok": False, "error": "draw_evidence_unavailable"}
+
+
+@app.post("/api/admin/nft/monthly/register-draw-commitment")
+def admin_nft_register_draw_commitment_v1(inp: MonthlyNFTDrawCommitmentIn):
+    from telegram_game.utils.nft_draw_evidence_v1 import register_draw_commitment_v1
+    try:
+        program, policy = _monthly_nft_evidence_context_v1()
+        return register_draw_commitment_v1(_db, program, policy, inp.period, inp.publication, _now())
+    except (OSError, sqlite3.Error, ValueError, TypeError, KeyError):
+        return {"ok": False, "error": "draw_evidence_unavailable"}
+
+
+@app.post("/api/admin/nft/monthly/draw-winner")
+def admin_nft_verified_draw_v1(inp: MonthlyNFTVerifiedDrawIn):
+    from telegram_game.utils.nft_draw_evidence_v1 import draw_monthly_winner_v1
+    try:
+        program, policy = _monthly_nft_evidence_context_v1()
+        return draw_monthly_winner_v1(_db, program, policy, inp.period, inp.beacon, _now(), _monthly_nft_candidate_row_to_dict)
+    except (OSError, sqlite3.Error, ValueError, TypeError, KeyError):
+        return {"ok": False, "error": "draw_evidence_unavailable"}
+
+
+class MonthlyNFTControlledMintIn(BaseModel):
+    candidateId: str
+    catalogItemId: Optional[str] = None
+    reviewer: Optional[str] = "admin"
+    note: Optional[str] = ""
+    signedAward: Optional[Dict[str, Any]] = None
+
+
+@app.post("/api/admin/nft/monthly/publish-draw-commitment")
+def admin_nft_publish_draw_v1(inp: MonthlyNFTPoolFreezeIn):
+    from telegram_game.utils.nft_external_evidence_v1 import publish_and_register_v1
+    try:
+        program, policy = _monthly_nft_evidence_context_v1()
+        return publish_and_register_v1(_db, program, policy, inp.period, _now)
+    except (OSError, sqlite3.Error, ValueError, TypeError, KeyError):
+        return {"ok": False, "error": "external_evidence_unavailable"}
+
+
+@app.post("/api/admin/nft/monthly/draw-from-beacon")
+def admin_nft_draw_from_beacon_v1(inp: MonthlyNFTPoolFreezeIn):
+    from telegram_game.utils.nft_external_evidence_v1 import draw_from_beacon_v1
+    try:
+        program, policy = _monthly_nft_evidence_context_v1()
+        return draw_from_beacon_v1(_db, program, policy, inp.period, _monthly_nft_candidate_row_to_dict, _now)
+    except (OSError, sqlite3.Error, ValueError, TypeError, KeyError):
+        return {"ok": False, "error": "external_evidence_unavailable"}
+
+
+class MonthlyNFTFinalPreparationIn(BaseModel):
+    candidateId: str
+    catalogItemId: str
+
+
+@app.get("/api/admin/nft/monthly/catalog-draft")
+def admin_nft_program_catalog_draft_v1():
+    from telegram_game.utils.nft_program_bridge_v1 import fetch_verified_nft_game_program_v1
+    from telegram_game.utils.nft_final_readiness_v1 import build_program_catalog_draft_v1
+    from telegram_game.utils.nft_mint_bridge_v1 import _unique_object
+    try:
+        path = _NFT_REPOSITORY_ROOT_V1 / "nft/catalog/monthly_rare_nft_stock_2026.json"
+        if path.stat().st_size > 65536:
+            return {"ok": False, "error": "catalog_template_unavailable"}
+        stock = json.loads(path.read_text(encoding="utf-8-sig"), object_pairs_hook=_unique_object)
+        return {"ok": True, "draft": build_program_catalog_draft_v1(stock, fetch_verified_nft_game_program_v1()), "filesWritten": False}
+    except (OSError, ValueError, TypeError, KeyError):
+        return {"ok": False, "error": "catalog_template_unavailable"}
+
+
+def _monthly_final_preparation_v1(inp, inspect):
+    from contextlib import closing
+    from telegram_game.utils.nft_final_readiness_v1 import prepare_final_approval_v1, inspect_final_readiness_v1
+    try:
+        program, policy = _monthly_nft_evidence_context_v1()
+        with closing(_db()) as conn:
+            conn.execute("BEGIN")
+            fn = inspect_final_readiness_v1 if inspect else prepare_final_approval_v1
+            return fn(conn, _NFT_REPOSITORY_ROOT_V1, program, policy, inp.candidateId, inp.catalogItemId, _now())
+    except (OSError, sqlite3.Error, ValueError, TypeError, KeyError):
+        return {"ok": False, "error": "final_preparation_unavailable", "mintAllowed": False}
+
+
+@app.post("/api/admin/nft/monthly/final-approval-statement")
+def admin_nft_final_approval_statement_v1(inp: MonthlyNFTFinalPreparationIn):
+    return _monthly_final_preparation_v1(inp, False)
+
+
+@app.post("/api/admin/nft/monthly/final-readiness")
+def admin_nft_final_readiness_v1(inp: MonthlyNFTFinalPreparationIn):
+    return _monthly_final_preparation_v1(inp, True)
+
+
+@app.post("/api/admin/nft/monthly/controlled-mint")
+def admin_nft_monthly_controlled_mint(inp: MonthlyNFTControlledMintIn):
+    from telegram_game.utils.nft_mint_bridge_v1 import controlled_monthly_nft_mint_v1
+
+    return controlled_monthly_nft_mint_v1(
+        _db,
+        _NFT_REPOSITORY_ROOT_V1,
+        (inp.candidateId or "").strip(),
+        (inp.catalogItemId or "").strip(),
+        inp.signedAward,
+    )
+
+
+# QC_ADMIN_PANEL_AUTH_PAGINATION_V1_BRIDGE
+# Central admin auth/pagination/API registry bridge.
+# This does not mint, transfer, change balances, change chain, or start/stop mining.
+try:
+    from telegram_game.admin_panel_safety_v1 import (
+        QC_ADMIN_PANEL_AUTH_PAGINATION_VERSION,
+        qc_admin_auth_review_v1,
+        qc_admin_endpoint_registry_v1,
+        qc_admin_lock_summary_v1,
+        qc_admin_pagination_v1,
+    )
+except ModuleNotFoundError:
+    from admin_panel_safety_v1 import (
+        QC_ADMIN_PANEL_AUTH_PAGINATION_VERSION,
+        qc_admin_auth_review_v1,
+        qc_admin_endpoint_registry_v1,
+        qc_admin_lock_summary_v1,
+        qc_admin_pagination_v1,
+    )
+
+
+def _qc26_admin_headers_v1(request):
+    try:
+        return dict(request.headers or {})
+    except Exception:
+        return {}
+
+
+def _qc26_admin_panel_auth_result_v1(request):
+    path = ""
+    try:
+        path = str(request.url.path or "")
+    except Exception:
+        path = "/api/admin"
+
+    return qc_admin_auth_review_v1(_qc26_admin_headers_v1(request), path)
+
+
+@app.middleware("http")
+async def _qc26_admin_panel_auth_middleware_v1(request, call_next):
+    path = str(getattr(getattr(request, "url", None), "path", "") or "")
+    if path.startswith("/api/admin/"):
+        auth = _qc26_admin_panel_auth_result_v1(request)
+        if not auth.get("ok"):
+            from fastapi.responses import JSONResponse as _QC26JSONResponse
+            return _QC26JSONResponse(status_code=401, content=auth)
+
+    return await call_next(request)
+
+
+@app.get("/api/admin/panel/registry")
+def qc26_admin_panel_registry(limit: int = 50, offset: int = 0):
+    page = qc_admin_pagination_v1({"limit": limit, "offset": offset})
+    reg = qc_admin_endpoint_registry_v1()
+    groups = reg.get("groups", [])
+    start = page["offset"]
+    end = start + page["limit"]
+    return {
+        "ok": True,
+        "version": QC_ADMIN_PANEL_AUTH_PAGINATION_VERSION,
+        "pagination": page,
+        "totalGroups": len(groups),
+        "groups": groups[start:end],
+        "safeBoundary": reg.get("safeBoundary", {}),
+    }
+
+
+@app.get("/api/admin/panel/pagination-policy")
+def qc26_admin_panel_pagination_policy(limit: int = 50, offset: int = 0):
+    return {
+        "ok": True,
+        "version": QC_ADMIN_PANEL_AUTH_PAGINATION_VERSION,
+        "pagination": qc_admin_pagination_v1({"limit": limit, "offset": offset}),
+        "summary": qc_admin_lock_summary_v1(),
+    }
+
+# QC_MONITORING_EVENT_LOG_ALERT_RUNBOOK_V1_BRIDGE
+# Read-only admin monitoring/runbook visibility.
+# This does not mint, transfer, change balances, change chain, or start/stop mining.
+try:
+    from telegram_game.monitoring_event_log_alert_runbook_v1 import (
+        QC_MONITORING_EVENT_LOG_ALERT_RUNBOOK_VERSION,
+        classify_event_v1,
+        normalize_severity_v1,
+        runbook_for_category_v1,
+        runbook_summary_v1,
+        validate_event_v1,
+    )
+except ModuleNotFoundError:
+    from monitoring_event_log_alert_runbook_v1 import (
+        QC_MONITORING_EVENT_LOG_ALERT_RUNBOOK_VERSION,
+        classify_event_v1,
+        normalize_severity_v1,
+        runbook_for_category_v1,
+        runbook_summary_v1,
+        validate_event_v1,
+    )
+
+
+@app.get("/api/admin/monitoring/runbook")
+def qc27_admin_monitoring_runbook():
+    return runbook_summary_v1()
+
+
+@app.get("/api/admin/monitoring/event-policy")
+def qc27_admin_monitoring_event_policy(source: str = "admin-panel", category: str = "api_down", severity: str = "WARNING", message: str = "policy check"):
+    event = {
+        "source": source,
+        "category": category,
+        "severity": normalize_severity_v1(severity),
+        "message": message,
+    }
+    return {
+        "ok": True,
+        "version": QC_MONITORING_EVENT_LOG_ALERT_RUNBOOK_VERSION,
+        "validation": validate_event_v1(event),
+        "classification": classify_event_v1(event),
+        "runbook": runbook_for_category_v1(category),
+    }
+
+# QC_DB_PERSISTENCE_PLAN_V1_BRIDGE
+# Read-only DB persistence plan visibility for admin panel.
+# This does not migrate live DB, mint, transfer, change balances, change chain, or start/stop mining.
+try:
+    from telegram_game.db_persistence_plan_v1 import (
+        QC_DB_PERSISTENCE_PLAN_VERSION,
+        db_persistence_summary_v1,
+    )
+except ModuleNotFoundError:
+    from db_persistence_plan_v1 import (
+        QC_DB_PERSISTENCE_PLAN_VERSION,
+        db_persistence_summary_v1,
+    )
+
+
+@app.get("/api/admin/persistence/db-plan")
+def qc29_admin_persistence_db_plan():
+    return db_persistence_summary_v1()
+
+# QC_QUEUE_WORKER_INTEGRATION_PLAN_V1_BRIDGE
+# Read-only queue/worker integration plan visibility for admin panel.
+# This does not start workers, mint, transfer, change balances, change chain, or start/stop mining.
+try:
+    from telegram_game.queue_worker_plan_v1 import (
+        QC_QUEUE_WORKER_PLAN_VERSION,
+        queue_worker_summary_v1,
+    )
+except ModuleNotFoundError:
+    from queue_worker_plan_v1 import (
+        QC_QUEUE_WORKER_PLAN_VERSION,
+        queue_worker_summary_v1,
+    )
+
+
+@app.get("/api/admin/queue-worker/plan")
+def qc30_admin_queue_worker_plan():
+    return queue_worker_summary_v1()
+
+# QC_BACKUP_RESTORE_RUNBOOK_V1_BRIDGE
+# Read-only backup/restore runbook visibility for admin panel.
+# This does not run live restore, delete data, overwrite data, mint, transfer, change balances, or change chain.
+try:
+    from telegram_game.backup_restore_runbook_v1 import (
+        QC_BACKUP_RESTORE_RUNBOOK_VERSION,
+        backup_restore_summary_v1,
+    )
+except ModuleNotFoundError:
+    from backup_restore_runbook_v1 import (
+        QC_BACKUP_RESTORE_RUNBOOK_VERSION,
+        backup_restore_summary_v1,
+    )
+
+
+@app.get("/api/admin/backup-restore/runbook")
+def qc31_admin_backup_restore_runbook():
+    return backup_restore_summary_v1()
+
+# QC_MAINNET_BEFORE_ECONOMY_CONTROL_V1_BRIDGE
+# Read-only mainnet-before economy control visibility for admin panel.
+# This does not launch mainnet, mint, transfer, change balances, change chain, change consensus, or change total supply.
+try:
+    from telegram_game.mainnet_before_economy_control_v1 import (
+        QC_MAINNET_BEFORE_ECONOMY_CONTROL_VERSION,
+        mainnet_before_economy_summary_v1,
+    )
+except ModuleNotFoundError:
+    from mainnet_before_economy_control_v1 import (
+        QC_MAINNET_BEFORE_ECONOMY_CONTROL_VERSION,
+        mainnet_before_economy_summary_v1,
+    )
+
+
+@app.get("/api/admin/economy/mainnet-before")
+def qc32_admin_mainnet_before_economy():
+    return mainnet_before_economy_summary_v1()
+
+# QC_BURN_SINK_CONTROL_V1_BRIDGE
+# Read-only burn/dead wallet control visibility for admin panel.
+# This does not execute burn, mint replacement QC, transfer funds, change balances, or change max supply.
+try:
+    from telegram_game.burn_sink_control_v1 import (
+        QC_BURN_SINK_CONTROL_VERSION,
+        burn_sink_summary_v1,
+    )
+except ModuleNotFoundError:
+    from burn_sink_control_v1 import (
+        QC_BURN_SINK_CONTROL_VERSION,
+        burn_sink_summary_v1,
+    )
+
+
+@app.get("/api/admin/economy/burn-sink")
+def qc32c_admin_burn_sink_control():
+    return burn_sink_summary_v1()
+
+# QC_MINING_PERIOD_NODE_TRANSITION_V1_BRIDGE
+# Read-only mining period / node transition visibility for admin panel.
+# This does not mint, distribute remaining coins, start/stop mining, change balances, or change max supply.
+try:
+    from telegram_game.mining_node_transition_policy_v1 import (
+        QC_MINING_PERIOD_NODE_TRANSITION_VERSION,
+        mining_node_transition_summary_v1,
+    )
+except ModuleNotFoundError:
+    from mining_node_transition_policy_v1 import (
+        QC_MINING_PERIOD_NODE_TRANSITION_VERSION,
+        mining_node_transition_summary_v1,
+    )
+
+
+@app.get("/api/admin/economy/mining-transition")
+def qc32d_admin_mining_node_transition():
+    return mining_node_transition_summary_v1()
+
+# QC_MINING_PERIOD_BITCOIN_STYLE_CONTINUE_V1_BRIDGE
+# Existing /api/admin/economy/mining-transition endpoint returns the updated bitcoin-style continuation policy.
+# If supply is incomplete after 10 years, Wallet+Miner continues with 2-year halving until max supply.
+# This does not mint remaining coins directly, distribute remaining coins, start/stop mining, change balances, or change max supply.
+
+# QC_NETWORK_FEE_POLICY_V1_BRIDGE
+# Read-only very-low network fee policy visibility for admin panel.
+# This does not execute fee transfer, mint, change balances, change consensus, or change max supply.
+try:
+    from telegram_game.network_fee_policy_v1 import (
+        QC_NETWORK_FEE_POLICY_VERSION,
+        network_fee_summary_v1,
+    )
+except ModuleNotFoundError:
+    from network_fee_policy_v1 import (
+        QC_NETWORK_FEE_POLICY_VERSION,
+        network_fee_summary_v1,
+    )
+
+
+@app.get("/api/admin/economy/network-fee")
+def qc32e_admin_network_fee_policy():
+    return network_fee_summary_v1()
+
+# QC_FOUNDER_VESTING_POLICY_V1_BRIDGE
+# Read-only founder vesting visibility for admin panel.
+# This does not execute unlock, mint, change balances, change consensus, or change max supply.
+try:
+    from telegram_game.founder_vesting_policy_v1 import (
+        QC_FOUNDER_VESTING_POLICY_VERSION,
+        founder_vesting_summary_v1,
+    )
+except ModuleNotFoundError:
+    from founder_vesting_policy_v1 import (
+        QC_FOUNDER_VESTING_POLICY_VERSION,
+        founder_vesting_summary_v1,
+    )
+
+
+@app.get("/api/admin/economy/founder-vesting")
+def qc32f_admin_founder_vesting_policy():
+    return founder_vesting_summary_v1()
+
+# QC_HARDFORK_POLICY_V1_BRIDGE
+# Read-only hardfork policy visibility for admin panel.
+# This does not execute hardfork, change consensus, mint, change balances, replace chain, or change max supply.
+try:
+    from telegram_game.hardfork_policy_v1 import (
+        QC_HARDFORK_POLICY_VERSION,
+        hardfork_policy_summary_v1,
+    )
+except ModuleNotFoundError:
+    from hardfork_policy_v1 import (
+        QC_HARDFORK_POLICY_VERSION,
+        hardfork_policy_summary_v1,
+    )
+
+
+@app.get("/api/admin/network/hardfork-policy")
+def qc32g_admin_hardfork_policy():
+    return hardfork_policy_summary_v1()

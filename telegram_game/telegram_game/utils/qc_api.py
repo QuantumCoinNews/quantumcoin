@@ -2,6 +2,13 @@
 # cSpell:disable
 
 from __future__ import annotations
+# QC_URLOPEN_BALANCE_BRIDGE_V1 imports
+import asyncio as _qc_asyncio
+import json as _qc_json_stdlib
+import time as _qc_time
+import urllib.request as _qc_urllib_request
+
+
 
 from typing import Any, Dict
 
@@ -34,10 +41,13 @@ async def fetch_health(timeout: float = 3.0) -> Dict[str, Any]:
 
 
 # QC_NODE_READ_BRIDGE_V1
-async def fetch_address_balance(address: str, timeout: float = 3.0) -> Dict[str, Any]:
+async def fetch_address_balance(address: str, timeout: float = 10.0) -> Dict[str, Any]:
     """
     QuantumCoin node üzerinden gerçek QC adres bakiyesini okur.
-    Aktif QC node endpoint: /api/wallet/balance/{addr}
+
+    QC_URLOPEN_BALANCE_BRIDGE_V1:
+    Local Windows runtime'da httpx bazı /api/wallet/balance çağrılarında ReadTimeout'a düşebiliyor.
+    Aynı endpoint PowerShell/urllib ile JSON döndüğü için bu helper urllib + asyncio.to_thread kullanır.
     """
     base = get_api_base().rstrip("/")
     addr = (address or "").strip()
@@ -47,42 +57,86 @@ async def fetch_address_balance(address: str, timeout: float = 3.0) -> Dict[str,
 
     url = f"{base}/api/wallet/balance/{addr}"
 
+    def _read_json_sync() -> Dict[str, Any]:
+        last_error = ""
+
+        for attempt in range(1, 4):
+            try:
+                req = _qc_urllib_request.Request(
+                    url,
+                    headers={
+                        "Accept": "application/json",
+                        "Connection": "close",
+                        "User-Agent": "QuantumCoin-TelegramGame/1.0",
+                    },
+                )
+
+                with _qc_urllib_request.urlopen(req, timeout=float(timeout or 10.0)) as resp:
+                    status_code = int(getattr(resp, "status", 200) or 200)
+                    content_type = resp.headers.get("Content-Type", "")
+                    text_body = resp.read().decode("utf-8", errors="replace")
+
+                if status_code < 200 or status_code >= 300:
+                    return {
+                        "ok": False,
+                        "address": addr,
+                        "error": "http_status",
+                        "status_code": status_code,
+                        "content_type": content_type,
+                        "preview": text_body[:160],
+                    }
+
+                if "application/json" not in str(content_type).lower():
+                    return {
+                        "ok": False,
+                        "address": addr,
+                        "error": "non_json_response",
+                        "status_code": status_code,
+                        "content_type": content_type,
+                        "preview": text_body[:160],
+                    }
+
+                try:
+                    data = _qc_json_stdlib.loads(text_body)
+                except Exception as exc:
+                    return {
+                        "ok": False,
+                        "address": addr,
+                        "error": "invalid_json",
+                        "errorType": exc.__class__.__name__,
+                        "preview": text_body[:160],
+                    }
+
+                if not isinstance(data, dict):
+                    return {"ok": False, "address": addr, "error": "unexpected response"}
+
+                if "ok" not in data:
+                    data["ok"] = True
+
+                data["address"] = addr
+                return data
+
+            except Exception as exc:
+                last_error = f"{exc.__class__.__name__}: {str(exc)}"
+                _qc_time.sleep(0.25 * attempt)
+
+        return {
+            "ok": False,
+            "address": addr,
+            "error": last_error,
+            "errorType": "urllib_retry_failed",
+        }
+
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.get(url)
-
-        content_type = resp.headers.get("content-type", "")
-        text_body = resp.text or ""
-
-        resp.raise_for_status()
-
-        if "application/json" not in content_type.lower():
-            return {
-                "ok": False,
-                "address": addr,
-                "error": "non_json_response",
-                "status_code": resp.status_code,
-                "content_type": content_type,
-                "preview": text_body[:160],
-            }
-
-        data = resp.json()
-
-        if not isinstance(data, dict):
-            return {"ok": False, "address": addr, "error": "unexpected response"}
-
-        if "ok" not in data:
-            data["ok"] = True
-
-        data["address"] = addr
-        return data
-
+        return await _qc_asyncio.to_thread(_read_json_sync)
     except Exception as exc:
         return {
             "ok": False,
             "address": addr,
             "error": str(exc),
+            "errorType": exc.__class__.__name__,
         }
+
 
 async def fetch_tx_status(txid: str, timeout: float = 3.0) -> Dict[str, Any]:
     """
