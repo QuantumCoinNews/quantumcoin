@@ -1,3 +1,4 @@
+// Package wallet contains QuantumCoin project code for this module.
 package wallet
 
 import (
@@ -77,9 +78,11 @@ func writeStore(st *diskStore) error {
 	return os.WriteFile(path, data, 0o600)
 }
 
+// SaveWalletToFile documents the QuantumCoin component used by this module.
 // Geriye dönük uyumluluk: Eski isim.
 func SaveWalletToFile(w *Wallet) error { return SaveWallet(w) }
 
+// SaveWallet documents the QuantumCoin component used by this module.
 // Yeni: cüzdanı kaydet.
 // Store formatı: address -> raw 32-byte private key hex.
 func SaveWallet(w *Wallet) error {
@@ -112,6 +115,7 @@ func SaveWallet(w *Wallet) error {
 	return writeStore(st)
 }
 
+// LoadWalletFromFile documents the QuantumCoin component used by this module.
 // Depodan cüzdan yükle:
 // - "default" varsa onu döndürür
 // - yoksa ilk bulduğunu döndürür
@@ -153,6 +157,7 @@ func LoadWalletFromFile() *Wallet {
 	return nw
 }
 
+// LoadWalletByAddress documents the QuantumCoin component used by this module.
 // Belirli adresteki cüzdanı yükle.
 func LoadWalletByAddress(address string) (*Wallet, bool) {
 	storeMu.Lock()
@@ -190,6 +195,7 @@ func loadWalletByAddress(st *diskStore, address string) (*Wallet, bool) {
 	return &Wallet{PrivateKey: priv, PublicKey: pub}, true
 }
 
+// SetDefaultWallet documents the QuantumCoin component used by this module.
 // Varsayılan adresi işaretle.
 func SetDefaultWallet(address string) error {
 	storeMu.Lock()
@@ -206,12 +212,16 @@ func SetDefaultWallet(address string) error {
 	return writeStore(st)
 }
 
-// QC adresinden pubKeyHash'i çıkar.
-// Eski davranışı korumak için hata durumunda panic eder.
+// Base58DecodeAddress QC adresinden pubKeyHash'i çıkarır.
+//
+// INVALID_ADDRESS_NO_PANIC_V1:
+// Eski wrapper artık hatalı adreslerde panic etmez. Dışarıdan gelen bozuk
+// adresler node'u düşürmemeli; güvenli doğrulama isteyen kod
+// Base58DecodeAddressSafe ile error almalıdır.
 func Base58DecodeAddress(address string) []byte {
 	pubKeyHash, err := Base58DecodeAddressSafe(address)
 	if err != nil {
-		panic(err)
+		return nil
 	}
 	return pubKeyHash
 }

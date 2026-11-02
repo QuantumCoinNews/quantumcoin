@@ -1,3 +1,4 @@
+// Package wallet contains QuantumCoin project code for this module.
 package wallet
 
 import (
@@ -14,6 +15,7 @@ type KeyPair struct {
 	PublicKey  []byte
 }
 
+// NewKeyPair documents the QuantumCoin component used by this module.
 // NewKeyPair: Yeni ECDSA anahtar çifti üretir.
 // QuantumCoin wallet standardı: secp256k1.
 // PublicKey formatı: uncompressed 65 byte, 0x04 || X(32) || Y(32).

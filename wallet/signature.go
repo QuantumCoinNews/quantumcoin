@@ -1,3 +1,4 @@
+// Package wallet contains QuantumCoin project code for this module.
 package wallet
 
 import (
@@ -11,6 +12,7 @@ import (
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
 
+// GenerateKeyPair documents the QuantumCoin component used by this module.
 // GenerateKeyPair: Yeni anahtar çifti üretir.
 // QuantumCoin wallet standardı: secp256k1.
 func GenerateKeyPair() (*ecdsa.PrivateKey, *ecdsa.PublicKey) {
@@ -21,6 +23,7 @@ func GenerateKeyPair() (*ecdsa.PrivateKey, *ecdsa.PublicKey) {
 	return privKey, &privKey.PublicKey
 }
 
+// SignData documents the QuantumCoin component used by this module.
 // SignData: Veriyi SHA-256 ile hashleyip imzalar.
 func SignData(data []byte, priv *ecdsa.PrivateKey) (*big.Int, *big.Int, error) {
 	if priv == nil {
@@ -32,6 +35,7 @@ func SignData(data []byte, priv *ecdsa.PrivateKey) (*big.Int, *big.Int, error) {
 	return r, s, err
 }
 
+// VerifySignature documents the QuantumCoin component used by this module.
 // VerifySignature: Verinin imzası doğru mu?
 func VerifySignature(pub *ecdsa.PublicKey, data []byte, r, s *big.Int) bool {
 	if pub == nil || r == nil || s == nil {

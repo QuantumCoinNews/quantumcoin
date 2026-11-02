@@ -1,3 +1,4 @@
+// Package wallet contains QuantumCoin project code for this module.
 package wallet
 
 import (
@@ -8,6 +9,7 @@ import (
 	"path/filepath"
 )
 
+// DefaultWallet documents the QuantumCoin component used by this module.
 // DefaultWallet: APPDATA altında JSON olarak saklanan minimal kayıt.
 // Not: Burada adres yeterli; istersen PrivateKeyHex'i de tutuyoruz (lokal geliştirme içindir).
 type DefaultWallet struct {
@@ -15,6 +17,7 @@ type DefaultWallet struct {
 	Address       string `json:"address"`
 }
 
+// EnsureDefaultWallet documents the QuantumCoin component used by this module.
 // EnsureDefaultWallet, %APPDATA%\QuantumCoin\wallet.json dosyasını garanti eder.
 // - Dosya geçerliyse okur ve döndürür.
 // - Yoksa yeni bir Wallet üretir, dosyaya yazar ve döndürür.
@@ -45,7 +48,10 @@ func EnsureDefaultWallet() (*DefaultWallet, error) {
 		Address:       wal.GetAddress(),
 	}
 
-	data, _ := json.MarshalIndent(w, "", "  ")
+	data, err := json.MarshalIndent(w, "", "  ")
+	if err != nil {
+		return nil, err
+	}
 	if err := os.WriteFile(path, data, fs.FileMode(0o600)); err != nil {
 		return nil, err
 	}
@@ -73,6 +79,7 @@ func LoadDefaultWallet() (*DefaultWallet, error) {
 	return &w, nil
 }
 
+// SaveDefaultWallet documents the QuantumCoin component used by this module.
 // Wallet kaydını güncellemek için (ör. adres değişirse) opsiyonel yardımcı.
 func SaveDefaultWallet(w *DefaultWallet) error {
 	if w == nil || w.Address == "" {
@@ -86,7 +93,10 @@ func SaveDefaultWallet(w *DefaultWallet) error {
 		return err
 	}
 	path := filepath.Join(dir, "wallet.json")
-	data, _ := json.MarshalIndent(w, "", "  ")
+	data, err := json.MarshalIndent(w, "", "  ")
+	if err != nil {
+		return err
+	}
 	return os.WriteFile(path, data, fs.FileMode(0o600))
 }
 

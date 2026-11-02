@@ -1,3 +1,4 @@
+// Package wallet contains QuantumCoin project code for this module.
 package wallet
 
 import (
@@ -7,6 +8,7 @@ import (
 	"quantumcoin/utils"
 )
 
+// ValidateAddress documents the QuantumCoin component used by this module.
 // ValidateAddress: Adres QuantumCoin Base58Check formatında mı?
 // Beklenen format:
 // [version:1 byte][pubKeyHash:20 byte][checksum:4 byte] = 25 byte
