@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// AnalyzeTransactions documents the QuantumCoin component used by this module.
 // tek analiz fonksiyonumuz BU olsun.
 // diğer dosyalarda tekrar yazmayacağız.
 func AnalyzeTransactions(txs []TxLite) []AnomalyReport {

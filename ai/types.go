@@ -1,8 +1,11 @@
 // ai/types.go
+
+// Package ai contains QuantumCoin project code for this module.
 package ai
 
 import "time"
 
+// TxLite documents the QuantumCoin component used by this module.
 // tx'leri hafifletilmiş halde AI'ye veriyoruz
 type TxLite struct {
 	TxID          string    `json:"tx_id"`
@@ -12,6 +15,7 @@ type TxLite struct {
 	Timestamp     time.Time `json:"timestamp"`
 }
 
+// AnomalyReport documents the QuantumCoin component used by this module.
 // analyzer'ın ürettiği kayıt
 type AnomalyReport struct {
 	WalletAddress string  `json:"wallet_address"`
@@ -21,6 +25,7 @@ type AnomalyReport struct {
 	Reason        string  `json:"reason"`
 }
 
+// BonusSuggestion documents the QuantumCoin component used by this module.
 // bonus üretirken kullandığımız yapı
 type BonusSuggestion struct {
 	WalletAddress string `json:"wallet_address"`
@@ -29,6 +34,7 @@ type BonusSuggestion struct {
 	Reason        string `json:"reason"`
 }
 
+// Recommendation documents the QuantumCoin component used by this module.
 // 🔴 senin recommendation.go burada bunu istiyor
 type Recommendation struct {
 	WalletAddress string  `json:"wallet_address"`
@@ -38,6 +44,7 @@ type Recommendation struct {
 	Score         float64 `json:"score"`
 }
 
+// RewardSuggestion documents the QuantumCoin component used by this module.
 // ödül optimizasyonu kullanıyorsan bu da dursun
 type RewardSuggestion struct {
 	WalletAddress   string  `json:"wallet_address"`

@@ -12,6 +12,7 @@ type AIBonusFile struct {
 	Bonuses   []BonusSuggestion `json:"ai_bonuses"`
 }
 
+// WriteAIBonusesTo documents the QuantumCoin component used by this module.
 // blockchain.MineBlock(...) içinden çağırdıklarımız buraya gelecek
 func WriteAIBonusesTo(dir string, bonuses []BonusSuggestion) error {
 	if len(bonuses) == 0 {

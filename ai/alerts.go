@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// AlertLevel documents the QuantumCoin component used by this module.
 // Uyarı seviyesi
 type AlertLevel string
 
@@ -14,6 +15,7 @@ const (
 	AlertError   AlertLevel = "error"
 )
 
+// AIAlert documents the QuantumCoin component used by this module.
 // AI'nın tespit ettiği tekil uyarı kaydı.
 type AIAlert struct {
 	ID        string     `json:"id"`
@@ -30,6 +32,7 @@ var (
 	maxAlerts    = 100
 )
 
+// PushAlert documents the QuantumCoin component used by this module.
 // Node içinden yeni bir uyarı ekleneceği zaman çağırılır.
 // Örn: ai.PushAlert(ai.AlertWarning, "HIGH_FEE", "Suspiciously high fee", "mempool")
 func PushAlert(level AlertLevel, code, message, source string) {
@@ -56,6 +59,7 @@ func PushAlert(level AlertLevel, code, message, source string) {
 	}
 }
 
+// GetAlertsSnapshot documents the QuantumCoin component used by this module.
 // Tüm uyarıların snapshot'ı (kopya)
 func GetAlertsSnapshot() []AIAlert {
 	alertsMu.RLock()

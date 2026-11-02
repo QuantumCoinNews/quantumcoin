@@ -20,6 +20,7 @@ func SetEnabled(v bool) {
 	mu.Unlock()
 }
 
+// OnBlockAdded documents the QuantumCoin component used by this module.
 // blockchain.NewBlockchain / AddBlock / ReplaceChain burayı çağırıyor.
 // şimdilik no-op, ileride cache tutarsan burada temizlersin.
 func OnBlockAdded(_ interface{})    {}

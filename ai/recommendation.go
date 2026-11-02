@@ -1,6 +1,9 @@
 // ai/recommendation.go
+
+// Package ai contains QuantumCoin project code for this module.
 package ai
 
+// BuildWalletRecommendations documents the QuantumCoin component used by this module.
 // anomaly listesinden kullanıcıya gösterilebilir öneri üret
 func BuildWalletRecommendations(anoms []AnomalyReport) []Recommendation {
 	out := make([]Recommendation, 0, len(anoms))

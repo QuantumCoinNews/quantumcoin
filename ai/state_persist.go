@@ -27,6 +27,7 @@ func aiStatePath() string {
 	return filepath.Join(dir, "ai_state.json")
 }
 
+// LoadState documents the QuantumCoin component used by this module.
 // Node açılırken çağırabileceğin fonksiyon.
 // Hata dönerse fatal değil; istersen log'lar, yok sayarsın.
 func LoadState() error {
@@ -51,6 +52,7 @@ func LoadState() error {
 	return nil
 }
 
+// SaveState documents the QuantumCoin component used by this module.
 // Node kapanırken veya belli aralıklarla çağırabileceğin fonksiyon.
 func SaveState() error {
 	// mevcut snapshot'ları çek

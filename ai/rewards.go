@@ -5,6 +5,8 @@ import "strings"
 // normalizeBonusReason:
 // Bonus açıklamalarını standartlaştırmak için ortak helper.
 // bonus_builder.go ve diğer yerler burayı kullanır.
+//
+//lint:ignore U1000 retained AI bonus normalization helper for future non-consensus bonus builders
 func normalizeBonusReason(reason string) string {
 	r := strings.TrimSpace(reason)
 	if r == "" {

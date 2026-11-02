@@ -1,4 +1,6 @@
 // ai/collector.go
+
+// Package ai contains QuantumCoin project code for this module.
 package ai
 
 // Bu dosya yalnızca AI'nin önerdiği bonusları diske yazdırmak için

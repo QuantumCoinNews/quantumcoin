@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// AIBonus documents the QuantumCoin component used by this module.
 // Zincir / madenci için AI bonus durumunun özeti.
 type AIBonus struct {
 	TotalBonusQC float64 `json:"total_bonus_qc"` // bugüne kadar toplam
@@ -18,6 +19,7 @@ var (
 	bonusState AIBonus
 )
 
+// SetBonus documents the QuantumCoin component used by this module.
 // Bonus durumunu dışarıdan tamamen set etmek istersen:
 func SetBonus(totalBonus, lastBonus float64, reason string) {
 	if !Enabled() {
@@ -35,6 +37,7 @@ func SetBonus(totalBonus, lastBonus float64, reason string) {
 	}
 }
 
+// AddBonus documents the QuantumCoin component used by this module.
 // Tipik kullanım: "AI yeni bir bonus hesapladı; toplamı arttır"
 func AddBonus(delta float64, reason string) {
 	if !Enabled() {
@@ -50,6 +53,7 @@ func AddBonus(delta float64, reason string) {
 	bonusState.UpdatedAt = time.Now().Unix()
 }
 
+// GetBonusSnapshot documents the QuantumCoin component used by this module.
 // HTTP endpoint'in kullanacağı snapshot.
 func GetBonusSnapshot() AIBonus {
 	bonusMu.RLock()

@@ -6,6 +6,7 @@ import (
 	"sync"
 )
 
+// AILevel documents the QuantumCoin component used by this module.
 // AI analiz seviyesi
 type AILevel string
 
@@ -63,6 +64,7 @@ func loadAIConfig() {
 // Enabled, AI motorunun gerçekten analiz yapıp yapmayacağını söyler.
 // Hem global enable flag'e, hem de level'in OFF olup olmamasına bakar.
 
+// Level documents the QuantumCoin component used by this module.
 // Level, geçerli AI seviyesini döner.
 func Level() AILevel {
 	cfgOnce.Do(loadAIConfig)

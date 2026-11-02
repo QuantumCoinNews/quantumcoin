@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// TelemetrySnapshot documents the QuantumCoin component used by this module.
 // Ağ durumunun özet hali.
 // /api/telemetry JSON output'u doğrudan buradan gelecek.
 type TelemetrySnapshot struct {
@@ -19,6 +20,7 @@ var (
 	lastTelemetry TelemetrySnapshot
 )
 
+// UpdateTelemetry documents the QuantumCoin component used by this module.
 // Node içinden (P2P, miner vs.) çağıracağın fonksiyon.
 // Şimdilik sadece peerCount ve hashrate alıyor; ihtiyaç olursa signature'ı genişletiriz.
 func UpdateTelemetry(peerCount int, hashrate float64) {
@@ -32,6 +34,7 @@ func UpdateTelemetry(peerCount int, hashrate float64) {
 	}
 }
 
+// GetTelemetrySnapshot documents the QuantumCoin component used by this module.
 // HTTP endpoint'in okuyacağı fonksiyon.
 func GetTelemetrySnapshot() TelemetrySnapshot {
 	telemetryMu.RLock()
