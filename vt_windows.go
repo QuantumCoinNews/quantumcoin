@@ -7,7 +7,7 @@ import (
 	"unsafe"
 )
 
-const ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+const enableVirtualTerminalProcessing = 0x0004
 
 var (
 	stdOutHandle = uintptr(^uint32(10) + 1) // -11
@@ -29,7 +29,7 @@ func enableVT(which uintptr) {
 	if r1 == 0 {
 		return
 	}
-	_, _, _ = pSetConsoleMode.Call(h, uintptr(mode|ENABLE_VIRTUAL_TERMINAL_PROCESSING))
+	_, _, _ = pSetConsoleMode.Call(h, uintptr(mode|enableVirtualTerminalProcessing))
 }
 
 func init() {

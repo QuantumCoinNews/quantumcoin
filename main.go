@@ -7,7 +7,6 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -26,9 +25,12 @@ import (
 	"quantumcoin/ai"
 	"quantumcoin/blockchain"
 	"quantumcoin/config"
+	qconsensus "quantumcoin/consensus"
 	"quantumcoin/game"
 	"quantumcoin/internal"
+	qnode "quantumcoin/node"
 	"quantumcoin/p2p"
+	"quantumcoin/security"
 	"quantumcoin/wallet"
 	"quantumcoin/webui"
 )
@@ -77,33 +79,76 @@ type WebMineSubmitResp struct {
 	Message  string `json:"message,omitempty"`
 }
 
+// FlexibleAmount documents the QuantumCoin component used by this module.
 // İmzalı gönderim için priv_hex destekli
-type FlexibleAmount int
+type FlexibleAmount string
+
+func (v FlexibleAmount) String() string {
+	return string(v)
+}
+
+// UnmarshalJSON preserves the exact user-facing QC token.
+// No float64 or integer conversion occurs at the API boundary.
+func parseFlexibleAmountV1(
+	raw string,
+) (FlexibleAmount, error) {
+	value := strings.TrimSpace(raw)
+
+	atoms, err := qconsensus.ParseQCToAtomsV1(value)
+	if err != nil {
+		return "", fmt.Errorf(
+			"invalid QC amount: %w",
+			err,
+		)
+	}
+
+	if atoms <= 0 {
+		return "", fmt.Errorf(
+			"QC amount must be positive",
+		)
+	}
+
+	return FlexibleAmount(value), nil
+}
 
 func (v *FlexibleAmount) UnmarshalJSON(data []byte) error {
-	var n int
-	if err := json.Unmarshal(data, &n); err == nil {
-		*v = FlexibleAmount(n)
+	if v == nil {
+		return fmt.Errorf("nil FlexibleAmount")
+	}
+
+	raw := strings.TrimSpace(string(data))
+	if raw == "" {
+		return fmt.Errorf("empty amount")
+	}
+
+	if raw[0] == '"' {
+		var s string
+		if err := json.Unmarshal(data, &s); err != nil {
+			return err
+		}
+
+		parsed, err := parseFlexibleAmountV1(s)
+		if err != nil {
+			return err
+		}
+
+		*v = parsed
 		return nil
 	}
 
-	var s string
-	if err := json.Unmarshal(data, &s); err != nil {
-		return err
+	if (raw[0] < '0' || raw[0] > '9') &&
+		raw[0] != '-' {
+		return fmt.Errorf(
+			"amount must be a JSON number or string",
+		)
 	}
 
-	s = strings.TrimSpace(s)
-	if s == "" {
-		*v = 0
-		return nil
-	}
-
-	parsed, err := strconv.Atoi(s)
+	parsed, err := parseFlexibleAmountV1(raw)
 	if err != nil {
 		return err
 	}
 
-	*v = FlexibleAmount(parsed)
+	*v = parsed
 	return nil
 }
 
@@ -121,10 +166,12 @@ type SendResponse struct {
 }
 
 type BurnRequest struct {
-	From   string `json:"from"`
-	Amount int    `json:"amount"`
+	From    string         `json:"from"`
+	PrivHex string         `json:"priv_hex,omitempty"`
+	Amount  FlexibleAmount `json:"amount"`
 }
 
+// TelemetryResponse documents the QuantumCoin component used by this module.
 // /api/telemetry cevabı
 type TelemetryResponse struct {
 	Height        int     `json:"height"`
@@ -192,104 +239,125 @@ const apiMaxBodyBytes int64 = 1 << 20 // 1 MB
 /* ---------- Global değişkenler ---------- */
 
 var (
-	bc               *blockchain.Blockchain
-	gameState        = game.NewGameState()
-	cfg              *config.Config
-	httpServer       *http.Server
-	aiAlerts         = NewAIAlertBuffer(200)
-	globalMempool    *internal.Mempool
-	apiReadOnlyMode  bool
-	apiChainReloadMu sync.Mutex
-	apiChainLastMod  time.Time
-	apiChainLastSize int64
+	nodeRuntime     *qnode.Runtime
+	bc              *blockchain.Blockchain
+	gameState       = game.NewGameState()
+	cfg             *config.Config
+	aiAlerts        = NewAIAlertBuffer(200)
+	apiReadOnlyMode bool
 )
 
 /* ---------- Mining döngüleri ---------- */
 
 func startContinuousMining(miner string) {
-	fmt.Printf("⛏️  Continuous mining started for %s (difficulty=%d)\n", miner, cfg.DefaultDifficultyBits)
-
-	for {
-		select {
-		case <-minerStop:
-			fmt.Println("🛑 Miner stopped.")
-			return
-
-		default:
-			blk, err := bc.MineBlock(miner, effectiveDifficultyBits(bc.NextDifficulty(cfg.DefaultDifficultyBits)))
-			if err != nil {
-				log.Printf("mine error: %v", err)
-				time.Sleep(effectiveMiningDelay(1200 * time.Millisecond))
-				continue
-			}
-
-			// Yeni blok tüm peer'lara yayılıyor
-			p2p.BroadcastMessage(p2p.BlockMessage(blk))
-
-			// Konsol log'u (renkli)
-			fmt.Printf(ansiGreen+"✅ Block #%d mined"+ansiReset+"  Hash: %s%s%s\n",
-				blk.Index, ansiCyan, hex.EncodeToString(blk.Hash), ansiReset)
-
-			// AI bonus işlemleri
-			// processAIBonus() disabled: AI monitors only, no mining bonus / no supply effect.
-
-			// Zinciri diske yaz
-			_ = bc.SaveToFile(cfg.ChainFile)
-
-			// Küçük bir nefes payı
-			time.Sleep(50 * time.Millisecond)
-		}
+	if nodeRuntime == nil {
+		log.Println("mine error: node runtime unavailable")
+		return
 	}
+
+	err := nodeRuntime.StartMining(
+		miner,
+		qnode.MiningHooksV1{
+			Difficulty: currentEffectiveDifficultyBits,
+
+			ErrorDelay: effectiveMiningDelay,
+
+			Broadcast: func(block *blockchain.Block) {
+				nodeRuntime.BroadcastP2P(
+					p2p.BlockMessage(block),
+				)
+			},
+
+			OnBlockMined: func(block *blockchain.Block) {
+				fmt.Printf(
+					ansiGreen+"✅ Block #%d mined"+ansiReset+"  Hash: %s%s%s\n",
+					block.Index,
+					ansiCyan,
+					hex.EncodeToString(block.Hash),
+					ansiReset,
+				)
+			},
+
+			OnError: func(err error) {
+				log.Printf(
+					"mine error: %v",
+					err,
+				)
+			},
+		},
+	)
+	if err != nil {
+		log.Printf(
+			"miner start error: %v",
+			err,
+		)
+		return
+	}
+
+	nodeRuntime.WaitMining()
 }
 
 func autosaveLoop() {
-	t := time.NewTicker(10 * time.Second)
-	defer t.Stop()
+	if nodeRuntime == nil {
+		log.Println(
+			"autosave error: node runtime unavailable",
+		)
+		return
+	}
 
-	for range t.C {
-		if err := bc.SaveToFile(cfg.ChainFile); err != nil {
-			log.Println("autosave error:", err)
-		}
+	err := nodeRuntime.RunAutosave(
+		context.Background(),
+		10*time.Second,
+		func(err error) {
+			log.Println(
+				"autosave error:",
+				err,
+			)
+		},
+	)
+	if err != nil {
+		log.Println(
+			"autosave stopped:",
+			err,
+		)
 	}
 }
 
 func reloadAPIChainFromDiskIfChanged() {
-	if !apiReadOnlyMode || cfg == nil || strings.TrimSpace(cfg.ChainFile) == "" {
+	if nodeRuntime == nil {
 		return
 	}
 
-	st, err := os.Stat(cfg.ChainFile)
+	nodeRuntime.SetAPIReadOnly(apiReadOnlyMode)
+
+	reloaded, err := nodeRuntime.ReloadChainFromDiskIfChanged()
 	if err != nil {
+		log.Printf(
+			"api live reload error: %v",
+			err,
+		)
 		return
 	}
 
-	apiChainReloadMu.Lock()
-	defer apiChainReloadMu.Unlock()
-
-	if !apiChainLastMod.IsZero() &&
-		apiChainLastMod.Equal(st.ModTime()) &&
-		apiChainLastSize == st.Size() {
+	if !reloaded {
 		return
 	}
 
-	defer func() {
-		if r := recover(); r != nil {
-			log.Printf("api live reload skipped: %v", r)
-		}
-	}()
-
-	nbc, err := blockchain.LoadBlockchainFromFile(cfg.ChainFile)
-	if err != nil {
-		log.Printf("api live reload error: %v", err)
+	loadedBC, _ := nodeRuntime.Snapshot()
+	if loadedBC == nil {
+		log.Print(
+			"api live reload returned nil blockchain",
+		)
 		return
 	}
 
-	nbc.SetCoinbaseMaturity(cfg.CoinbaseMaturity)
-	bc = nbc
-	apiChainLastMod = st.ModTime()
-	apiChainLastSize = st.Size()
+	bc = loadedBC
 
-	log.Printf("api live reload: chain height=%d file=%s", bc.GetBestHeight(), cfg.ChainFile)
+	log.Printf(
+		"api live reload: chain height=%d file=%s",
+		bc.BestHeightSnapshot(),
+		cfg.ChainFile,
+	)
 }
 
 /* web miner job state */
@@ -303,9 +371,8 @@ type webJob struct {
 }
 
 var (
-	jobMu     sync.Mutex
-	curJob    *webJob
-	minerStop chan struct{}
+	jobMu  sync.Mutex
+	curJob *webJob
 )
 
 /* ---------- Yardımcı fonksiyonlar ---------- */
@@ -325,9 +392,21 @@ func printUsage() {
 }
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
+	payload, err := json.Marshal(v)
+	if err != nil {
+		log.Printf("http: JSON response encode failed: %v", err)
+		status = http.StatusInternalServerError
+		payload = []byte(`{"success":false,"message":"failed to encode response"}`)
+	}
+
+	payload = append(payload, '\n')
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+
+	if _, err := w.Write(payload); err != nil {
+		log.Printf("http: JSON response write failed: %v", err)
+	}
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {
@@ -335,10 +414,22 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 }
 
 func getHTTPPort() string {
-	if p := os.Getenv("HTTP_PORT"); p != "" {
-		return p
+	if cfg == nil {
+		return ""
 	}
-	return cfg.HTTPPort
+
+	port, err := config.ResolveEffectiveHTTPPortV1(cfg)
+	if err != nil {
+		log.Printf(
+			"[config] HTTP port policy rejected legacy override: %v; using canonical=%s",
+			err,
+			cfg.HTTPPort,
+		)
+
+		return cfg.HTTPPort
+	}
+
+	return port
 }
 
 func getHTTPAddr() string {
@@ -346,7 +437,61 @@ func getHTTPAddr() string {
 	if !strings.HasPrefix(addr, ":") {
 		addr = ":" + addr
 	}
+
 	return addr
+}
+
+// getAPIListenAddr preserves the localhost default while permitting
+// an explicit host/interface only when it uses the canonical API port.
+func getAPIListenAddr() string {
+	canonicalAddr := getHTTPAddr()
+	if canonicalAddr == "" {
+		return ""
+	}
+
+	canonicalPort := strings.TrimPrefix(
+		canonicalAddr,
+		":",
+	)
+
+	localDefault := "127.0.0.1:" + canonicalPort
+
+	override := strings.TrimSpace(
+		os.Getenv("QC_API_LISTEN"),
+	)
+
+	if override == "" {
+		return localDefault
+	}
+
+	host, port, err := net.SplitHostPort(override)
+	if err != nil {
+		log.Printf(
+			"[config] invalid QC_API_LISTEN=%q: %v; using %s",
+			override,
+			err,
+			localDefault,
+		)
+
+		return localDefault
+	}
+
+	if port != canonicalPort {
+		log.Printf(
+			"[config] QC_API_LISTEN=%q conflicts with canonical port %s; using %s",
+			override,
+			canonicalPort,
+			localDefault,
+		)
+
+		return localDefault
+	}
+
+	if strings.TrimSpace(host) == "" {
+		return localDefault
+	}
+
+	return override
 }
 
 // Varsayılan adres çözümü:
@@ -439,44 +584,45 @@ func main() {
 		_ = os.Chdir(filepath.Dir(exe))
 	}
 
-	// Config yükle (TEK sefer)
-	cfg, err = config.Load("config.json")
+	// Canonical node bootstrap.
+	nodeRuntime, err = qnode.Bootstrap(
+		qnode.BootstrapOptions{
+			ConfigPath: "config.json",
+			StrictChain: strings.TrimSpace(
+				os.Getenv("QC_STRICT_CHAIN"),
+			) == "1",
+		},
+	)
 	if err != nil {
-		log.Fatalf("Config yüklenemedi: %v", err)
-	}
-	internal.SetBonusFile(cfg.BonusFile)
-	// Blockchain yükle / oluştur
-	if _, err = os.Stat(cfg.ChainFile); err == nil {
-		bc, err = blockchain.LoadBlockchainFromFile(cfg.ChainFile)
-		if err != nil {
-			log.Fatalf("Blockchain yüklenemedi: %v", err)
-		}
-	} else {
-		bc = blockchain.NewBlockchain(cfg.InitialReward, cfg.TotalSupply)
-	}
-	bc.SetCoinbaseMaturity(cfg.CoinbaseMaturity)
-
-	// --- OPSİYONEL: Zincir bütünlüğü kontrolü (ileri seviye güvenlik) ---
-	if strings.TrimSpace(os.Getenv("QC_STRICT_CHAIN")) == "1" {
-		if err := bc.ValidateBlockchain(); err != nil {
-			log.Fatalf("Chain validation failed: %v", err)
-		}
+		log.Fatalf(
+			"Node bootstrap failed: %v",
+			err,
+		)
 	}
 
-	// --- MEMPOOL (AI destekli global mempool) ---
-	globalMempool = internal.NewMempool()
+	// Compatibility bridge:
+	// Existing API, P2P, miner, Telegram Game and release paths
+	// continue using the historical globals during runtime migration migration.
+	bc, cfg = nodeRuntime.Snapshot()
+
+	if bc == nil || cfg == nil {
+		log.Fatal(
+			"Node bootstrap returned incomplete runtime state",
+		)
+	}
 
 	// Auto mode: arg yoksa node + API + mining
 	if len(os.Args) < 2 {
 		minerAddr := getDefaultAddress()
-		fmt.Printf("⛏️  Auto mode: node+api+mining -> %s (difficulty=%d)\n", minerAddr, cfg.DefaultDifficultyBits)
-		minerStop = make(chan struct{})
+		fmt.Printf("⛏️  Auto mode: node+api+mining -> %s (difficulty=%d)\n", minerAddr, currentEffectiveDifficultyBits())
 		go startHTTPAPI()
 		go autosaveLoop()
 		go startContinuousMining(minerAddr)
 		go trapAndShutdown()
 		p := strings.TrimPrefix(cfg.P2PPort, ":")
-		p2p.RunNode(p, bc)
+		if err := nodeRuntime.ServeP2P(p); err != nil {
+			log.Printf("p2p server error: %v", err)
+		}
 		return
 	}
 
@@ -487,13 +633,17 @@ func main() {
 			go startHTTPAPI()
 			go autosaveLoop()
 			go trapAndShutdown()
-			p2p.RunNode(port, bc)
+			if err := nodeRuntime.ServeP2P(port); err != nil {
+				log.Printf("p2p server error: %v", err)
+			}
 		} else {
 			go startHTTPAPI()
 			go autosaveLoop()
 			go trapAndShutdown()
 			p := strings.TrimPrefix(cfg.P2PPort, ":")
-			p2p.RunNode(p, bc)
+			if err := nodeRuntime.ServeP2P(p); err != nil {
+				log.Printf("p2p server error: %v", err)
+			}
 		}
 
 	case "run-mine":
@@ -502,18 +652,20 @@ func main() {
 			return
 		}
 		miner := os.Args[2]
-		minerStop = make(chan struct{})
 		go startHTTPAPI()
 		go autosaveLoop()
 		go startContinuousMining(miner)
 		go trapAndShutdown()
 		p := strings.TrimPrefix(cfg.P2PPort, ":")
-		p2p.RunNode(p, bc)
+		if err := nodeRuntime.ServeP2P(p); err != nil {
+			log.Printf("p2p server error: %v", err)
+		}
 
 	case "api":
 		apiReadOnlyMode = true
 		// API mode is read-only for chain file: no autosave and no final save.
 		// Read endpoints reload chain_data.dat when miner writes new blocks.
+		go trapAPIShutdown()
 		startHTTPAPI()
 		return
 
@@ -527,7 +679,9 @@ func main() {
 		go startHTTPAPI()
 		go autosaveLoop()
 		go trapAndShutdown()
-		p2p.ConnectToPeer(port, address, bc)
+		if err := nodeRuntime.ConnectPeer(port, address); err != nil {
+			log.Printf("p2p connect error: %v", err)
+		}
 
 	case "send":
 		if len(os.Args) < 5 {
@@ -550,7 +704,7 @@ func main() {
 			log.Println("tx submit failed:", err)
 			return
 		}
-		p2p.BroadcastMessage(p2p.TxMessage(tx))
+		nodeRuntime.BroadcastP2P(p2p.TxMessage(tx))
 		fmt.Printf("✓ Transaction accepted and broadcasted (txid=%s)\n", hex.EncodeToString(tx.ID))
 
 	case "mine":
@@ -558,18 +712,48 @@ func main() {
 			fmt.Println("Usage: mine [miner]")
 			return
 		}
+
 		miner := os.Args[2]
-		difficulty := effectiveDifficultyBits(bc.NextDifficulty(cfg.DefaultDifficultyBits))
-		block, err := bc.MineBlock(miner, difficulty)
+		difficulty := currentEffectiveDifficultyBits()
+
+		candidateHeight := bc.BestHeightSnapshot() + 1
+		reward := bc.ExpectedSubsidyForHeightSnapshot(
+			candidateHeight,
+		)
+
+		block, err := nodeRuntime.MineOnceV1(
+			miner,
+			difficulty,
+		)
 		if err != nil {
 			log.Println("mining failed:", err)
 			return
 		}
-		p2p.BroadcastMessage(p2p.BlockMessage(block))
-		fmt.Printf(ansiGreen+"✅ New block mined by %s"+ansiReset+"\n", miner)
-		fmt.Printf("   Hash:   %s%s%s\n", ansiGreen, hex.EncodeToString(block.Hash), ansiReset)
-		fmt.Printf("   Height: %d  Reward: %d QC\n", bc.GetBestHeight(), blockchain.GetCurrentReward())
-		// processAIBonus() disabled: AI monitors only, no mining bonus / no supply effect.
+
+		nodeRuntime.BroadcastP2P(
+			p2p.BlockMessage(block),
+		)
+
+		fmt.Printf(
+			ansiGreen+"✅ New block mined by %s"+ansiReset+"\n",
+			miner,
+		)
+
+		fmt.Printf(
+			"   Hash:   %s%s%s\n",
+			ansiGreen,
+			hex.EncodeToString(block.Hash),
+			ansiReset,
+		)
+
+		fmt.Printf(
+			"   Height: %d  Reward: %d QC\n",
+			block.Index,
+			reward,
+		)
+
+		// processAIBonus() disabled:
+		// AI monitors only, no mining bonus / no supply effect.
 		_ = bc.SaveToFile(cfg.ChainFile)
 
 	case "mine-forever":
@@ -578,13 +762,12 @@ func main() {
 			return
 		}
 		miner := os.Args[2]
-		minerStop = make(chan struct{})
 		go autosaveLoop()
 		go trapAndShutdown()
 		startContinuousMining(miner)
 
 	case "print":
-		for _, block := range bc.Blocks {
+		for _, block := range bc.AllBlocksSnapshot() {
 			fmt.Printf("📦 Block #%d\n", block.Index)
 			fmt.Printf("⛏️  Miner     : %s\n", block.Miner)
 			fmt.Printf("🧱 Hash       : %s\n", hex.EncodeToString(block.Hash))
@@ -593,7 +776,7 @@ func main() {
 			for _, tx := range block.Transactions {
 				fmt.Printf("  TxID: %s\n", hex.EncodeToString(tx.ID))
 				for _, out := range tx.Outputs {
-					fmt.Printf("    🔸 Amount: %d QC\n", out.Amount)
+					fmt.Printf("    🔸 Amount: %s QC\n", bc.OutputAmountQCAtHeightV1(out.Amount, block.Index))
 				}
 			}
 			fmt.Println("-------------------------------")
@@ -642,8 +825,8 @@ func isLocalRequest(r *http.Request) bool {
 	return ip.IsLoopback()
 }
 
-// protected: Handler'ı API token kontrolü + body limiti ile sarar.
-// QC_API_TOKEN boş ise checkAPIToken her zaman true döner (dev modu).
+// protected, handler'ı zorunlu header token kontrolü ve body limitiyle sarar.
+// QC_API_TOKEN her çalışma modunda zorunludur.
 func protected(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// 1) API token güvenliği
@@ -662,125 +845,366 @@ func protected(h http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// QC_TX_STATUS_API_V1
+// GET /api/tx/status?id=<txid>
+// Read-only tx lookup used by Telegram Game payout precheck.
+func handleTxStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	reloadAPIChainFromDiskIfChanged()
+
+	id := strings.TrimSpace(r.URL.Query().Get("id"))
+	if id == "" {
+		id = strings.TrimSpace(r.URL.Query().Get("txid"))
+	}
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "missing id")
+		return
+	}
+
+	inBlock := false
+	inMempool := false
+	confirmedHeight := -1
+
+	if bc != nil {
+		location :=
+			bc.TransactionLocationSnapshot(
+				id,
+			)
+
+		inBlock = location.InBlock
+		inMempool = location.InMempool
+		confirmedHeight = location.ConfirmedHeight
+	}
+
+	status := "unknown"
+	if inBlock {
+		status = "confirmed"
+	} else if inMempool {
+		status = "pending"
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":              true,
+		"id":              id,
+		"txid":            id,
+		"status":          status,
+		"inBlock":         inBlock,
+		"inMempool":       inMempool,
+		"confirmedHeight": confirmedHeight,
+	})
+}
+
 /* ---------- HTTP API ---------- */
 
 // main.go içinde, HTTP API bölümünde
 func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		// Tarayıcıdan gelen isteklerde QC API token’ını gönderebilmek için:
-		w.Header().Set("Access-Control-Allow-Headers",
-			"Content-Type, Authorization, X-QC-API-KEY")
+		corsOK := applyCORSHeadersV1(w, r)
+		originPresent := strings.TrimSpace(r.Header.Get("Origin")) != ""
 
 		if r.Method == http.MethodOptions {
+			if !corsOK {
+				writeError(w, http.StatusForbidden, "cors origin not allowed")
+				return
+			}
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
+
+		// Public browser-originated requests must fail closed before any
+		// application handler can perform reads or side effects.
+		// Requests without Origin remain available to CLI/server clients.
+		if originPresent && !corsOK {
+			writeError(w, http.StatusForbidden, "cors origin not allowed")
+			return
+		}
+
 		log.Printf("%s %s", r.Method, r.URL.Path)
 		next.ServeHTTP(w, r)
 	})
 }
 
-func startHTTPAPI() {
+func registerAPINotFoundBoundary(mux *http.ServeMux) {
+	if mux == nil {
+		return
+	}
+
+	notFound := func(w http.ResponseWriter, _ *http.Request) {
+		writeError(
+			w,
+			http.StatusNotFound,
+			"api endpoint not found",
+		)
+	}
+
+	mux.HandleFunc("/api", notFound)
+	mux.HandleFunc("/api/", notFound)
+}
+
+func shutdownAPIHTTPServer(ctx context.Context) error {
+	if ctx == nil {
+		return fmt.Errorf("API shutdown context is nil")
+	}
+
+	if nodeRuntime == nil {
+		return fmt.Errorf("node runtime unavailable")
+	}
+
+	server := nodeRuntime.HTTP()
+	if server == nil {
+		return fmt.Errorf("API HTTP server unavailable")
+	}
+
+	return server.Shutdown(ctx)
+}
+
+func trapAPIShutdown() {
+	signalChannel := make(chan os.Signal, 1)
+
+	signal.Notify(
+		signalChannel,
+		os.Interrupt,
+	)
+	defer signal.Stop(signalChannel)
+
+	<-signalChannel
+
+	fmt.Println()
+	fmt.Println("Shutting down API...")
+
+	ctx, cancel := context.WithTimeout(
+		context.Background(),
+		5*time.Second,
+	)
+	defer cancel()
+
+	if err := shutdownAPIHTTPServer(ctx); err != nil {
+		log.Printf(
+			"API graceful shutdown error: %v",
+			err,
+		)
+	}
+}
+func newHTTPAPIHandlerV1(
+	guard *HTTPGuard,
+	crit *EndpointLimiter,
+) http.Handler {
 	mux := http.NewServeMux()
 
-	// Kısa alias
-	crit := criticalLimiter
+	if crit == nil {
+		crit = NewEndpointLimiter()
+	}
 
 	// Temel API uçları
 	mux.HandleFunc("/api/health", protected(handleHealth))
+	mux.HandleFunc("/api/network/label", handleNetworkLabelV1)
 	mux.HandleFunc("/api/telemetry", protected(handleTelemetry))
+	mux.HandleFunc("/api/economy/policy", protected(handleEconomyPolicy))
+	mux.HandleFunc("/api/nft/monthly/program", protected(func(w http.ResponseWriter, r *http.Request) {
+		if nodeRuntime == nil {
+			writeError(w, http.StatusServiceUnavailable, "node runtime unavailable")
+			return
+		}
+		nodeRuntime.ServeNFTGameProgramV1(w, r)
+	}))
+	mux.HandleFunc(
+		"/api/nft/monthly/mint",
+		crit.WrapFunc("nft_monthly_mint", 10*time.Second, 5, protected(func(w http.ResponseWriter, r *http.Request) {
+			if nodeRuntime == nil {
+				writeError(w, http.StatusServiceUnavailable, "node runtime unavailable")
+				return
+			}
+			nodeRuntime.ServeNFTMonthlyMintV1(w, r)
+		})),
+	)
+	mux.HandleFunc(
+		"/api/nft/monthly/receipt",
+		crit.WrapFunc("nft_monthly_receipt", 10*time.Second, 10, protected(func(w http.ResponseWriter, r *http.Request) {
+			if nodeRuntime == nil {
+				writeError(w, http.StatusServiceUnavailable, "node runtime unavailable")
+				return
+			}
+			nodeRuntime.ServeNFTMonthlyReceiptV1(w, r)
+		})),
+	)
+	mux.HandleFunc("/api/security/summary", protected(handleSecuritySummary))
+	mux.HandleFunc("/api/security/events", protected(handleSecurityEvents))
+	mux.HandleFunc("/api/security/score", protected(handleSecurityScore))
+	mux.HandleFunc("/api/security/node-health", protected(handleNodeHealth))
+	mux.HandleFunc("/api/security/peer-reputation", protected(handlePeerReputation))
+	mux.HandleFunc("/api/security/dashboard", protected(handleSecurityDashboard))
+	mux.HandleFunc("/api/security/admin-report", protected(handleSecurityAdminReport))
+	mux.HandleFunc("/api/security/wallet-anomaly", protected(handleWalletAnomaly))
+	mux.HandleFunc("/api/security/mempool-abuse", protected(handleMempoolAbuse))
+	mux.HandleFunc("/api/security/anti-spam-fee-policy", protected(handleAntiSpamFeePolicy))
+	mux.HandleFunc("/api/security/finality-checkpoint", protected(handleFinalityCheckpoint))
 	mux.HandleFunc("/api/wallet/new", protected(handleNewWallet))
 	mux.HandleFunc("/api/wallet/address", protected(handleWalletAddress))
 	mux.HandleFunc("/api/wallet/balance/", protected(handleBalance))
 	mux.HandleFunc("/api/mine", protected(handleMineBlock))
 
-	// *** KRİTİK: tx/send – 10 saniyede max 5 istek ***
-	mux.HandleFunc("/api/tx/send",
-		crit.WrapFunc("tx_send", 10*time.Second, 5, protected(handleSendTx)))
-
+	// Kritik uç: tx/send – 10 saniyede en fazla 5 istek.
+	mux.HandleFunc(
+		"/api/tx/send",
+		crit.WrapFunc(
+			"tx_send",
+			10*time.Second,
+			5,
+			protected(handleSendTx),
+		),
+	)
+	mux.HandleFunc("/api/tx/status", protected(handleTxStatus))
 	mux.HandleFunc("/api/dev/fastmine", protected(handleFastMine))
 
-	// AI & Game
+	// AI ve oyun.
 	mux.HandleFunc("/api/ai/alerts", protected(handleAIAlerts))
 	mux.HandleFunc("/api/ai/bonus", protected(handleAIBonus))
 	mux.HandleFunc("/api/ai/analysis", protected(handleAIAnalysis))
+	mux.HandleFunc("/api/ai/security-dashboard", protected(handleAISecurityDashboard))
 	mux.HandleFunc("/api/game/score", protected(handleGameScore))
 	mux.HandleFunc("/api/game/leaderboard", protected(handleLeaderboard))
 
-	// Explorer
+	// Explorer.
 	mux.HandleFunc("/api/blocks", protected(handleBlocksList))
 	mux.HandleFunc("/api/block", protected(handleBlockDetail))
 
-	// Burn / stake
-	mux.HandleFunc("/api/tx/burn", protected(handleBurn))
+	// Burn ve stake.
+	mux.HandleFunc(
+		"/api/tx/burn",
+		crit.WrapFunc(
+			"tx_burn",
+			10*time.Second,
+			5,
+			protected(handleBurn),
+		),
+	)
 	mux.HandleFunc("/api/stake/start", protected(handleStakeStart))
 	mux.HandleFunc("/api/stake/status", protected(handleStakeStatus))
 
-	// Web miner
+	// Web miner.
 	mux.HandleFunc("/api/mine/job", protected(handleMineJob))
+	mux.HandleFunc(
+		"/api/mine/submit",
+		crit.WrapFunc(
+			"mine_submit",
+			10*time.Second,
+			20,
+			protected(handleMineSubmit),
+		),
+	)
 
-	// *** KRİTİK: mine/submit – 10 saniyede max 20 istek ***
-	mux.HandleFunc("/api/mine/submit",
-		crit.WrapFunc("mine_submit", 10*time.Second, 20, protected(handleMineSubmit)))
-
-	// Miner kontrol
-	// *** KRİTİK: miner/start – 10 saniyede max 3 istek ***
-	mux.HandleFunc("/api/miner/start",
-		crit.WrapFunc("miner_start", 10*time.Second, 3, protected(handleMinerStart)))
-
-	// *** KRİTİK: miner/stop – 10 saniyede max 3 istek ***
-	mux.HandleFunc("/api/miner/stop",
-		crit.WrapFunc("miner_stop", 10*time.Second, 3, protected(handleMinerStop)))
-
+	// Miner kontrol.
+	mux.HandleFunc(
+		"/api/miner/start",
+		crit.WrapFunc(
+			"miner_start",
+			10*time.Second,
+			3,
+			protected(handleMinerStart),
+		),
+	)
+	mux.HandleFunc(
+		"/api/miner/stop",
+		crit.WrapFunc(
+			"miner_stop",
+			10*time.Second,
+			3,
+			protected(handleMinerStop),
+		),
+	)
 	mux.HandleFunc("/api/miner/status", protected(handleMinerStatus))
 
-	// Web cüzdan (SPA) – burası public kalabilir, token istemiyoruz
+	// Bilinmeyen API yolları hiçbir zaman SPA index'e düşmemeli.
+	registerAPINotFoundBoundary(mux)
+
+	// Web cüzdan SPA'sı public kalır.
 	if h, err := webui.Handler(); err == nil {
 		mux.Handle("/", h)
 	} else {
 		mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"ok":true,"service":"QuantumCoin API"}`))
+			writeJSON(
+				w,
+				http.StatusOK,
+				map[string]any{
+					"ok":      true,
+					"service": "QuantumCoin API",
+				},
+			)
 		})
 	}
 
-	// --- GÜVENLİ DİNLEME ADRESİ (LOCALHOST KİLİDİ) ---
-
-	// Eski yapını bozmamak için port yine cfg / HTTP_PORT üzerinden geliyor
-	portAddr := getHTTPAddr() // örn ":8082" veya "8082"
-
-	// Tam adresi QC_API_LISTEN ile override edebilirsin (örn: "0.0.0.0:8082")
-	listenAddr := strings.TrimSpace(os.Getenv("QC_API_LISTEN"))
-	if listenAddr == "" {
-		// QC_API_LISTEN set edilmemişse: varsayılan 127.0.0.1:[port]
-		if strings.HasPrefix(portAddr, ":") {
-			listenAddr = "127.0.0.1" + portAddr
-		} else {
-			listenAddr = "127.0.0.1:" + portAddr
-		}
-	}
-
-	// Önce CORS sarmalı, ardından global HTTPGuard (rate-limit + body size)
 	var handler http.Handler = withCORS(mux)
-	if defaultHTTPGuard != nil {
-		handler = defaultHTTPGuard.Wrap(handler)
+	if guard != nil {
+		handler = guard.Wrap(handler)
 	}
 
-	httpServer = &http.Server{
-		Addr:              listenAddr,
-		Handler:           handler,
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      15 * time.Second,
-		IdleTimeout:       60 * time.Second,
-	}
+	return handler
+}
+
+func startHTTPAPI() {
+	listenAddr := getAPIListenAddr()
+	handler := newHTTPAPIHandlerV1(
+		defaultHTTPGuard,
+		criticalLimiter,
+	)
 
 	fmt.Println("HTTP API starting at http://" + listenAddr)
-	if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Printf("http server error: %v", err)
+
+	if err := nodeRuntime.ServeHTTP(
+		listenAddr,
+		handler,
+		qnode.DefaultHTTPServerOptionsV1(),
+	); err != nil {
+		log.Printf(
+			"http server error: %v",
+			err,
+		)
 	}
+}
+
+// ECONOMY_POLICY_V1
+// GET /api/economy/policy
+// Read-only economy policy endpoint.
+// Safe boundary: no mint, no transfer, no balance change.
+func handleEconomyPolicy(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	writeJSON(w, http.StatusOK, blockchain.EconomyPolicySummary())
+}
+
+// SECURITY_EVENT_LOG_V1
+// GET /api/security/summary
+// Read-only node security summary.
+func handleSecuritySummary(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	writeJSON(w, http.StatusOK, security.Summary("."))
+}
+
+// SECURITY_EVENT_LOG_V1
+// GET /api/security/events?limit=100
+// Read-only local security events.
+func handleSecurityEvents(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	limit := 100
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	writeJSON(w, http.StatusOK, security.ReadEvents(".", limit))
 }
 
 /* ---------- Handler yardımcıları ---------- */
@@ -790,39 +1214,89 @@ func writeOK(w http.ResponseWriter, v interface{}) {
 	writeJSON(w, http.StatusOK, v)
 }
 
-// ----- Basit API token kontrolü (isteğe bağlı) -----
+// ----- Zorunlu header tabanlı API token kontrolü -----
 //
-// QC_API_TOKEN boş ise → güvenlik katmanı pasif (her isteğe izin).
-// QC_API_TOKEN ayarlı ise → X-QC-API-KEY / Authorization / ?token / form token kontrol edilir.
-func checkAPIToken(w http.ResponseWriter, r *http.Request) bool {
-	expected := strings.TrimSpace(os.Getenv("QC_API_TOKEN"))
-	if expected == "" {
-		// Token tanımlı değil → güvenlik katmanı pasif
+// Korunan API uçlarında QC_API_TOKEN her çalışma modunda zorunludur.
+// İstek tokenı yalnızca X-QC-API-KEY veya Authorization: Bearer ile taşınır.
+// Query ve form/body token aktarımı hiçbir modda kabul edilmez.
+// PUBLIC_TESTNET_API_TOKEN_REQUIRED_V1
+//
+// Local/dev mode keeps the old behavior: if QC_API_TOKEN is empty, protected
+// endpoints are allowed for local development.
+// Public testnet mode is stricter: when QC_PUBLIC_TESTNET=1, or when a
+// testnet node is explicitly exposed through QC_API_LISTEN, QC_API_TOKEN must
+// be configured.
+func apiEnvBool(name string) bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv(name)))
+	return v == "1" || v == "true" || v == "yes" || v == "on"
+}
+
+func apiEnvContainsTestnet(name string) bool {
+	return strings.Contains(strings.ToLower(strings.TrimSpace(os.Getenv(name))), "testnet")
+}
+
+func apiListenAddrIsPublic() bool {
+	listen := strings.ToLower(strings.TrimSpace(os.Getenv("QC_API_LISTEN")))
+	if listen == "" {
+		return false
+	}
+
+	host := listen
+	if strings.Contains(host, "://") {
+		host = strings.TrimPrefix(host, "http://")
+		host = strings.TrimPrefix(host, "https://")
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.Trim(host, "[] ")
+
+	if host == "" || host == "0.0.0.0" || host == "::" || host == "[::]" {
 		return true
 	}
 
-	// 1) Özel header: X-QC-API-KEY
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+
+	return !ip.IsLoopback()
+}
+
+func isPublicTestnetAPITokenRequired() bool {
+	if apiEnvBool("QC_PUBLIC_TESTNET") ||
+		apiEnvBool("QC_API_PUBLIC_TESTNET") ||
+		apiEnvBool("QC_TESTNET_PUBLIC_API") {
+		return true
+	}
+
+	testnetMode :=
+		apiEnvBool("QC_TESTNET") ||
+			apiEnvContainsTestnet("QC_NET_MAGIC") ||
+			apiEnvContainsTestnet("QC_NETWORK") ||
+			apiEnvContainsTestnet("QC_NETWORK_MODE") ||
+			apiEnvContainsTestnet("QC_CHAIN_MODE") ||
+			apiEnvContainsTestnet("QC_MODE")
+
+	return testnetMode && apiListenAddrIsPublic()
+}
+func checkAPIToken(w http.ResponseWriter, r *http.Request) bool {
+	expected := strings.TrimSpace(os.Getenv("QC_API_TOKEN"))
+	if expected == "" {
+		w.Header().Set("WWW-Authenticate", `Bearer realm="QuantumCoin API"`)
+		writeError(w, http.StatusUnauthorized, "missing QC_API_TOKEN configuration")
+		return false
+	}
+
+	// API tokens are accepted only through request headers in every mode.
+	// URL query and form/body transport can expose credentials through logs,
+	// browser history, reverse proxies, analytics, and referrer propagation.
 	token := strings.TrimSpace(r.Header.Get("X-QC-API-KEY"))
 
-	// 2) Authorization: Bearer <token>
 	if token == "" {
 		auth := strings.TrimSpace(r.Header.Get("Authorization"))
 		if strings.HasPrefix(strings.ToLower(auth), "bearer ") {
 			token = strings.TrimSpace(auth[7:])
-		}
-	}
-
-	// 3) URL query: ?token=...
-	if token == "" {
-		token = strings.TrimSpace(r.URL.Query().Get("token"))
-	}
-
-	// 4) Form/body fallback
-	if token == "" {
-		if err := r.ParseForm(); err == nil {
-			if t := r.Form.Get("token"); t != "" {
-				token = strings.TrimSpace(t)
-			}
 		}
 	}
 
@@ -837,10 +1311,10 @@ func checkAPIToken(w http.ResponseWriter, r *http.Request) bool {
 /* ---------- Handler fonksiyonları ---------- */
 
 func handleHealth(w http.ResponseWriter, _ *http.Request) {
-	// Health endpoint'i kasıtlı olarak token'sız bırakıyoruz
+	// Health verisi hassas durum bilgisi içerdiği için route düzeyinde korunur.
 	writeOK(w, map[string]any{
 		"ok":       true,
-		"height":   bc.GetBestHeight(),
+		"height":   bc.BestHeightSnapshot(),
 		"time":     time.Now().UTC().Format(time.RFC3339),
 		"httpPort": getHTTPPort(),
 	})
@@ -856,24 +1330,78 @@ func handleNewWallet(w http.ResponseWriter, r *http.Request) {
 	writeOK(w, WalletResponse{Address: wal.GetAddress()})
 }
 
-func handleWalletAddress(w http.ResponseWriter, _ *http.Request) {
-	writeOK(w, WalletResponse{Address: getDefaultAddress()})
+func handleWalletAddress(w http.ResponseWriter, r *http.Request) {
+	if r == nil {
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	address := strings.TrimSpace(getDefaultAddress())
+	if address == "" || !wallet.ValidateAddress(address) {
+		writeError(
+			w,
+			http.StatusServiceUnavailable,
+			"wallet address unavailable",
+		)
+		return
+	}
+
+	writeOK(w, WalletResponse{Address: address})
 }
 
 func handleBalance(w http.ResponseWriter, r *http.Request) {
+	if r == nil {
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
 	reloadAPIChainFromDiskIfChanged()
+	handleBalanceForChain(w, r, bc)
+}
+
+func handleBalanceForChain(
+	w http.ResponseWriter,
+	r *http.Request,
+	chain *blockchain.Blockchain,
+) {
 	parts := strings.Split(r.URL.Path, "/")
 	if len(parts) != 5 {
 		writeError(w, http.StatusBadRequest, "invalid path")
 		return
 	}
-	address := parts[4]
-	total := bc.GetBalance(address)
-	spend := bc.GetSpendableBalance(address)
+
+	address := strings.TrimSpace(parts[4])
+	if address == "" || !wallet.ValidateAddress(address) {
+		writeError(w, http.StatusBadRequest, "invalid address")
+		return
+	}
+
+	if chain == nil {
+		writeError(
+			w,
+			http.StatusServiceUnavailable,
+			"blockchain unavailable",
+		)
+		return
+	}
+
+	totalQC, spendableQC, height :=
+		chain.BalanceQCSnapshotV1(address)
+
 	writeOK(w, BalanceResponse{
-		Balance:   float64(total),
-		Spendable: float64(spend),
-		Height:    bc.GetBestHeight(),
+		Balance:   totalQC,
+		Spendable: spendableQC,
+		Height:    height,
 	})
 }
 
@@ -891,6 +1419,10 @@ func handleMineBlock(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		if writeRequestBodyTooLargeV1(w, err) {
+			return
+		}
+
 		writeError(w, http.StatusBadRequest, "read body: "+err.Error())
 		return
 	}
@@ -904,19 +1436,26 @@ func handleMineBlock(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "address is required")
 		return
 	}
+	candidateHeight := bc.BestHeightSnapshot() + 1
+	reward := bc.ExpectedSubsidyForHeightSnapshot(
+		candidateHeight,
+	)
 
-	block, err := bc.MineBlock(req.Address, effectiveDifficultyBits(bc.NextDifficulty(cfg.DefaultDifficultyBits)))
+	block, err := nodeRuntime.MineOnceV1(
+		req.Address,
+		currentEffectiveDifficultyBits(),
+	)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	p2p.BroadcastMessage(p2p.BlockMessage(block))
+	nodeRuntime.BroadcastP2P(p2p.BlockMessage(block))
 
 	writeOK(w, map[string]any{
 		"success":    true,
-		"reward":     blockchain.GetCurrentReward(),
-		"height":     bc.GetBestHeight(),
+		"reward":     reward,
+		"height":     bc.BestHeightSnapshot(),
 		"block_hash": hex.EncodeToString(block.Hash),
 	})
 
@@ -936,6 +1475,10 @@ func handleSendTx(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		if writeRequestBodyTooLargeV1(w, err) {
+			return
+		}
+
 		writeError(w, http.StatusBadRequest, "read body: "+err.Error())
 		return
 	}
@@ -946,7 +1489,7 @@ func handleSendTx(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.From == "" || req.To == "" || req.Amount <= 0 {
+	if req.From == "" || req.To == "" || strings.TrimSpace(req.Amount.String()) == "" {
 		writeError(w, http.StatusBadRequest, "from, to, amount required")
 		return
 	}
@@ -961,7 +1504,7 @@ func handleSendTx(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tx, err := blockchain.NewTransaction(req.From, req.To, int(req.Amount), bc)
+	tx, err := blockchain.NewTransactionFromQCAmountV1(req.From, req.To, req.Amount.String(), bc)
 	if err != nil {
 		writeOK(w, SendResponse{
 			Success: false,
@@ -999,21 +1542,6 @@ func handleSendTx(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// --- AI destekli mempool filtresi (DoS / spam / fraud koruması) ---
-	if globalMempool != nil {
-		if !globalMempool.Add(tx) {
-			writeOK(w, SendResponse{
-				Success: false,
-				TxID:    "",
-				Message: "tx rejected by mempool (duplicate, capacity, or AI filter)",
-			})
-			return
-		}
-		// Şu an mempool’u sadece filtre amaçlı kullanıyoruz → hemen temizle
-		_ = globalMempool.RemoveTx(tx.ID)
-	}
-	// --- /AI mempool ---
-
 	// --- ÇEKİRDEK BLOCKCHAIN MEMPOOL'U ---
 	if err := bc.AddTransaction(tx); err != nil {
 		writeOK(w, SendResponse{
@@ -1024,7 +1552,7 @@ func handleSendTx(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p2p.BroadcastMessage(p2p.TxMessage(tx))
+	nodeRuntime.BroadcastP2P(p2p.TxMessage(tx))
 
 	writeOK(w, SendResponse{
 		Success: true,
@@ -1040,10 +1568,8 @@ func handleFastMine(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// --- DEV / LOCAL GÜVENLİK KİLİDİ ---
-	// 1) QC_DEV_MODE=1 (veya true/yes) olmalı
-	// 2) İstek localhost'tan gelmeli (127.0.0.1 / ::1)
-	if !isDevModeEnabled() || !isLocalRequest(r) {
-		writeError(w, http.StatusForbidden, "fastmine disabled (dev-only, localhost)")
+	// QC16: fastmine yalnızca local/dev modda açık; public testnette kapalı.
+	if !requireDevMinerEndpointAllowedV1(w, r, "/api/dev/fastmine") {
 		return
 	}
 	// --- /DEV KİLİDİ ---
@@ -1061,16 +1587,16 @@ func handleFastMine(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for i := 0; i < n; i++ {
-		if _, err := bc.MineBlock(addr, effectiveDifficultyBits(bc.NextDifficulty(cfg.DefaultDifficultyBits))); err != nil {
+		if _, err := nodeRuntime.MineOnceV1(addr, currentEffectiveDifficultyBits()); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 	}
 
 	// Son bloğu peer’lara yay
-	if len(bc.Blocks) > 0 {
-		last := bc.Blocks[len(bc.Blocks)-1]
-		p2p.BroadcastMessage(p2p.BlockMessage(last))
+	if bc.BlockCountSnapshot() > 0 {
+		last := bc.TipSnapshot()
+		nodeRuntime.BroadcastP2P(p2p.BlockMessage(last))
 	}
 
 	_ = bc.SaveToFile(cfg.ChainFile)
@@ -1078,7 +1604,7 @@ func handleFastMine(w http.ResponseWriter, r *http.Request) {
 	writeOK(w, map[string]any{
 		"success": true,
 		"mined":   n,
-		"height":  bc.GetBestHeight(),
+		"height":  bc.BestHeightSnapshot(),
 	})
 }
 
@@ -1094,10 +1620,13 @@ func handleTelemetry(w http.ResponseWriter, r *http.Request) {
 	currentReward := 0
 
 	if bc != nil {
-		height = bc.GetBestHeight()
-		blockCount = len(bc.Blocks)
-		totalSupply = bc.TotalSupply
-		currentReward = blockchain.GetCurrentReward()
+		height = bc.BestHeightSnapshot()
+		blockCount = bc.BlockCountSnapshot()
+		totalSupply = bc.TotalSupplySnapshot()
+		nextHeight := height + 1
+		currentReward = bc.ExpectedSubsidyForHeightSnapshot(
+			nextHeight,
+		)
 	}
 
 	var m runtime.MemStats
@@ -1106,8 +1635,8 @@ func handleTelemetry(w http.ResponseWriter, r *http.Request) {
 	writeOK(w, TelemetryResponse{
 		Height:        height,
 		BlockCount:    blockCount,
-		Peers:         p2p.GetPeerCount(),
-		MinerRunning:  minerStop != nil,
+		Peers:         nodeRuntime.PeerCount(),
+		MinerRunning:  nodeRuntime != nil && nodeRuntime.IsMining(),
 		HTTPPort:      getHTTPPort(),
 		P2PPort:       strings.TrimPrefix(cfg.P2PPort, ":"),
 		ChainFile:     cfg.ChainFile,
@@ -1116,6 +1645,101 @@ func handleTelemetry(w http.ResponseWriter, r *http.Request) {
 		CPUCount:      runtime.NumCPU(),
 		GoRoutines:    runtime.NumGoroutine(),
 		MemMB:         float64(m.Alloc) / (1024 * 1024),
+	})
+}
+
+// NODE_HEALTH_SUMMARY_V1
+// NODE_SYNC_DRIFT_DETECTOR_V1
+// GET /api/security/node-health
+func handleNodeHealth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	reloadAPIChainFromDiskIfChanged()
+
+	height := -1
+	blockCount := 0
+	totalSupply := 0
+	lastBlockAgeSeconds := int64(-1)
+
+	if bc != nil {
+		height = bc.BestHeightSnapshot()
+		blockCount = bc.BlockCountSnapshot()
+		totalSupply = bc.TotalSupplySnapshot()
+
+		if last := bc.TipSnapshot(); last != nil {
+			lastBlockAgeSeconds = time.Now().Unix() - last.Timestamp
+		}
+	}
+
+	mempoolSize := bc.PendingTransactionCountSnapshot()
+
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+
+	peerCount := nodeRuntime.PeerCount()
+	goRoutines := runtime.NumGoroutine()
+
+	health := "GOOD"
+	syncStatus := "SYNC_OK"
+	driftWarning := false
+
+	if peerCount == 0 {
+		health = "ISOLATED"
+		syncStatus = "NO_PEERS_LOCAL_ONLY"
+	}
+
+	if lastBlockAgeSeconds >= 0 && lastBlockAgeSeconds > int64(6*time.Hour/time.Second) {
+		health = "WATCH"
+		syncStatus = "NODE_STALE_BLOCKS"
+		driftWarning = true
+
+		_ = security.AppendEvent(".", security.NewEvent(
+			"NODE_STALE_BLOCKS",
+			security.SeverityWarning,
+			"node_health",
+			"",
+			"Last block is older than expected threshold.",
+			map[string]any{
+				"lastBlockAgeSeconds": lastBlockAgeSeconds,
+				"height":              height,
+				"peerCount":           peerCount,
+			},
+		))
+	}
+
+	if goRoutines > 500 {
+		health = "WATCH"
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"version":     "NODE_HEALTH_SUMMARY_V1",
+		"syncVersion": "NODE_SYNC_DRIFT_DETECTOR_V1",
+		"health":      health,
+
+		"height":              height,
+		"blockCount":          blockCount,
+		"totalSupply":         totalSupply,
+		"peerCount":           peerCount,
+		"mempoolSize":         mempoolSize,
+		"lastBlockAgeSeconds": lastBlockAgeSeconds,
+		"syncStatus":          syncStatus,
+		"driftWarning":        driftWarning,
+
+		"cpuCount":   runtime.NumCPU(),
+		"goRoutines": goRoutines,
+		"memoryMB":   float64(m.Alloc) / (1024 * 1024),
+
+		"minerRunning": nodeRuntime != nil && nodeRuntime.IsMining(),
+
+		"safeBoundary": map[string]bool{
+			"changesChain":       false,
+			"changesBalances":    false,
+			"changesConsensus":   false,
+			"changesTotalSupply": false,
+		},
 	})
 }
 
@@ -1135,43 +1759,95 @@ func effectiveMiningDelay(defaultDelay time.Duration) time.Duration {
 
 	return time.Duration(n) * time.Millisecond
 }
-func effectiveDifficultyBits(defaultBits int) int {
-	v := os.Getenv("QC_DIFFICULTY_BITS")
-	if v == "" {
-		return defaultBits
+func effectiveDifficultyBits(dynamicBits int) int {
+	info, err := config.ResolveEffectiveDifficultyBitsV1(
+		cfg,
+		dynamicBits,
+	)
+	if err != nil {
+		log.Printf(
+			"[config] effective difficulty policy rejected override: %v; using dynamic=%d",
+			err,
+			dynamicBits,
+		)
+
+		return dynamicBits
 	}
 
-	var n int
-	if _, err := fmt.Sscanf(v, "%d", &n); err != nil || n <= 0 || n > 30 {
-		log.Printf("[config] invalid QC_DIFFICULTY_BITS=%q; using default=%d", v, defaultBits)
-		return defaultBits
+	if info.OverrideApplied {
+		fmt.Printf(
+			"[config] %s override: %d (dynamic=%d, profile=%s)\n",
+			info.OverrideSource,
+			info.EffectiveBits,
+			info.DynamicBits,
+			info.Profile,
+		)
 	}
 
-	fmt.Printf("[config] QC_DIFFICULTY_BITS override: %d\n", n)
-	return n
+	return info.EffectiveBits
 }
+
+func currentEffectiveDifficultyBits() int {
+	if cfg == nil {
+		return 0
+	}
+
+	dynamicBits := cfg.DefaultDifficultyBits
+
+	if bc != nil {
+		dynamicBits = bc.NextDifficultySnapshot(
+			cfg.DefaultDifficultyBits,
+		)
+	}
+
+	return effectiveDifficultyBits(dynamicBits)
+}
+
+//lint:ignore U1000 retained disabled AI bonus stub; AI must not affect consensus or supply
 func processAIBonus() {
 	// AI bonus is disabled for mining consensus and supply safety.
 	// AI can monitor/analyze only; it must not mint, write bonus files, or alter balances.
-	return
 }
 
 func handleAIBonus(w http.ResponseWriter, r *http.Request) {
+	if r == nil {
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
 	address := r.URL.Query().Get("address")
 	bonuses := internal.ListBonuses(address)
 	writeOK(w, bonuses)
 }
 
 func handleAIAnalysis(w http.ResponseWriter, r *http.Request) {
+	if r == nil {
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
 	address := r.URL.Query().Get("address")
 
-	var userTxs []*blockchain.Transaction
-	for _, block := range bc.Blocks {
+	lite := make([]ai.TxLite, 0)
+	for _, block := range bc.AllBlocksSnapshot() {
+		if block == nil {
+			continue
+		}
+		var userTxs []*blockchain.Transaction
 		for _, tx := range block.Transactions {
-			if address == "" || tx.Sender == address {
+			if tx != nil && (address == "" || tx.Sender == address) {
 				userTxs = append(userTxs, tx)
 			}
 		}
+		lite = append(lite, bc.ToAITxLiteAtHeightV1(userTxs, block.Index)...)
 	}
 
 	if !ai.Enabled() {
@@ -1183,7 +1859,6 @@ func handleAIAnalysis(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lite := blockchain.ToAITxLite(userTxs)
 	anoms := ai.AnalyzeTransactions(lite)
 	recs := ai.BuildWalletRecommendations(anoms)
 	rewards := ai.OptimizeRewards(lite, anoms)
@@ -1216,17 +1891,94 @@ func handleLeaderboard(w http.ResponseWriter, _ *http.Request) {
 
 /* ---------- Explorer ---------- */
 
+const (
+	defaultBlocksPageLimit = 20
+	maxBlocksPageLimit     = 200
+)
+
+func parseBlocksPagination(
+	r *http.Request,
+) (limit int, offset int) {
+	limit = defaultBlocksPageLimit
+	offset = 0
+
+	if r == nil {
+		return limit, offset
+	}
+
+	query := r.URL.Query()
+
+	if raw :=
+		strings.TrimSpace(
+			query.Get("limit"),
+		); raw != "" {
+		if parsed, err :=
+			strconv.Atoi(raw); err == nil &&
+			parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	if limit > maxBlocksPageLimit {
+		limit = maxBlocksPageLimit
+	}
+
+	if raw :=
+		strings.TrimSpace(
+			query.Get("offset"),
+		); raw != "" {
+		if parsed, err :=
+			strconv.Atoi(raw); err == nil &&
+			parsed >= 0 {
+			offset = parsed
+		}
+	}
+
+	return limit, offset
+}
 func handleBlocksList(w http.ResponseWriter, r *http.Request) {
-	limitStr := r.URL.Query().Get("limit")
-	limit, _ := strconv.Atoi(limitStr)
-	if limit <= 0 {
-		limit = 20
+	limit, offset :=
+		parseBlocksPagination(
+			r,
+		)
+
+	blocks, total :=
+		bc.BlocksPageFromTipSnapshot(
+			offset,
+			limit,
+		)
+
+	w.Header().Set(
+		"X-Total-Count",
+		strconv.Itoa(total),
+	)
+	w.Header().Set(
+		"X-Page-Limit",
+		strconv.Itoa(limit),
+	)
+	w.Header().Set(
+		"X-Page-Offset",
+		strconv.Itoa(offset),
+	)
+
+	nextOffset :=
+		offset + len(blocks)
+
+	hasMore :=
+		nextOffset < total
+
+	w.Header().Set(
+		"X-Has-More",
+		strconv.FormatBool(hasMore),
+	)
+
+	if hasMore {
+		w.Header().Set(
+			"X-Next-Offset",
+			strconv.Itoa(nextOffset),
+		)
 	}
-	total := len(bc.Blocks)
-	start := total - limit
-	if start < 0 {
-		start = 0
-	}
+
 	type bsum struct {
 		Index      int    `json:"index"`
 		Hash       string `json:"hash"`
@@ -1236,19 +1988,29 @@ func handleBlocksList(w http.ResponseWriter, r *http.Request) {
 		Difficulty int    `json:"difficulty"`
 		TxCount    int    `json:"tx_count"`
 	}
-	summaries := make([]bsum, 0, limit)
-	for i := start; i < total; i++ {
-		b := bc.Blocks[i]
-		summaries = append(summaries, bsum{
-			Index:      b.Index,
-			Hash:       hex.EncodeToString(b.Hash),
-			PrevHash:   hex.EncodeToString(b.PrevHash),
-			Timestamp:  b.Timestamp,
-			Miner:      b.Miner,
-			Difficulty: b.Difficulty,
-			TxCount:    len(b.Transactions),
-		})
+
+	summaries :=
+		make(
+			[]bsum,
+			0,
+			len(blocks),
+		)
+
+	for _, b := range blocks {
+		summaries = append(
+			summaries,
+			bsum{
+				Index:      b.Index,
+				Hash:       hex.EncodeToString(b.Hash),
+				PrevHash:   hex.EncodeToString(b.PrevHash),
+				Timestamp:  b.Timestamp,
+				Miner:      b.Miner,
+				Difficulty: b.Difficulty,
+				TxCount:    len(b.Transactions),
+			},
+		)
 	}
+
 	writeOK(w, summaries)
 }
 
@@ -1256,8 +2018,8 @@ func handleBlockDetail(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	if idxStr := q.Get("index"); idxStr != "" {
 		if idx, err := strconv.Atoi(idxStr); err == nil {
-			if blk := bc.GetBlockByIndex(idx); blk != nil {
-				writeOK(w, blk)
+			if blk := bc.BlockByIndexSnapshot(idx); blk != nil {
+				writeOK(w, newBlockDetailPresentationV1(bc, blk))
 				return
 			}
 			writeError(w, http.StatusNotFound, "block not found")
@@ -1272,8 +2034,8 @@ func handleBlockDetail(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid hash hex")
 			return
 		}
-		if blk := bc.GetBlockByHash(raw); blk != nil {
-			writeOK(w, blk)
+		if blk := bc.BlockByHashSnapshot(raw); blk != nil {
+			writeOK(w, newBlockDetailPresentationV1(bc, blk))
 			return
 		}
 		writeError(w, http.StatusNotFound, "block not found")
@@ -1290,19 +2052,15 @@ func handleBurn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// --- API TOKEN GÜVENLİĞİ ---
-	if !checkAPIToken(w, r) {
-		return
-	}
-
-	if cfg.BurnAddress == "" || cfg.BurnAddress == "QC_BURN_SINK" {
-		writeError(w, http.StatusBadRequest, "burn address not configured")
-		return
-	}
+	// API token kontrolü protected(...) wrapper'ında yapılır.
 
 	defer r.Body.Close()
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		if writeRequestBodyTooLargeV1(w, err) {
+			return
+		}
+
 		writeError(w, http.StatusBadRequest, "read body: "+err.Error())
 		return
 	}
@@ -1312,71 +2070,134 @@ func handleBurn(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	if req.From == "" || req.Amount <= 0 {
-		writeError(w, http.StatusBadRequest, "from and positive amount required")
+
+	if req.From == "" ||
+		strings.TrimSpace(req.Amount.String()) == "" {
+		writeError(
+			w,
+			http.StatusBadRequest,
+			"from and positive amount required",
+		)
 		return
 	}
 
-	tx, err := blockchain.NewTransaction(req.From, cfg.BurnAddress, req.Amount, bc)
+	privHex := strings.TrimSpace(req.PrivHex)
+	if privHex == "" {
+		writeError(
+			w,
+			http.StatusBadRequest,
+			"missing priv_hex for signing",
+		)
+		return
+	}
+
+	tx, err :=
+		blockchain.NewCanonicalBurnTransactionFromQCAmountV1(
+			req.From,
+			req.Amount.String(),
+			bc,
+		)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "create tx: "+err.Error())
+		writeError(
+			w,
+			http.StatusBadRequest,
+			"create burn tx: "+err.Error(),
+		)
 		return
 	}
 
-	// NOT: Şu anda burn tx'leri imzasız; gelecekte /api/tx/send benzeri priv_hex ile
-	// imzalı hale getireceğiz. Şimdilik AddTransaction üzerindeki imza kontrolü
-	// bu akışı zaten "güvenlik tarafında" kilitlemiş durumda.
+	priv, err := wallet.ImportPrivateKeyHex(privHex)
+	if err != nil {
+		writeError(
+			w,
+			http.StatusBadRequest,
+			"invalid priv_hex: "+err.Error(),
+		)
+		return
+	}
+
+	if err := tx.Sign(priv); err != nil {
+		writeError(
+			w,
+			http.StatusBadRequest,
+			"sign burn tx: "+err.Error(),
+		)
+		return
+	}
+
+	if !tx.Verify() {
+		writeError(
+			w,
+			http.StatusBadRequest,
+			"verify failed",
+		)
+		return
+	}
 
 	if err := bc.AddTransaction(tx); err != nil {
-		writeError(w, http.StatusBadRequest, "submit tx: "+err.Error())
+		writeError(
+			w,
+			http.StatusBadRequest,
+			"submit tx: "+err.Error(),
+		)
 		return
 	}
 
-	p2p.BroadcastMessage(p2p.TxMessage(tx))
+	nodeRuntime.BroadcastP2P(p2p.TxMessage(tx))
 
 	writeOK(w, map[string]any{
 		"success": true,
 		"txid":    hex.EncodeToString(tx.ID),
 	})
 }
-
 func handleStakeStart(w http.ResponseWriter, r *http.Request) {
 	// Stake başlatma da hassas; token istemek mantıklı
 	if !checkAPIToken(w, r) {
 		return
 	}
 
-	writeOK(w, map[string]any{
-		"success": false,
-		"message": "stake module coming soon",
-	})
+	writeError(w, http.StatusNotImplemented, "stake module coming soon")
 }
 
 func handleStakeStatus(w http.ResponseWriter, _ *http.Request) {
-	writeOK(w, map[string]any{
-		"success": false,
-		"message": "stake status endpoint coming soon",
-	})
+	writeError(w, http.StatusNotImplemented, "stake status endpoint coming soon")
 }
 
 /* ---------- Graceful shutdown ---------- */
 
 func trapAndShutdown() {
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
-	<-c
-	fmt.Println("\nShutting down...")
-	if minerStop != nil {
-		close(minerStop)
+	signalChannel := make(chan os.Signal, 1)
+	signal.Notify(
+		signalChannel,
+		os.Interrupt,
+	)
+
+	<-signalChannel
+
+	fmt.Println()
+	fmt.Println("Shutting down...")
+
+	if nodeRuntime == nil {
+		log.Print(
+			"shutdown error: node runtime unavailable",
+		)
+		os.Exit(1)
 	}
-	if httpServer != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		_ = httpServer.Shutdown(ctx)
-		cancel()
+
+	ctx, cancel := context.WithTimeout(
+		context.Background(),
+		3*time.Second,
+	)
+	defer cancel()
+
+	if err := nodeRuntime.Shutdown(ctx); err != nil {
+		log.Printf(
+			"shutdown error: %v",
+			err,
+		)
+		os.Exit(1)
 	}
-	if err := bc.SaveToFile(cfg.ChainFile); err != nil {
-		log.Printf("save on shutdown error: %v", err)
-	}
+
 	os.Exit(0)
 }
 
@@ -1407,7 +2228,7 @@ func hasLeadingZeroBits(h []byte, need int) bool {
 }
 
 func makeWebJob(addr string, diff int) *webJob {
-	last := bc.GetLastBlock()
+	last := bc.TipSnapshot()
 	base := append([]byte(addr), last.Hash...)
 	base = append(base, byte(last.Index))
 	rnd := make([]byte, 8)
@@ -1418,7 +2239,7 @@ func makeWebJob(addr string, diff int) *webJob {
 		Challenge:  ch[:],
 		Difficulty: diff,
 		Miner:      addr,
-		Height:     bc.GetBestHeight(),
+		Height:     bc.BestHeightSnapshot(),
 		ExpiresAt:  time.Now().Add(60 * time.Second),
 	}
 }
@@ -1429,7 +2250,7 @@ func handleMineJob(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "address required")
 		return
 	}
-	diff := effectiveDifficultyBits(bc.NextDifficulty(cfg.DefaultDifficultyBits))
+	diff := currentEffectiveDifficultyBits()
 	j := makeWebJob(addr, diff)
 	jobMu.Lock()
 	curJob = j
@@ -1451,6 +2272,10 @@ func handleMineSubmit(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		if writeRequestBodyTooLargeV1(w, err) {
+			return
+		}
+
 		writeError(w, http.StatusBadRequest, "read body: "+err.Error())
 		return
 	}
@@ -1488,8 +2313,8 @@ func handleMineSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go func(miner string) {
-		if blk, err := bc.MineBlock(miner, effectiveDifficultyBits(bc.NextDifficulty(cfg.DefaultDifficultyBits))); err == nil {
-			p2p.BroadcastMessage(p2p.BlockMessage(blk))
+		if blk, err := nodeRuntime.MineOnceV1(miner, currentEffectiveDifficultyBits()); err == nil {
+			nodeRuntime.BroadcastP2P(p2p.BlockMessage(blk))
 			// processAIBonus() disabled: AI monitors only, no mining bonus / no supply effect.
 			_ = bc.SaveToFile(cfg.ChainFile)
 		} else {
@@ -1512,11 +2337,18 @@ func handleMinerStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !requireDevMinerEndpointAllowedV1(w, r, "/api/miner/start") {
+		return
+	}
 	var addr string
 	if r.Method == http.MethodPost {
 		defer r.Body.Close()
 		var req minerStartReq
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			if writeRequestBodyTooLargeV1(w, err) {
+				return
+			}
+		}
 		addr = strings.TrimSpace(req.Address)
 	}
 	if addr == "" {
@@ -1532,25 +2364,24 @@ func handleMinerStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if minerStop != nil {
+	if nodeRuntime != nil && nodeRuntime.IsMining() {
 		writeOK(w, map[string]any{
 			"running":    true,
 			"message":    "miner already running",
 			"address":    addr,
-			"difficulty": cfg.DefaultDifficultyBits,
-			"height":     bc.GetBestHeight(),
+			"difficulty": currentEffectiveDifficultyBits(),
+			"height":     bc.BestHeightSnapshot(),
 		})
 		return
 	}
 
-	minerStop = make(chan struct{})
 	go startContinuousMining(addr)
 
 	writeOK(w, map[string]any{
 		"running":    true,
 		"address":    addr,
-		"difficulty": cfg.DefaultDifficultyBits,
-		"height":     bc.GetBestHeight(),
+		"difficulty": currentEffectiveDifficultyBits(),
+		"height":     bc.BestHeightSnapshot(),
 	})
 }
 
@@ -1560,28 +2391,719 @@ func handleMinerStop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if minerStop == nil {
+	if !requireDevMinerEndpointAllowedV1(w, r, "/api/miner/stop") {
+		return
+	}
+
+	if nodeRuntime == nil ||
+		!nodeRuntime.IsMining() {
 		writeOK(w, map[string]any{
 			"running": false,
 			"message": "miner not running",
-			"height":  bc.GetBestHeight(),
+			"height":  bc.BestHeightSnapshot(),
 		})
 		return
 	}
-	close(minerStop)
-	minerStop = nil
+
+	if !nodeRuntime.StopMining() {
+		writeOK(w, map[string]any{
+			"running": true,
+			"message": "miner stop already requested",
+			"height":  bc.BestHeightSnapshot(),
+		})
+		return
+	}
+
 	writeOK(w, map[string]any{
 		"running": false,
-		"message": "miner stopped",
-		"height":  bc.GetBestHeight(),
+		"message": "miner stop requested",
+		"height":  bc.BestHeightSnapshot(),
 	})
 }
 
-func handleMinerStatus(w http.ResponseWriter, _ *http.Request) {
+func handleMinerStatus(w http.ResponseWriter, r *http.Request) {
+	if !requireDevMinerEndpointAllowedV1(w, r, "/api/miner/status") {
+		return
+	}
 	writeOK(w, map[string]any{
-		"running":  minerStop != nil,
-		"height":   bc.GetBestHeight(),
-		"bits":     cfg.DefaultDifficultyBits,
+		"running":  nodeRuntime != nil && nodeRuntime.IsMining(),
+		"height":   bc.BestHeightSnapshot(),
+		"bits":     currentEffectiveDifficultyBits(),
 		"httpPort": getHTTPPort(),
 	})
+}
+
+// PEER_REPUTATION_API_V1
+// GET /api/security/peer-reputation
+func handlePeerReputation(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if !nodeRuntime.PeerSecurityAvailable() {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"version": "PEER_REPUTATION_API_V1",
+			"peers":   map[string]any{},
+			"status":  "NO_PEER_SECURITY",
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, nodeRuntime.PeerReputationSnapshot())
+}
+
+// SECURITY_SCORE_ENGINE_V1
+// GET /api/security/score
+func handleSecurityScore(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, security.Score("."))
+}
+
+// SECURITY_DASHBOARD_API_V1
+// GET /api/security/dashboard
+func handleSecurityDashboard(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	peerReputation := map[string]any{
+		"version": "PEER_REPUTATION_ENGINE_V1",
+		"peers":   map[string]any{},
+		"status":  "NO_PEER_SECURITY",
+	}
+	if nodeRuntime.PeerSecurityAvailable() {
+		peerReputation = nodeRuntime.PeerReputationSnapshot()
+	}
+
+	walletObservations := make([]security.WalletTxObservation, 0)
+	for _, block := range bc.AllBlocksSnapshot() {
+		if block == nil {
+			continue
+		}
+		for _, tx := range block.Transactions {
+			if tx == nil {
+				continue
+			}
+
+			txid := ""
+			if len(tx.ID) > 0 {
+				txid = fmt.Sprintf("%x", tx.ID)
+			}
+
+			walletObservations = append(walletObservations, security.WalletTxObservation{
+				TxID:       txid,
+				Sender:     tx.Sender,
+				Amount:     int(bc.TransactionAmountQCAtHeightV1(tx.Amount, block.Index)),
+				AmountQC:   bc.TransactionAmountQCAtHeightV1(tx.Amount, block.Index),
+				Inputs:     len(tx.Inputs),
+				Outputs:    len(tx.Outputs),
+				BlockIndex: int(block.Index),
+			})
+		}
+	}
+
+	walletAnomaly := security.AnalyzeWalletAnomalies(walletObservations)
+
+	mempoolObservations := make([]security.MempoolTxObservation, 0)
+	pendingTxs, pendingHeight := bc.PendingTransactionsWithHeightSnapshotV1()
+	for _, tx := range pendingTxs {
+		if tx == nil {
+			continue
+		}
+
+		txid := ""
+		if len(tx.ID) > 0 {
+			txid = fmt.Sprintf("%x", tx.ID)
+		}
+
+		mempoolObservations = append(mempoolObservations, security.MempoolTxObservation{
+			TxID:     txid,
+			Sender:   tx.Sender,
+			Amount:   int(bc.TransactionAmountQCAtHeightV1(tx.Amount, pendingHeight)),
+			AmountQC: bc.TransactionAmountQCAtHeightV1(tx.Amount, pendingHeight),
+			Inputs:   len(tx.Inputs),
+			Outputs:  len(tx.Outputs),
+		})
+	}
+
+	mempoolAbuse := security.AnalyzeMempoolAbuse(mempoolObservations)
+
+	antiSpamFeePolicy := security.EvaluateDynamicAntiSpamFeePolicy(security.DynamicAntiSpamFeePolicyInput{
+		Observations:     mempoolObservations,
+		BaseMinFee:       0,
+		MempoolSoftLimit: 25,
+		MempoolHardLimit: 50,
+	})
+
+	chainHeight := 0
+	blockCount := 0
+	latestBlockHash := ""
+	latestBlockAgeSeconds := int64(0)
+
+	if bc != nil && bc.BlockCountSnapshot() > 0 {
+		blockCount = bc.BlockCountSnapshot()
+		latest := bc.TipSnapshot()
+		if latest != nil {
+			chainHeight = latest.Index
+			if len(latest.Hash) > 0 {
+				latestBlockHash = fmt.Sprintf("%x", latest.Hash)
+			}
+			if latest.Timestamp > 0 {
+				latestBlockAgeSeconds = time.Now().Unix() - latest.Timestamp
+				if latestBlockAgeSeconds < 0 {
+					latestBlockAgeSeconds = 0
+				}
+			}
+		}
+	}
+
+	finalityCheckpoint := security.EvaluateFinalityCheckpointWarning(security.FinalityCheckpointInput{
+		ChainHeight:           chainHeight,
+		BlockCount:            blockCount,
+		LatestBlockHash:       latestBlockHash,
+		LatestBlockAgeSeconds: latestBlockAgeSeconds,
+		PeerCount:             0,
+		FinalityDepth:         6,
+		ReorgWarningDepth:     3,
+	})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"version":            "SECURITY_DASHBOARD_API_V1",
+		"summary":            security.Summary("."),
+		"score":              security.Score("."),
+		"peerReputation":     peerReputation,
+		"walletAnomaly":      walletAnomaly,
+		"mempoolAbuse":       mempoolAbuse,
+		"antiSpamFeePolicy":  antiSpamFeePolicy,
+		"finalityCheckpoint": finalityCheckpoint,
+		"endpoints": []string{
+			"/api/security/summary",
+			"/api/security/events",
+			"/api/security/score",
+			"/api/security/node-health",
+			"/api/security/peer-reputation",
+			"/api/security/wallet-anomaly",
+			"/api/security/mempool-abuse",
+			"/api/security/anti-spam-fee-policy",
+			"/api/security/finality-checkpoint",
+			"/api/security/dashboard",
+		},
+		"safeBoundary": map[string]bool{
+			"readOnly":           true,
+			"changesChain":       false,
+			"changesBalances":    false,
+			"changesConsensus":   false,
+			"changesTotalSupply": false,
+			"performsTransfer":   false,
+			"startsMining":       false,
+		},
+	})
+}
+
+// WALLET_ANOMALY_API_V1
+// GET /api/security/wallet-anomaly
+func handleWalletAnomaly(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	observations := make([]security.WalletTxObservation, 0)
+
+	for _, block := range bc.AllBlocksSnapshot() {
+		if block == nil {
+			continue
+		}
+
+		for _, tx := range block.Transactions {
+			if tx == nil {
+				continue
+			}
+
+			txid := ""
+			if len(tx.ID) > 0 {
+				txid = fmt.Sprintf("%x", tx.ID)
+			}
+
+			observations = append(observations, security.WalletTxObservation{
+				TxID:       txid,
+				Sender:     tx.Sender,
+				Amount:     int(bc.TransactionAmountQCAtHeightV1(tx.Amount, block.Index)),
+				AmountQC:   bc.TransactionAmountQCAtHeightV1(tx.Amount, block.Index),
+				Inputs:     len(tx.Inputs),
+				Outputs:    len(tx.Outputs),
+				BlockIndex: int(block.Index),
+			})
+		}
+	}
+
+	writeJSON(w, http.StatusOK, security.AnalyzeWalletAnomalies(observations))
+}
+
+// MEMPOOL_ABUSE_API_V1
+// GET /api/security/mempool-abuse
+func handleMempoolAbuse(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	observations := make([]security.MempoolTxObservation, 0)
+
+	pendingTxs, pendingHeight := bc.PendingTransactionsWithHeightSnapshotV1()
+	for _, tx := range pendingTxs {
+		if tx == nil {
+			continue
+		}
+
+		txid := ""
+		if len(tx.ID) > 0 {
+			txid = fmt.Sprintf("%x", tx.ID)
+		}
+
+		observations = append(observations, security.MempoolTxObservation{
+			TxID:     txid,
+			Sender:   tx.Sender,
+			Amount:   int(bc.TransactionAmountQCAtHeightV1(tx.Amount, pendingHeight)),
+			AmountQC: bc.TransactionAmountQCAtHeightV1(tx.Amount, pendingHeight),
+			Inputs:   len(tx.Inputs),
+			Outputs:  len(tx.Outputs),
+		})
+	}
+
+	writeJSON(w, http.StatusOK, security.AnalyzeMempoolAbuse(observations))
+}
+
+// DYNAMIC_ANTI_SPAM_FEE_POLICY_API_V1
+// GET /api/security/anti-spam-fee-policy
+func handleAntiSpamFeePolicy(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	observations := make([]security.MempoolTxObservation, 0)
+
+	pendingTxs, pendingHeight := bc.PendingTransactionsWithHeightSnapshotV1()
+	for _, tx := range pendingTxs {
+		if tx == nil {
+			continue
+		}
+
+		txid := ""
+		if len(tx.ID) > 0 {
+			txid = fmt.Sprintf("%x", tx.ID)
+		}
+
+		observations = append(observations, security.MempoolTxObservation{
+			TxID:     txid,
+			Sender:   tx.Sender,
+			Amount:   int(bc.TransactionAmountQCAtHeightV1(tx.Amount, pendingHeight)),
+			AmountQC: bc.TransactionAmountQCAtHeightV1(tx.Amount, pendingHeight),
+			Inputs:   len(tx.Inputs),
+			Outputs:  len(tx.Outputs),
+		})
+	}
+
+	result := security.EvaluateDynamicAntiSpamFeePolicy(security.DynamicAntiSpamFeePolicyInput{
+		Observations:     observations,
+		BaseMinFee:       0,
+		MempoolSoftLimit: 25,
+		MempoolHardLimit: 50,
+	})
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+// FINALITY_CHECKPOINT_WARNING_API_V1
+// GET /api/security/finality-checkpoint
+func handleFinalityCheckpoint(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	chainHeight := 0
+	blockCount := 0
+	latestBlockHash := ""
+	latestBlockAgeSeconds := int64(0)
+
+	if bc != nil && bc.BlockCountSnapshot() > 0 {
+		blockCount = bc.BlockCountSnapshot()
+
+		latest := bc.TipSnapshot()
+		if latest != nil {
+			chainHeight = latest.Index
+
+			if len(latest.Hash) > 0 {
+				latestBlockHash = fmt.Sprintf("%x", latest.Hash)
+			}
+
+			if latest.Timestamp > 0 {
+				latestBlockAgeSeconds = time.Now().Unix() - latest.Timestamp
+				if latestBlockAgeSeconds < 0 {
+					latestBlockAgeSeconds = 0
+				}
+			}
+		}
+	}
+
+	result := security.EvaluateFinalityCheckpointWarning(security.FinalityCheckpointInput{
+		ChainHeight:           chainHeight,
+		BlockCount:            blockCount,
+		LatestBlockHash:       latestBlockHash,
+		LatestBlockAgeSeconds: latestBlockAgeSeconds,
+		PeerCount:             0,
+		FinalityDepth:         6,
+		ReorgWarningDepth:     3,
+	})
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+// SECURITY_ADMIN_REPORT_API_V1
+// GET /api/security/admin-report
+func handleSecurityAdminReport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	securitySummary := security.Summary(".")
+	securityScore := security.Score(".")
+
+	peerReputation := map[string]any{
+		"version": "PEER_REPUTATION_ENGINE_V1",
+		"peers":   map[string]any{},
+		"status":  "NO_PEER_SECURITY",
+	}
+	if nodeRuntime.PeerSecurityAvailable() {
+		peerReputation = nodeRuntime.PeerReputationSnapshot()
+	}
+
+	chainHeight := 0
+	blockCount := 0
+	latestBlockHash := ""
+	latestBlockAgeSeconds := int64(0)
+
+	if bc != nil && bc.BlockCountSnapshot() > 0 {
+		blockCount = bc.BlockCountSnapshot()
+		latest := bc.TipSnapshot()
+		if latest != nil {
+			chainHeight = latest.Index
+			if len(latest.Hash) > 0 {
+				latestBlockHash = fmt.Sprintf("%x", latest.Hash)
+			}
+			if latest.Timestamp > 0 {
+				latestBlockAgeSeconds = time.Now().Unix() - latest.Timestamp
+				if latestBlockAgeSeconds < 0 {
+					latestBlockAgeSeconds = 0
+				}
+			}
+		}
+	}
+
+	nodeHealth := map[string]any{
+		"version":             "NODE_HEALTH_SUMMARY_V1",
+		"height":              chainHeight,
+		"blockCount":          blockCount,
+		"peerCount":           0,
+		"lastBlockAgeSeconds": latestBlockAgeSeconds,
+		"health":              "GOOD",
+		"syncStatus":          "LOCAL_OK",
+		"syncVersion":         "NODE_SYNC_DRIFT_DETECTOR_V1",
+		"safeBoundary": map[string]bool{
+			"changesBalances":    false,
+			"changesChain":       false,
+			"changesConsensus":   false,
+			"changesTotalSupply": false,
+		},
+	}
+
+	if blockCount == 0 {
+		nodeHealth["health"] = "WATCH"
+		nodeHealth["syncStatus"] = "NO_CHAIN_DATA"
+	} else if latestBlockAgeSeconds > 21600 {
+		nodeHealth["health"] = "WATCH"
+		nodeHealth["syncStatus"] = "NODE_STALE_BLOCKS"
+	} else {
+		nodeHealth["health"] = "ISOLATED"
+		nodeHealth["syncStatus"] = "NO_PEERS_LOCAL_ONLY"
+	}
+
+	walletObservations := make([]security.WalletTxObservation, 0)
+	if bc != nil {
+		for _, block := range bc.AllBlocksSnapshot() {
+			if block == nil {
+				continue
+			}
+			for _, tx := range block.Transactions {
+				if tx == nil {
+					continue
+				}
+
+				txid := ""
+				if len(tx.ID) > 0 {
+					txid = fmt.Sprintf("%x", tx.ID)
+				}
+
+				walletObservations = append(walletObservations, security.WalletTxObservation{
+					TxID:       txid,
+					Sender:     tx.Sender,
+					Amount:     int(bc.TransactionAmountQCAtHeightV1(tx.Amount, block.Index)),
+					AmountQC:   bc.TransactionAmountQCAtHeightV1(tx.Amount, block.Index),
+					Inputs:     len(tx.Inputs),
+					Outputs:    len(tx.Outputs),
+					BlockIndex: int(block.Index),
+				})
+			}
+		}
+	}
+	walletAnomaly := security.AnalyzeWalletAnomalies(walletObservations)
+
+	mempoolObservations := make([]security.MempoolTxObservation, 0)
+	if bc != nil {
+		pendingTxs, pendingHeight := bc.PendingTransactionsWithHeightSnapshotV1()
+		for _, tx := range pendingTxs {
+			if tx == nil {
+				continue
+			}
+
+			txid := ""
+			if len(tx.ID) > 0 {
+				txid = fmt.Sprintf("%x", tx.ID)
+			}
+
+			mempoolObservations = append(mempoolObservations, security.MempoolTxObservation{
+				TxID:     txid,
+				Sender:   tx.Sender,
+				Amount:   int(bc.TransactionAmountQCAtHeightV1(tx.Amount, pendingHeight)),
+				AmountQC: bc.TransactionAmountQCAtHeightV1(tx.Amount, pendingHeight),
+				Inputs:   len(tx.Inputs),
+				Outputs:  len(tx.Outputs),
+			})
+		}
+	}
+
+	mempoolAbuse := security.AnalyzeMempoolAbuse(mempoolObservations)
+
+	antiSpamFeePolicy := security.EvaluateDynamicAntiSpamFeePolicy(security.DynamicAntiSpamFeePolicyInput{
+		Observations:     mempoolObservations,
+		BaseMinFee:       0,
+		MempoolSoftLimit: 25,
+		MempoolHardLimit: 50,
+	})
+
+	finalityCheckpoint := security.EvaluateFinalityCheckpointWarning(security.FinalityCheckpointInput{
+		ChainHeight:           chainHeight,
+		BlockCount:            blockCount,
+		LatestBlockHash:       latestBlockHash,
+		LatestBlockAgeSeconds: latestBlockAgeSeconds,
+		PeerCount:             0,
+		FinalityDepth:         6,
+		ReorgWarningDepth:     3,
+	})
+
+	report := security.BuildSecurityAdminReadonlyReport(security.SecurityAdminReportInput{
+		Summary:            securitySummary,
+		Score:              securityScore,
+		NodeHealth:         nodeHealth,
+		PeerReputation:     peerReputation,
+		WalletAnomaly:      walletAnomaly,
+		MempoolAbuse:       mempoolAbuse,
+		AntiSpamFeePolicy:  antiSpamFeePolicy,
+		FinalityCheckpoint: finalityCheckpoint,
+	})
+
+	writeJSON(w, http.StatusOK, report)
+}
+
+// AI_SECURITY_DASHBOARD_API_V1
+// GET /api/ai/security-dashboard
+func handleAISecurityDashboard(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	securitySummary := security.Summary(".")
+	securityScore := security.Score(".")
+
+	peerReputation := map[string]any{
+		"version": "PEER_REPUTATION_ENGINE_V1",
+		"peers":   map[string]any{},
+		"status":  "NO_PEER_SECURITY",
+	}
+	if nodeRuntime.PeerSecurityAvailable() {
+		peerReputation = nodeRuntime.PeerReputationSnapshot()
+	}
+
+	chainHeight := 0
+	blockCount := 0
+	latestBlockHash := ""
+	latestBlockAgeSeconds := int64(0)
+
+	if bc != nil && bc.BlockCountSnapshot() > 0 {
+		blockCount = bc.BlockCountSnapshot()
+		latest := bc.TipSnapshot()
+		if latest != nil {
+			chainHeight = latest.Index
+			if len(latest.Hash) > 0 {
+				latestBlockHash = fmt.Sprintf("%x", latest.Hash)
+			}
+			if latest.Timestamp > 0 {
+				latestBlockAgeSeconds = time.Now().Unix() - latest.Timestamp
+				if latestBlockAgeSeconds < 0 {
+					latestBlockAgeSeconds = 0
+				}
+			}
+		}
+	}
+
+	nodeHealth := map[string]any{
+		"version":             "NODE_HEALTH_SUMMARY_V1",
+		"height":              chainHeight,
+		"blockCount":          blockCount,
+		"peerCount":           0,
+		"lastBlockAgeSeconds": latestBlockAgeSeconds,
+		"health":              "GOOD",
+		"syncStatus":          "LOCAL_OK",
+		"syncVersion":         "NODE_SYNC_DRIFT_DETECTOR_V1",
+		"safeBoundary": map[string]bool{
+			"changesBalances":    false,
+			"changesChain":       false,
+			"changesConsensus":   false,
+			"changesTotalSupply": false,
+		},
+	}
+
+	if blockCount == 0 {
+		nodeHealth["health"] = "WATCH"
+		nodeHealth["syncStatus"] = "NO_CHAIN_DATA"
+	} else if latestBlockAgeSeconds > 21600 {
+		nodeHealth["health"] = "WATCH"
+		nodeHealth["syncStatus"] = "NODE_STALE_BLOCKS"
+	} else {
+		nodeHealth["health"] = "ISOLATED"
+		nodeHealth["syncStatus"] = "NO_PEERS_LOCAL_ONLY"
+	}
+
+	walletObservations := make([]security.WalletTxObservation, 0)
+	if bc != nil {
+		for _, block := range bc.AllBlocksSnapshot() {
+			if block == nil {
+				continue
+			}
+			for _, tx := range block.Transactions {
+				if tx == nil {
+					continue
+				}
+
+				txid := ""
+				if len(tx.ID) > 0 {
+					txid = fmt.Sprintf("%x", tx.ID)
+				}
+
+				walletObservations = append(walletObservations, security.WalletTxObservation{
+					TxID:       txid,
+					Sender:     tx.Sender,
+					Amount:     int(bc.TransactionAmountQCAtHeightV1(tx.Amount, block.Index)),
+					AmountQC:   bc.TransactionAmountQCAtHeightV1(tx.Amount, block.Index),
+					Inputs:     len(tx.Inputs),
+					Outputs:    len(tx.Outputs),
+					BlockIndex: int(block.Index),
+				})
+			}
+		}
+	}
+	walletAnomaly := security.AnalyzeWalletAnomalies(walletObservations)
+
+	mempoolObservations := make([]security.MempoolTxObservation, 0)
+	if bc != nil {
+		pendingTxs, pendingHeight := bc.PendingTransactionsWithHeightSnapshotV1()
+		for _, tx := range pendingTxs {
+			if tx == nil {
+				continue
+			}
+
+			txid := ""
+			if len(tx.ID) > 0 {
+				txid = fmt.Sprintf("%x", tx.ID)
+			}
+
+			mempoolObservations = append(mempoolObservations, security.MempoolTxObservation{
+				TxID:     txid,
+				Sender:   tx.Sender,
+				Amount:   int(bc.TransactionAmountQCAtHeightV1(tx.Amount, pendingHeight)),
+				AmountQC: bc.TransactionAmountQCAtHeightV1(tx.Amount, pendingHeight),
+				Inputs:   len(tx.Inputs),
+				Outputs:  len(tx.Outputs),
+			})
+		}
+	}
+
+	mempoolAbuse := security.AnalyzeMempoolAbuse(mempoolObservations)
+
+	antiSpamFeePolicy := security.EvaluateDynamicAntiSpamFeePolicy(security.DynamicAntiSpamFeePolicyInput{
+		Observations:     mempoolObservations,
+		BaseMinFee:       0,
+		MempoolSoftLimit: 25,
+		MempoolHardLimit: 50,
+	})
+
+	finalityCheckpoint := security.EvaluateFinalityCheckpointWarning(security.FinalityCheckpointInput{
+		ChainHeight:           chainHeight,
+		BlockCount:            blockCount,
+		LatestBlockHash:       latestBlockHash,
+		LatestBlockAgeSeconds: latestBlockAgeSeconds,
+		PeerCount:             0,
+		FinalityDepth:         6,
+		ReorgWarningDepth:     3,
+	})
+
+	dashboard := map[string]any{
+		"version":            "SECURITY_DASHBOARD_API_V1",
+		"summary":            securitySummary,
+		"score":              securityScore,
+		"nodeHealth":         nodeHealth,
+		"peerReputation":     peerReputation,
+		"walletAnomaly":      walletAnomaly,
+		"mempoolAbuse":       mempoolAbuse,
+		"antiSpamFeePolicy":  antiSpamFeePolicy,
+		"finalityCheckpoint": finalityCheckpoint,
+		"aiBridgeSource":     "AI_SECURITY_DASHBOARD_API_V1",
+		"safeBoundary": map[string]bool{
+			"readOnly":           true,
+			"changesMempool":     false,
+			"changesChain":       false,
+			"changesBalances":    false,
+			"changesConsensus":   false,
+			"changesTotalSupply": false,
+			"performsTransfer":   false,
+			"startsMining":       false,
+		},
+	}
+
+	adminReport := security.BuildSecurityAdminReadonlyReport(security.SecurityAdminReportInput{
+		Summary:            securitySummary,
+		Score:              securityScore,
+		NodeHealth:         nodeHealth,
+		PeerReputation:     peerReputation,
+		WalletAnomaly:      walletAnomaly,
+		MempoolAbuse:       mempoolAbuse,
+		AntiSpamFeePolicy:  antiSpamFeePolicy,
+		FinalityCheckpoint: finalityCheckpoint,
+	})
+
+	result := ai.BuildAISecurityDashboardBridge(ai.AISecurityDashboardBridgeInput{
+		AdminReport: adminReport,
+		Dashboard:   dashboard,
+	})
+
+	writeJSON(w, http.StatusOK, result)
 }
