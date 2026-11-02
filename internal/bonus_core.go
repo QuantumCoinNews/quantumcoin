@@ -1,42 +1,67 @@
 // internal/bonus_core.go
+
+// Package internal contains QuantumCoin project code for this module.
 package internal
 
 import (
 	"fmt"
 	"sync"
-	"time"
 )
 
-var (
-	bonusLog     []string
-	bonusLogLock sync.Mutex
-)
+var bonusLogLock sync.Mutex
 
-// GiveBonusCore — çekirdek bonus verme işlemi (AI veya blockchain bağımsız, string log).
-func GiveBonusCore(address, bonusType string, amount int, reason string, txID string) {
-	bonusLogLock.Lock()
-	defer bonusLogLock.Unlock()
+// GiveBonusCore yalnızca konsola durum bilgisi yazar.
+// Kanonik bonus RAM kaydı reward_system.go içindeki memBonusLog'dur.
+// Blockchain transferi, mint veya bakiye değişikliği yapmaz.
+func GiveBonusCore(
+	address string,
+	bonusType string,
+	amount int,
+	reason string,
+	txID string,
+) {
+	status := "pending_settlement"
+	if txID != "" {
+		status = "settlement_referenced"
+	}
 
 	entry := fmt.Sprintf(
-		"[%s] Bonus to %s: %d QC | Type: %s | Reason: %s | TxID: %s",
-		time.Now().Format(time.RFC3339),
-		address,
+		"Bonus recorded: %d QC | Address: %s | Type: %s | Reason: %s | TxID: %s | Status: %s",
 		amount,
+		address,
 		bonusType,
 		reason,
 		txID,
+		status,
 	)
-	bonusLog = append(bonusLog, entry)
 
-	fmt.Println("🎁 Bonus awarded:", entry)
-}
-
-// ListBonusLog — mevcut bonus loglarını döndürür (kopya).
-func ListBonusLog() []string {
 	bonusLogLock.Lock()
 	defer bonusLogLock.Unlock()
 
-	copyLog := make([]string, len(bonusLog))
-	copy(copyLog, bonusLog)
+	fmt.Println("🎁 Bonus recorded; settlement pending:", entry)
+}
+
+// ListBonusLog geriye dönük uyumluluk için string görünümü döndürür.
+// Veriler yalnızca reward_system.go içindeki sınırlı memBonusLog kaynağından üretilir.
+func ListBonusLog() []string {
+	memBonusMu.Lock()
+	defer memBonusMu.Unlock()
+
+	copyLog := make([]string, 0, len(memBonusLog))
+
+	for _, bonus := range memBonusLog {
+		copyLog = append(
+			copyLog,
+			fmt.Sprintf(
+				"Bonus recorded: %d QC | Address: %s | Type: %s | Reason: %s | Status: %s",
+				bonus.Amount,
+				bonus.Address,
+				bonus.Type,
+				bonus.Reason,
+				bonus.Status,
+			),
+		)
+	}
+
 	return copyLog
 }

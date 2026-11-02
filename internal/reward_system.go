@@ -1,4 +1,6 @@
 // internal/reward_system.go
+
+// Package internal contains QuantumCoin project code for this module.
 package internal
 
 import (
@@ -17,56 +19,66 @@ type Bonus struct {
 	Amount    int       `json:"amount"`
 	Reason    string    `json:"reason,omitempty"`
 	Metadata  string    `json:"metadata,omitempty"`
+	Status    string    `json:"status"`
 	Timestamp time.Time `json:"timestamp"`
 }
 
 const (
-	// RAM'de tutulacak maksimum bonus satırı
 	maxMemBonusLines = 1000
-
-	// Bonus log dosyasının maks. boyutu (10 MB). Aşıldığında .1 uzantılı rotate edilir.
 	maxBonusFileSize = 10 * 1024 * 1024
 )
 
 var (
+	bonusPathMu   sync.RWMutex
 	bonusFilePath string
-
-	memBonusMu  sync.Mutex
-	memBonusLog []Bonus
-
-	// Dosya yazımı için ayrı kilit (eşzamanlı append çakışmasın)
-	bonusFileMu sync.Mutex
+	memBonusMu    sync.Mutex
+	memBonusLog   []Bonus
+	bonusFileMu   sync.Mutex
 )
 
-// SetBonusFile: Bonusların kaydedileceği dosya yolunu ayarlar.
-// Güvenlik:
-// - Boş/whitespace ise dosya log'u devre dışı.
-// - Göreli path ise QC_NODE_DIR altında çözülür (release klasörü kök kabul edilir).
+// SetBonusFile bonus kayıtlarının yazılacağı dosya yolunu ayarlar.
 func SetBonusFile(path string) {
 	path = strings.TrimSpace(path)
-	if path == "" {
-		bonusFilePath = ""
-		return
-	}
 
-	// Göreli yol → QC_NODE_DIR altında çöz
-	if !filepath.IsAbs(path) {
-		if base := strings.TrimSpace(os.Getenv("QC_NODE_DIR")); base != "" {
-			path = filepath.Join(base, path)
+	if path != "" && !filepath.IsAbs(path) {
+		base := strings.TrimSpace(os.Getenv("QC_NODE_DIR"))
+		if base == "" {
+			exe, err := os.Executable()
+			if err == nil {
+				base = filepath.Dir(exe)
+			}
 		}
+		if base == "" {
+			base, _ = os.Getwd()
+		}
+		path = filepath.Join(base, path)
 	}
 
+	bonusPathMu.Lock()
 	bonusFilePath = path
+	bonusPathMu.Unlock()
 }
 
-// GiveBonus: bonus ödül dağıtır (RAM + dosya + core log).
-// Not: Address boş veya amount <= 0 ise sessizce yok sayar (spam/bug engeli).
-func GiveBonus(address, bonusType string, amount int, reason, metadata string) {
+func currentBonusFilePath() string {
+	bonusPathMu.RLock()
+	defer bonusPathMu.RUnlock()
+	return bonusFilePath
+}
+
+// GiveBonus settlement öncesi bonus kaydı oluşturur.
+// Blockchain transferi veya mint işlemi yapmaz.
+func GiveBonus(
+	address,
+	bonusType string,
+	amount int,
+	reason,
+	metadata string,
+) bool {
 	address = strings.TrimSpace(address)
 	bonusType = strings.TrimSpace(bonusType)
 
 	if address == "" || amount <= 0 {
-		return
+		return false
 	}
 
 	b := Bonus{
@@ -75,20 +87,23 @@ func GiveBonus(address, bonusType string, amount int, reason, metadata string) {
 		Amount:    amount,
 		Reason:    reason,
 		Metadata:  metadata,
+		Status:    "pending_settlement",
 		Timestamp: time.Now(),
 	}
 
-	// Konsola yaz (hızlı takip)
-	fmt.Printf("[BONUS] %s → %d QC (%s)\n", b.Address, b.Amount, b.Type)
-	if b.Reason != "" {
-		fmt.Println(" Reason:", b.Reason)
+	path := currentBonusFilePath()
+	if path != "" {
+		if err := SaveBonus(b); err != nil {
+			fmt.Printf(
+				"[BONUS] kayıt başarısız; settlement beklemede: %v\n",
+				err,
+			)
+			return false
+		}
 	}
 
-	// Çekirdek string-log (mevcut bonus_core yapını kullanıyoruz)
-	// TxID bilgisi burada yoksa boş string geçiyoruz.
 	GiveBonusCore(b.Address, b.Type, b.Amount, b.Reason, "")
 
-	// Hafızaya ekle (son maxMemBonusLines satır tutulur)
 	memBonusMu.Lock()
 	memBonusLog = append(memBonusLog, b)
 	if len(memBonusLog) > maxMemBonusLines {
@@ -96,14 +111,21 @@ func GiveBonus(address, bonusType string, amount int, reason, metadata string) {
 	}
 	memBonusMu.Unlock()
 
-	// Dosyaya kaydet (varsa)
-	if bonusFilePath != "" {
-		_ = SaveBonus(b)
+	fmt.Printf(
+		"[BONUS] recorded; settlement pending: %s → %d QC (%s)\n",
+		b.Address,
+		b.Amount,
+		b.Type,
+	)
+
+	if b.Reason != "" {
+		fmt.Println(" Reason:", b.Reason)
 	}
+
+	return true
 }
 
-// ListBonuses: belirli adresin bonuslarını RAM'deki logtan döndürür.
-// address boş ise tüm RAM logu döner.
+// ListBonuses belirli adrese ait bonus kayıtlarını döndürür.
 func ListBonuses(address string) []Bonus {
 	address = strings.TrimSpace(address)
 
@@ -116,39 +138,51 @@ func ListBonuses(address string) []Bonus {
 			results = append(results, b)
 		}
 	}
+
 	return results
 }
 
-// SaveBonus: bonusu JSON satırı olarak dosyaya ekler.
-// Güvenlik:
-// - Dosya 0600 (sadece kullanıcı).
-// - Boyut > maxBonusFileSize ise eski dosya .1 uzantısıyla rotate edilir.
+// SaveBonus bonusu JSON satırı olarak dosyaya ekler.
 func SaveBonus(b Bonus) error {
-	if bonusFilePath == "" {
+	path := currentBonusFilePath()
+	if path == "" {
 		return nil
 	}
 
 	bonusFileMu.Lock()
 	defer bonusFileMu.Unlock()
 
-	// Basit rotate (hata vermez, sadece deneme)
-	if info, err := os.Stat(bonusFilePath); err == nil && info.Size() > maxBonusFileSize {
-		_ = os.Rename(bonusFilePath, bonusFilePath+".1")
+	parent := filepath.Dir(path)
+	if parent != "." && parent != "" {
+		if err := os.MkdirAll(parent, 0o700); err != nil {
+			return fmt.Errorf("bonus parent directory: %w", err)
+		}
 	}
 
-	f, err := os.OpenFile(bonusFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if info, err := os.Stat(path); err == nil &&
+		info.Size() > maxBonusFileSize {
+		if err := os.Rename(path, path+".1"); err != nil {
+			return fmt.Errorf("bonus log rotate: %w", err)
+		}
+	}
+
+	f, err := os.OpenFile(
+		path,
+		os.O_APPEND|os.O_CREATE|os.O_WRONLY,
+		0o600,
+	)
 	if err != nil {
-		return err
+		return fmt.Errorf("bonus log open: %w", err)
 	}
 	defer f.Close()
 
 	data, err := json.Marshal(b)
 	if err != nil {
-		return err
+		return fmt.Errorf("bonus encode: %w", err)
 	}
 
 	if _, err := f.Write(append(data, '\n')); err != nil {
-		return err
+		return fmt.Errorf("bonus log append: %w", err)
 	}
 
 	return nil

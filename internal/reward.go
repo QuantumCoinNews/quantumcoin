@@ -1,93 +1,62 @@
 package internal
 
-import (
-	"math"
-	"time"
-)
+import "quantumcoin/blockchain"
 
-// RewardConfig: Blok bazlı halving (height) veya zaman bazlı halving (timestamp) için ayarlar.
-// İkisi de doluysa, zaman bazlı olan önceliklidir.
+// RewardConfig is retained for source compatibility. Monetary consensus is
+// owned exclusively by blockchain.Blockchain; time-based fields are retired.
 type RewardConfig struct {
-	InitialReward       int   // İlk blok ödülü (QC)
-	HalvingPeriodBlocks int   // Kaç blokta bir halving (blok bazlı)
-	HalvingPeriodSecs   int64 // Kaç saniyede bir halving (zaman bazlı)
-	MiningPeriodSecs    int64 // Madencilik süresi (zaman bazlı; 0 = sınırsız)
-	GenesisUnix         int64 // Genesis unix (zaman bazlı)
-
-	TotalSupply int // Maks toplam arz (0 = sınırsız)
+	InitialReward       int
+	HalvingPeriodBlocks int
+	HalvingPeriodSecs   int64
+	MiningPeriodSecs    int64
+	GenesisUnix         int64
+	TotalSupply         int
 }
 
-// CalculateRewardByHeight: Blok yüksekliğine göre halving
+// CalculateRewardByHeight delegates to the canonical deterministic schedule.
+// Non-canonical custom parameters fail closed instead of creating a second
+// consensus reward algorithm.
 func CalculateRewardByHeight(initialReward int, halvingPeriodBlocks int, height int) int {
-	if initialReward <= 0 || halvingPeriodBlocks <= 0 || height < 0 {
+	if initialReward != blockchain.CanonicalInitialMiningRewardV1 ||
+		halvingPeriodBlocks != blockchain.CanonicalBlocksPerHalvingV1 ||
+		height < 0 {
 		return 0
 	}
-	halvings := height / halvingPeriodBlocks
-	reward := float64(initialReward) / math.Pow(2, float64(halvings))
-	if reward < 1 {
-		return 0
-	}
-	return int(reward)
+
+	return blockchain.RewardAtHeightV1(height)
 }
 
-// CalculateRewardByTimeNow: Zaman bazlı halving (şimdiye göre)
-func CalculateRewardByTimeNow(initialReward int, genesisUnix, halvingPeriodSecs, miningPeriodSecs int64) int {
-	return CalculateRewardByTimeAt(initialReward, genesisUnix, halvingPeriodSecs, miningPeriodSecs, time.Now().Unix())
+// CalculateRewardByTimeNow is retired. Consensus rewards require a block
+// height and must never depend on local wall-clock time.
+func CalculateRewardByTimeNow(_ int, _ int64, _ int64, _ int64) int {
+	return 0
 }
 
-// CalculateRewardByTimeAt: Zaman bazlı halving (belirli bir zaman için)
-func CalculateRewardByTimeAt(initialReward int, genesisUnix, halvingPeriodSecs, miningPeriodSecs, now int64) int {
-	if initialReward <= 0 || halvingPeriodSecs <= 0 {
-		return 0
-	}
-	elapsed := now - genesisUnix
-	if elapsed < 0 {
-		elapsed = 0
-	}
-	if miningPeriodSecs > 0 && elapsed > miningPeriodSecs {
-		return 0
-	}
-	halvings := int(elapsed / halvingPeriodSecs)
-	reward := float64(initialReward) / math.Pow(2, float64(halvings))
-	if reward < 1 {
-		return 0
-	}
-	return int(reward)
+// CalculateRewardByTimeAt is retired. The former mining-period cutoff was a
+// non-deterministic alternate monetary policy and is intentionally disabled.
+func CalculateRewardByTimeAt(_ int, _ int64, _ int64, _ int64, _ int64) int {
+	return 0
 }
 
-// ClampToSupply: Önerilen ödülü arz tavanının üzerinde değilse döndürür,
-// aşıyorsa kalan arz kadar kısıtlar (0 → sınırsız).
+// ClampToSupply delegates remaining-supply accounting to canonical consensus.
 func ClampToSupply(suggested, totalMinted, totalSupply int) int {
-	if suggested <= 0 {
-		return 0
-	}
-	if totalSupply <= 0 {
-		return suggested // sınırsız
-	}
-	remaining := totalSupply - totalMinted
-	if remaining <= 0 {
-		return 0
-	}
-	if suggested > remaining {
-		return remaining
-	}
-	return suggested
+	return blockchain.CapRewardByRemainingSupplyV1(
+		suggested,
+		totalMinted,
+		totalSupply,
+	)
 }
 
-// ComputeReward: RewardConfig'e göre (zaman/height) hesapla, sonra arz tavanına göre kırp.
-// height: kazılacak bloğun yüksekliği (genelde tip+1), now: unix time (0 ise time.Now()).
+// ComputeReward always uses the canonical height-based subsidy and supply
+// cap. now and legacy time/configuration fields are deliberately ignored.
 func ComputeReward(cfg RewardConfig, height int, totalMinted int, now int64) int {
-	var base int
-	if cfg.HalvingPeriodSecs > 0 && cfg.GenesisUnix > 0 {
-		if now == 0 {
-			now = time.Now().Unix()
-		}
-		base = CalculateRewardByTimeAt(cfg.InitialReward, cfg.GenesisUnix, cfg.HalvingPeriodSecs, cfg.MiningPeriodSecs, now)
-	} else if cfg.HalvingPeriodBlocks > 0 {
-		base = CalculateRewardByHeight(cfg.InitialReward, cfg.HalvingPeriodBlocks, height)
-	} else {
-		// Halving devre dışı: sabit ödül
-		base = cfg.InitialReward
+	if height < 0 {
+		return 0
 	}
-	return ClampToSupply(base, totalMinted, cfg.TotalSupply)
+
+	return blockchain.ExpectedSubsidyFromStateV1(
+		height,
+		totalMinted,
+		cfg.TotalSupply,
+	)
 }

@@ -1,4 +1,6 @@
 // internal/bonus_compat.go
+
+// Package internal contains QuantumCoin project code for this module.
 package internal
 
 // Bu dosya sadece eski sürümlerle uyumluluk için tutuluyor.

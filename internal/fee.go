@@ -1,57 +1,28 @@
 package internal
 
-import "sync"
+// FeeManager is a retired compatibility surface. Transaction fees are
+// consensus values derived from verified canonical UTXO input/output balance
+// by blockchain.CalculateBlockFeesV1. This type must not maintain a second
+// fee policy, mutate transactions, or accumulate fee-like RAM state.
+type FeeManager struct{}
 
-// Varsayılan sabit ücret (QC cinsinden). İstersen SetFixedFee ile değiştirebilirsin.
-const defaultFixedFee = 1
+func NewFeeManager() *FeeManager { return &FeeManager{} }
 
-type FeeManager struct {
-	mu        sync.Mutex
-	fixedFee  int
-	totalFees int
-}
+// SetFixedFee is retained for source compatibility. Node-local fixed fees are
+// not consensus-authoritative and therefore cannot be enabled here.
+func (fm *FeeManager) SetFixedFee(_ int) {}
 
-func NewFeeManager() *FeeManager {
-	return &FeeManager{fixedFee: defaultFixedFee}
-}
+// GetFixedFee returns zero because this retired adapter owns no fee policy.
+func (fm *FeeManager) GetFixedFee() int { return 0 }
 
-// SetFixedFee: runtime'da ücreti günceller (>=0 olmalı)
-func (fm *FeeManager) SetFixedFee(fee int) {
-	if fee < 0 {
-		fee = 0
-	}
-	fm.mu.Lock()
-	fm.fixedFee = fee
-	fm.mu.Unlock()
-}
+// ApplyFee is fail-closed. Its legacy interface lacks canonical chain and UTXO
+// context, so accepting or charging any value here would create a second,
+// unverifiable fee model. Canonical fee accounting occurs during transaction
+// and block validation in package blockchain.
+func (fm *FeeManager) ApplyFee(_ interface{}) int { return 0 }
 
-// GetFixedFee: geçerli sabit ücreti döndürür
-func (fm *FeeManager) GetFixedFee() int {
-	fm.mu.Lock()
-	defer fm.mu.Unlock()
-	return fm.fixedFee
-}
+// GetTotalFees returns zero because canonical fees are never accumulated here.
+func (fm *FeeManager) GetTotalFees() int { return 0 }
 
-// ApplyFee: bir işleme ücret uygular ve toplam ücreti artırır.
-// Parametreyi interface{} tuttuk; böylece blockchain paketine bağımlılık yok.
-func (fm *FeeManager) ApplyFee(_ interface{}) int {
-	fm.mu.Lock()
-	fee := fm.fixedFee
-	fm.totalFees += fee
-	fm.mu.Unlock()
-	return fee
-}
-
-// GetTotalFees: toplanmış toplam ücreti döndürür
-func (fm *FeeManager) GetTotalFees() int {
-	fm.mu.Lock()
-	defer fm.mu.Unlock()
-	return fm.totalFees
-}
-
-// Reset: toplam ücret sayacını sıfırlar
-func (fm *FeeManager) Reset() {
-	fm.mu.Lock()
-	fm.totalFees = 0
-	fm.mu.Unlock()
-}
+// Reset is retained for source compatibility and intentionally has no state.
+func (fm *FeeManager) Reset() {}

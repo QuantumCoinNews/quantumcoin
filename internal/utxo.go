@@ -1,95 +1,140 @@
 // internal/utxo.go
+
+// Package internal contains QuantumCoin project code for this module.
 package internal
 
 import (
-	"encoding/hex"
+	"sync"
 
 	"quantumcoin/blockchain"
 )
 
-// UTXOSet: Zincirdeki harcanmamış tüm çıktıları tutar
+// UTXOSet is a read-only compatibility adapter over the single canonical
+// blockchain.Blockchain-owned UTXO state.
+//
+// It never owns or exports an independently mutable UTXO map. Spend validity,
+// duplicate-spend checks, ownership, value conservation, fees and coinbase
+// maturity remain exclusively under blockchain.Blockchain consensus rules.
 type UTXOSet struct {
-	UTXOs map[string][]blockchain.TransactionOutput
+	mu        sync.RWMutex
+	canonical *blockchain.Blockchain
 }
 
-// NewUTXOSet: Yeni boş UTXO seti oluşturur
+// NewUTXOSet creates an unbound, fail-closed compatibility adapter.
 func NewUTXOSet() *UTXOSet {
-	return &UTXOSet{UTXOs: make(map[string][]blockchain.TransactionOutput)}
+	return &UTXOSet{}
 }
 
-// Reindex: Zinciri baştan tarar ve UTXO'ları günceller
-func (set *UTXOSet) Reindex(chain *blockchain.Blockchain) {
-	// Her çağrıda temiz bir map ile başla
-	set.UTXOs = make(map[string][]blockchain.TransactionOutput)
+// NewCanonicalUTXOSet creates an adapter bound to canonical. A nil Blockchain
+// leaves the adapter fail-closed.
+func NewCanonicalUTXOSet(canonical *blockchain.Blockchain) *UTXOSet {
+	set := NewUTXOSet()
+	set.BindCanonicalBlockchain(canonical)
+	return set
+}
 
-	// Güvenlik: nil veya boş zincirde panic olmasın
-	if chain == nil || len(chain.Blocks) == 0 {
+// BindCanonicalBlockchain binds this adapter to exactly one canonical chain.
+// Idempotent rebinding to the same pointer is allowed; authority switching is
+// rejected.
+func (set *UTXOSet) BindCanonicalBlockchain(
+	canonical *blockchain.Blockchain,
+) bool {
+	if set == nil || canonical == nil {
+		return false
+	}
+
+	set.mu.Lock()
+	defer set.mu.Unlock()
+
+	if set.canonical != nil && set.canonical != canonical {
+		return false
+	}
+
+	set.canonical = canonical
+	return true
+}
+
+// Reindex preserves the legacy API while delegating the rebuild to the
+// canonical synchronized state owner. It cannot create a second UTXO map.
+func (set *UTXOSet) Reindex(chain *blockchain.Blockchain) {
+	if !set.BindCanonicalBlockchain(chain) {
 		return
 	}
 
-	// 1) Tüm çıktıları ekle
-	for _, b := range chain.Blocks {
-		for _, tx := range b.Transactions {
-			txID := hex.EncodeToString(tx.ID)
-			if _, ok := set.UTXOs[txID]; !ok {
-				set.UTXOs[txID] = make([]blockchain.TransactionOutput, 0, len(tx.Outputs))
-			}
-			set.UTXOs[txID] = append(set.UTXOs[txID], tx.Outputs...)
-		}
+	canonical := set.canonicalSnapshot()
+	if canonical == nil {
+		return
 	}
 
-	// 2) Non-coinbase işlemlerin harcadığı çıktıları düş
-	for _, b := range chain.Blocks {
-		for _, tx := range b.Transactions {
-			if tx.IsCoinbase() {
-				continue
-			}
-			for _, in := range tx.Inputs {
-				inTxID := hex.EncodeToString(in.TxID)
-				outs := set.UTXOs[inTxID]
-				idx := in.OutIndex
-				if idx >= 0 && idx < len(outs) {
-					outs = append(outs[:idx], outs[idx+1:]...)
-					if len(outs) == 0 {
-						delete(set.UTXOs, inTxID)
-					} else {
-						set.UTXOs[inTxID] = outs
-					}
-				}
-			}
-		}
-	}
+	canonical.UpdateUTXOSetSynchronized()
 }
 
-// FindSpendableOutputs: Belirli bir miktarı sağlayacak UTXO'ları bulur
-// İMZA UYUMU: blockchain.FindSpendableOutputs ile aynı sırada döndürür (map, int)
-func (set *UTXOSet) FindSpendableOutputs(pubKeyHash []byte, amount int) (map[string][]int, int) {
-	accumulated := 0
-	spendable := make(map[string][]int)
-
-	for txID, outs := range set.UTXOs {
-		for idx, out := range outs {
-			if out.IsLockedWithKey(pubKeyHash) {
-				accumulated += out.Amount
-				spendable[txID] = append(spendable[txID], idx)
-				if accumulated >= amount {
-					return spendable, accumulated
-				}
-			}
-		}
+// Snapshot returns a detached copy of canonical UTXO state. Mutating the
+// returned map, slices or output byte fields cannot mutate live chain state.
+func (set *UTXOSet) Snapshot() map[string][]blockchain.TransactionOutput {
+	canonical := set.canonicalSnapshot()
+	if canonical == nil {
+		return map[string][]blockchain.TransactionOutput{}
 	}
+
+	snapshot := canonical.StateSnapshot()
+	if snapshot.UTXO == nil {
+		return map[string][]blockchain.TransactionOutput{}
+	}
+
+	return snapshot.UTXO
+}
+
+// FindSpendableOutputs delegates selection to the canonical synchronized
+// boundary, including canonical coinbase-maturity filtering.
+func (set *UTXOSet) FindSpendableOutputs(
+	pubKeyHash []byte,
+	amount int,
+) (map[string][]int, int) {
+	if len(pubKeyHash) == 0 || amount <= 0 {
+		return map[string][]int{}, 0
+	}
+
+	canonical := set.canonicalSnapshot()
+	if canonical == nil {
+		return map[string][]int{}, 0
+	}
+
+	spendable, accumulated := canonical.FindSpendableOutputsSnapshot(
+		pubKeyHash,
+		amount,
+	)
+	if spendable == nil {
+		return map[string][]int{}, accumulated
+	}
+
 	return spendable, accumulated
 }
 
-// FindUTXOs: Adrese ait tüm harcanmamış çıktıları döner
-func (set *UTXOSet) FindUTXOs(pubKeyHash []byte) []blockchain.TransactionOutput {
-	var utxos []blockchain.TransactionOutput
-	for _, outs := range set.UTXOs {
-		for _, out := range outs {
-			if out.IsLockedWithKey(pubKeyHash) {
-				utxos = append(utxos, out)
-			}
-		}
+// FindUTXOs returns detached, mature outputs through one coherent canonical
+// read boundary.
+func (set *UTXOSet) FindUTXOs(
+	pubKeyHash []byte,
+) []blockchain.TransactionOutput {
+	if len(pubKeyHash) == 0 {
+		return []blockchain.TransactionOutput{}
 	}
-	return utxos
+
+	canonical := set.canonicalSnapshot()
+	if canonical == nil {
+		return []blockchain.TransactionOutput{}
+	}
+
+	return canonical.FindUTXOsSnapshot(pubKeyHash)
+}
+
+func (set *UTXOSet) canonicalSnapshot() *blockchain.Blockchain {
+	if set == nil {
+		return nil
+	}
+
+	set.mu.RLock()
+	defer set.mu.RUnlock()
+
+	return set.canonical
 }
