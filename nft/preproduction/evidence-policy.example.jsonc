@@ -1,0 +1,29 @@
+// TASLAK: gerçek ağ veya imzacı seçimi yapılmadı. Yorumları kaldırıp boş alanları
+// yetkili gerçek girdilerle doldurmadıkça çalışan JSON/policy değildir.
+// Bu dosyayı canlı policy olarak işaretlemeyin. Özel anahtar eklemeyin.
+{
+  "version": "QC_NFT_EVIDENCE_POLICY_V1",
+  "networkID": "",
+  "campaignID": "",
+  "legacyGenesisHex": "",
+  "beacon": {
+    "chainHash": "",                 // Pinlenmiş 32 bayt hex ağ kimliği.
+    "publicKey": "",                 // quicknet: 96 bayt G2; pedersen: 48 bayt G1.
+    "scheme": "bls-unchained-g1-rfc9380", // Alternatif destek: pedersen-bls-unchained.
+    "genesisTime": 0,                 // Yetkili ağ bilgisinden, Unix saniye.
+    "periodSeconds": 0,
+    "commitLeadSeconds": 0            // En az 60; sabit yerel politika.
+  },
+  "publicationWitness": {
+    "publicKey": "",                 // Bağımsız yayın tanığının Ed25519 anahtarı.
+    "urlPrefix": ""                  // Herkesçe okunabilen HTTPS kayıt öneki, / ile biter.
+  },
+  "externalServices": {
+    "witnessSubmitURL": "",           // Bağımsız operatör: https://.../v1/commitments
+    "beaconBaseURL": ""               // Yetkili drand relay HTTPS origin'i; yol/query içermez.
+  },
+  "finalApprovers": {
+    "ai": "",                        // 32 bayt Ed25519 açık anahtar.
+    "admin": ""                      // AI anahtarından farklı olmalı.
+  }
+}

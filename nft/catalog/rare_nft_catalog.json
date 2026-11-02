@@ -1,0 +1,20 @@
+{
+  "version": "NFT_RARE_CATALOG_V1",
+  "safeBoundary": {
+    "minted": false,
+    "chainMetadataWritten": false,
+    "balanceChanged": false,
+    "qcSupplyChanged": false
+  },
+  "items": [
+    {
+      "id": "rare-2026-06-001",
+      "name": "Quantum Lunar Pioneer",
+      "description": "Monthly rare NFT candidate reward for verified QuantumCoin Telegram Space Miner activity.",
+      "rarity": "rare",
+      "period": "2026-06",
+      "image": "telegram_game/telegram_game/dev_ui/assets/nft/rare-2026-06-001.png",
+      "metadata": "nft/catalog/metadata/rare-2026-06-001.json"
+    }
+  ]
+}

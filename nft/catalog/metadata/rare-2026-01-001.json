@@ -1,0 +1,30 @@
+{
+  "name": "Quantum Nebula Cartographer",
+  "description": "Monthly rare NFT candidate reward for verified QuantumCoin Telegram Space Miner activity.",
+  "rarity": "rare",
+  "period": "2026-01",
+  "attributes": [
+    {
+      "trait_type": "Project",
+      "value": "QuantumCoin"
+    },
+    {
+      "trait_type": "Reward Type",
+      "value": "Monthly Rare NFT"
+    },
+    {
+      "trait_type": "Source",
+      "value": "Telegram Space Miner"
+    },
+    {
+      "trait_type": "Mint Status",
+      "value": "Not Minted"
+    }
+  ],
+  "safeBoundary": {
+    "minted": false,
+    "chainMetadataWritten": false,
+    "balanceChanged": false,
+    "qcSupplyChanged": false
+  }
+}
