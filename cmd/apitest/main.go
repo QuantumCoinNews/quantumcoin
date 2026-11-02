@@ -1,23 +1,13 @@
-// apitest.go
+// Command apitest previously launched a second, package-api HTTP server.
+//
+// standalone HTTP retirement retired that architecture. Run the canonical QuantumCoin node
+// when an HTTP API is required.
 package main
 
-import (
-	"log"
-	"quantumcoin/api"
-	"quantumcoin/blockchain"
-	"quantumcoin/config"
-)
+import "log"
 
 func main() {
-	// config yükle (gerekirse stub)
-	cfg := &config.Config{HTTPPort: "8081"}
-
-	// boş blockchain nesnesi (sadece test için)
-	bc := &blockchain.Blockchain{}
-
-	api.Init(bc, nil, cfg)
-
-	if err := api.StartHTTP(""); err != nil {
-		log.Fatal(err)
-	}
+	log.Fatal(
+		"cmd/apitest: standalone package-api HTTP server retired; run the canonical QuantumCoin node API",
+	)
 }

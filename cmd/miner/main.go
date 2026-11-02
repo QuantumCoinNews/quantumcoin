@@ -9,9 +9,11 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
+	"quantumcoin/config"
 	"quantumcoin/miner"
 )
 
@@ -21,14 +23,27 @@ var (
 	flagMode    = flag.String("mode", "local", "Mode: mock | local")
 	flagLog     = flag.String("log", "", "Log file (e.g., miner.log)")
 	flagConfig  = flag.String("config", "config.json", "Config file path")
-	flagChain   = flag.String("chain", "chain_data.dat", "Chain data file path")
+	flagChain   = flag.String("chain", "", "Optional chain data file override; config chain_file is used when empty")
 	flagP2P     = flag.String("p2p", ":3001", "P2P listen port (for adapter broadcast)")
 )
 
 func main() {
 	flag.Parse()
+
+	if chainPath := strings.TrimSpace(
+		*flagChain,
+	); chainPath != "" {
+		if err := config.ValidateChainFilePathForModeV1(
+			chainPath,
+		); err != nil {
+			log.Fatalf(
+				"miner chain file mode guard: %v",
+				err,
+			)
+		}
+	}
 	if *flagAddr == "" {
-		fmt.Println("Usage: miner -address <QC_ADDRESS> [-threads N] [-mode mock|local] [-config config.json] [-chain chain_data.dat] [-p2p :3001] [-log miner.log]")
+		fmt.Println("Usage: miner -address <QC_ADDRESS> [-threads N] [-mode mock|local] [-config config.json] [-chain optional_override.dat] [-p2p :3001] [-log miner.log]")
 		os.Exit(2)
 	}
 

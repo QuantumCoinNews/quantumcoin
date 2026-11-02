@@ -421,9 +421,11 @@ func applyTheme(name string) {
 	switch {
 	case s == "dark" || s == "karanlık" || s == "oscuro" || s == "深色" || s == "深色模式":
 		themeValue = "dark"
+		//lint:ignore SA1019 explicit user-selected dark theme is intentional until a custom Fyne theme is introduced.
 		fyne.CurrentApp().Settings().SetTheme(theme.DarkTheme())
 	case s == "light" || s == "aydınlık" || s == "claro" || s == "浅色" || s == "亮色" || s == "浅色模式":
 		themeValue = "light"
+		//lint:ignore SA1019 explicit user-selected light theme is intentional until a custom Fyne theme is introduced.
 		fyne.CurrentApp().Settings().SetTheme(theme.LightTheme())
 	default: // auto
 		themeValue = "auto"
@@ -1204,43 +1206,86 @@ func ping(u string, t time.Duration) error {
 	return nil
 }
 
+const canonicalAPIHealthPath = "/api/health"
+const canonicalAPIDefaultPort = "8082"
+
+func normalizeCanonicalAPIPort(p string) string {
+	p = strings.TrimSpace(p)
+	p = strings.TrimPrefix(p, ":")
+	return p
+}
+
 func portHasAPI(p string) bool {
-	candidates := []string{
-		"http://127.0.0.1:" + p + "/health",
-		"http://127.0.0.1:" + p + "/api/health",
-		"http://127.0.0.1:" + p + "/api/status",
-		"http://127.0.0.1:" + p + "/api/version",
-		"http://127.0.0.1:" + p + "/",
+	p = normalizeCanonicalAPIPort(p)
+	if p == "" {
+		return false
 	}
-	for _, u := range candidates {
-		if ping(u, 400*time.Millisecond) == nil {
-			return true
-		}
-	}
-	return false
+
+	health := "http://127.0.0.1:" + p + canonicalAPIHealthPath
+	return ping(health, 400*time.Millisecond) == nil
 }
 
 func detectAPIPort() string {
-	// Önce env
+	// Environment values are hints only. They are accepted only when the
+	// canonical /api/health contract is actually reachable.
 	for _, k := range []string{"QC_HTTP_PORT", "HTTP_PORT"} {
-		if p := strings.TrimSpace(os.Getenv(k)); p != "" && portHasAPI(p) {
+		p := normalizeCanonicalAPIPort(os.Getenv(k))
+		if p != "" && portHasAPI(p) {
 			return p
 		}
 	}
-	// Yaygın portlar
-	for _, p := range []string{"8082", "8081", "3001", "8080", "9090", "9091", "3000"} {
-		if portHasAPI(p) {
-			return p
-		}
-	}
-	return "8081"
-}
 
+	// canonical GUI health migration: do not probe legacy /health or unrelated historical ports.
+	// The canonical QuantumCoin HTTP API port is 8082.
+	if portHasAPI(canonicalAPIDefaultPort) {
+		return canonicalAPIDefaultPort
+	}
+
+	return canonicalAPIDefaultPort
+}
 func apiBase() string {
 	if apiPort == "" {
 		apiPort = detectAPIPort()
 	}
 	return "http://127.0.0.1:" + apiPort
+}
+
+func canonicalAPIResponseError(status int, raw []byte) error {
+	var envelope struct {
+		Success *bool  `json:"success"`
+		Message string `json:"message"`
+		Error   string `json:"error"`
+	}
+
+	parsed := json.Unmarshal(raw, &envelope) == nil
+
+	message := ""
+	if parsed {
+		message = strings.TrimSpace(envelope.Message)
+		if message == "" {
+			message = strings.TrimSpace(envelope.Error)
+		}
+	}
+
+	if status >= 200 && status < 300 {
+		if parsed && envelope.Success != nil && !*envelope.Success {
+			if message == "" {
+				message = "request reported failure"
+			}
+			return fmt.Errorf("api request failed: %s", message)
+		}
+		return nil
+	}
+
+	if message != "" {
+		return fmt.Errorf(
+			"api request failed: http %d: %s",
+			status,
+			message,
+		)
+	}
+
+	return fmt.Errorf("api request failed: http %d", status)
 }
 
 func apiPost(path string, body interface{}, to time.Duration) error {
@@ -1249,20 +1294,35 @@ func apiPost(path string, body interface{}, to time.Duration) error {
 		var err error
 		b, err = json.Marshal(body)
 		if err != nil {
-			return err
+			return fmt.Errorf("encode API request: %w", err)
 		}
 	}
+
 	client := &http.Client{Timeout: to}
-	resp, err := client.Post(apiBase()+path, "application/json", bytes.NewReader(b))
+	resp, err := client.Post(
+		apiBase()+path,
+		"application/json",
+		bytes.NewReader(b),
+	)
 	if err != nil {
 		return err
 	}
-	io.Copy(io.Discard, resp.Body)
-	_ = resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("http %d", resp.StatusCode)
+	defer resp.Body.Close()
+
+	raw, err := io.ReadAll(
+		io.LimitReader(
+			resp.Body,
+			1<<20,
+		),
+	)
+	if err != nil {
+		return fmt.Errorf("read API response: %w", err)
 	}
-	return nil
+
+	return canonicalAPIResponseError(
+		resp.StatusCode,
+		raw,
+	)
 }
 
 /* ================== i18n ================== */
@@ -1637,9 +1697,29 @@ func getPendingForAddr(addr string) float64 {
 func balanceCachePath() string { return filepath.Join(nodeDir(), "wallet_balance.cache.json") }
 
 func saveBalanceCache(addr string, bal float64) {
-	m := map[string]interface{}{"address": addr, "balance": bal, "updated_at": time.Now().Unix()}
-	b, _ := json.MarshalIndent(m, "", "  ")
-	_ = os.WriteFile(balanceCachePath(), b, 0644)
+	m := map[string]interface{}{
+		"address":    addr,
+		"balance":    bal,
+		"updated_at": time.Now().Unix(),
+	}
+
+	b, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		fmt.Fprintf(
+			os.Stderr,
+			"wallet: balance cache encode failed: %v\n",
+			err,
+		)
+		return
+	}
+
+	if err := os.WriteFile(balanceCachePath(), b, 0644); err != nil {
+		fmt.Fprintf(
+			os.Stderr,
+			"wallet: balance cache write failed: %v\n",
+			err,
+		)
+	}
 }
 
 func loadBalanceCache(addr string) (float64, bool) {
@@ -1885,8 +1965,9 @@ func getBalanceUniversal(addr string) (float64, float64, bool) {
 func ensureBonusStore(addr string) {
 	p := filepath.Join(nodeDir(), "bonus_store.json")
 	if _, err := os.Stat(p); err == nil {
-		return // varsa dokunma
+		return
 	}
+
 	m := map[string]interface{}{
 		"community_address": addr,
 		"dev_fund_address":  addr,
@@ -1898,12 +1979,117 @@ func ensureBonusStore(addr string) {
 			"premine":   0,
 		},
 	}
-	b, _ := json.MarshalIndent(m, "", "  ")
-	_ = os.WriteFile(p, b, 0644)
+
+	b, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		fmt.Fprintf(
+			os.Stderr,
+			"wallet: bonus store encode failed: %v\n",
+			err,
+		)
+		return
+	}
+
+	if err := os.WriteFile(p, b, 0644); err != nil {
+		fmt.Fprintf(
+			os.Stderr,
+			"wallet: bonus store write failed: %v\n",
+			err,
+		)
+	}
 }
 
 /* ================== UI: Wallet ================== */
 
+type canonicalSendRequest struct {
+	From    string `json:"from"`
+	To      string `json:"to"`
+	Amount  string `json:"amount"`
+	PrivHex string `json:"priv_hex"`
+}
+
+type canonicalSendResponse struct {
+	Success bool   `json:"success"`
+	TxID    string `json:"txid"`
+	Message string `json:"message"`
+}
+
+func validateCanonicalSendResponse(
+	statusCode int,
+	raw []byte,
+) error {
+	if statusCode < http.StatusOK ||
+		statusCode >= http.StatusMultipleChoices {
+		return fmt.Errorf(
+			"/api/tx/send http %d",
+			statusCode,
+		)
+	}
+
+	var out canonicalSendResponse
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return fmt.Errorf(
+			"invalid /api/tx/send response: %w",
+			err,
+		)
+	}
+
+	if !out.Success {
+		message := strings.TrimSpace(out.Message)
+		if message == "" {
+			message = "transaction rejected"
+		}
+
+		return fmt.Errorf(
+			"/api/tx/send rejected transaction: %s",
+			message,
+		)
+	}
+
+	return nil
+}
+
+func apiSendTransactionV1(
+	req canonicalSendRequest,
+	timeout time.Duration,
+) error {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return err
+	}
+
+	client := &http.Client{
+		Timeout: timeout,
+	}
+
+	resp, err := client.Post(
+		apiBase()+"/api/tx/send",
+		"application/json",
+		bytes.NewReader(body),
+	)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	raw, err := io.ReadAll(
+		io.LimitReader(
+			resp.Body,
+			1<<20,
+		),
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"read /api/tx/send response: %w",
+			err,
+		)
+	}
+
+	return validateCanonicalSendResponse(
+		resp.StatusCode,
+		raw,
+	)
+}
 func detectPrivHex() string {
 	// 1) yerel dosya
 	if v := loadText(walletPrivPath()); v != "" {
@@ -1938,12 +2124,12 @@ func makeWalletTab(w fyne.Window, myAddrEntry, fromEntry *widget.Entry) fyne.Can
 	balanceText.TextSize = 22
 	balanceText.TextStyle.Bold = true
 
-	copyMyBtn := widget.NewButton(T("copy"), func() { w.Clipboard().SetContent(myAddrEntry.Text) })
+	copyMyBtn := widget.NewButton(T("copy"), func() { fyne.CurrentApp().Clipboard().SetContent(myAddrEntry.Text) })
 	receiveBtn := widget.NewButton(T("receive_copy"), func() {
-		w.Clipboard().SetContent(myAddrEntry.Text)
+		fyne.CurrentApp().Clipboard().SetContent(myAddrEntry.Text)
 		dialog.ShowInformation(T("ok"), myAddrEntry.Text, w)
 	})
-	pasteToBtn := widget.NewButton(T("paste"), func() { toEntry.SetText(w.Clipboard().Content()) })
+	pasteToBtn := widget.NewButton(T("paste"), func() { toEntry.SetText(fyne.CurrentApp().Clipboard().Content()) })
 
 	genBtn := widget.NewButton(T("generate_wallet"), func() {
 		addr, priv, err := genAddressPrivViaNode()
@@ -2094,7 +2280,7 @@ func makeWalletTab(w fyne.Window, myAddrEntry, fromEntry *widget.Entry) fyne.Can
 						return
 					}
 					if strings.TrimSpace(pass.Text) == "" {
-						dialog.ShowError(fmt.Errorf(T("password_empty_error")), w)
+						dialog.ShowError(fmt.Errorf("%s", T("password_empty_error")), w)
 						return
 					}
 					if err := createWalletBackup(path, pass.Text); err != nil {
@@ -2148,28 +2334,64 @@ func makeWalletTab(w fyne.Window, myAddrEntry, fromEntry *widget.Entry) fyne.Can
 		}
 		privHex := strings.TrimSpace(detectPrivHex())
 		if privHex == "" {
-			dialog.ShowError(fmt.Errorf("Özel anahtar bulunamadı. 'Yeni Cüzdan Oluştur' ile anahtar üretin."), w)
+			dialog.ShowError(fmt.Errorf("%s", "Özel anahtar bulunamadı. 'Yeni Cüzdan Oluştur' ile anahtar üretin."), w)
 			return
 		}
-		body := map[string]string{
-			"from":     strings.TrimSpace(fromEntry.Text),
-			"to":       strings.TrimSpace(toEntry.Text),
-			"amount":   strings.TrimSpace(amtEntry.Text),
-			"fee":      strings.TrimSpace(feeEntry.Text),
-			"priv_hex": privHex,
-		}
-		if body["from"] == "" || body["to"] == "" || body["amount"] == "" {
-			dialog.ShowError(fmt.Errorf("from/to/amount gerekli"), w)
+		from := strings.TrimSpace(fromEntry.Text)
+		to := strings.TrimSpace(toEntry.Text)
+		amount := strings.TrimSpace(amtEntry.Text)
+		fee := strings.TrimSpace(feeEntry.Text)
+
+		if from == "" || to == "" || amount == "" {
+			dialog.ShowError(
+				fmt.Errorf("from/to/amount gerekli"),
+				w,
+			)
 			return
 		}
-		// /api/tx/send dene; olmazsa /api/send fallback
-		if err := apiPost("/api/tx/send", body, 8*time.Second); err != nil {
-			if err2 := apiPost("/api/send", body, 8*time.Second); err2 != nil {
-				dialog.ShowError(fmt.Errorf("Gönderilemedi: %v / %v", err, err2), w)
-				return
-			}
+
+		// canonical send migration:
+		// The canonical /api/tx/send SendRequest does not expose a custom
+		// fee field. Never silently pretend that an entered fee was applied.
+		if fee != "" {
+			dialog.ShowError(
+				fmt.Errorf(
+					"Özel fee canonical /api/tx/send tarafından desteklenmiyor; fee alanını boş bırakın",
+				),
+				w,
+			)
+			return
 		}
-		dialog.ShowInformation(T("ok"), T("tx_sent"), w)
+
+		req := canonicalSendRequest{
+			From:    from,
+			To:      to,
+			Amount:  amount,
+			PrivHex: privHex,
+		}
+
+		// canonical send migration:
+		// There is one canonical transfer path. A retired transfer endpoint
+		// fallback must never be used.
+		if err := apiSendTransactionV1(
+			req,
+			8*time.Second,
+		); err != nil {
+			dialog.ShowError(
+				fmt.Errorf(
+					"Gönderilemedi: %v",
+					err,
+				),
+				w,
+			)
+			return
+		}
+
+		dialog.ShowInformation(
+			T("ok"),
+			T("tx_sent"),
+			w,
+		)
 		toEntry.SetText("")
 		amtEntry.SetText("")
 		go func() {
@@ -2330,6 +2552,28 @@ func createWalletBackup(targetPath, pass string) error {
 	return encryptJSONToFile(targetPath, m, pass)
 }
 
+func writeRestoredFile(path string, data []byte) error {
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf(
+			"write restored %s: %w",
+			filepath.Base(path),
+			err,
+		)
+	}
+	return nil
+}
+
+func writeRestoredJSON(path string, value interface{}) error {
+	b, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return fmt.Errorf(
+			"encode restored %s: %w",
+			filepath.Base(path),
+			err,
+		)
+	}
+	return writeRestoredFile(path, b)
+}
 func restoreWalletBackup(sourcePath, pass string) error {
 	var m map[string]interface{}
 	if err := decryptJSONFromFile(sourcePath, pass, &m); err != nil {
@@ -2337,30 +2581,59 @@ func restoreWalletBackup(sourcePath, pass string) error {
 	}
 	dir := nodeDir()
 	if v, ok := m["wallet_address"].(string); ok {
-		_ = os.WriteFile(filepath.Join(dir, "wallet_address.txt"), []byte(strings.TrimSpace(v)), 0644)
+		if err := writeRestoredFile(
+			filepath.Join(dir, "wallet_address.txt"),
+			[]byte(strings.TrimSpace(v)),
+		); err != nil {
+			return err
+		}
 	}
 	if v, ok := m["miner_address"].(string); ok {
-		_ = os.WriteFile(filepath.Join(dir, "miner_address.txt"), []byte(strings.TrimSpace(v)), 0644)
+		if err := writeRestoredFile(
+			filepath.Join(dir, "miner_address.txt"),
+			[]byte(strings.TrimSpace(v)),
+		); err != nil {
+			return err
+		}
 	}
 	if v, ok := m["wallet_priv_hex"].(string); ok {
-		_ = os.WriteFile(filepath.Join(dir, "wallet_priv.hex"), []byte(strings.TrimSpace(v)), 0644)
+		if err := writeRestoredFile(
+			filepath.Join(dir, "wallet_priv.hex"),
+			[]byte(strings.TrimSpace(v)),
+		); err != nil {
+			return err
+		}
 	}
 	if v, ok := m["wallet_recovery_words"].(string); ok {
-		_ = os.WriteFile(filepath.Join(dir, "wallet_recovery_words.txt"), []byte(strings.TrimSpace(v)), 0644)
+		if err := writeRestoredFile(
+			filepath.Join(dir, "wallet_recovery_words.txt"),
+			[]byte(strings.TrimSpace(v)),
+		); err != nil {
+			return err
+		}
 	}
 	if v, ok := m["wallet_recovery_manifest"]; ok {
-		if b, err := json.MarshalIndent(v, "", "  "); err == nil {
-			_ = os.WriteFile(filepath.Join(dir, "wallet_recovery_manifest.json"), b, 0644)
+		if err := writeRestoredJSON(
+			filepath.Join(dir, "wallet_recovery_manifest.json"),
+			v,
+		); err != nil {
+			return err
 		}
 	}
 	if v, ok := m["balance_cache"]; ok {
-		if b, err := json.MarshalIndent(v, "", "  "); err == nil {
-			_ = os.WriteFile(filepath.Join(dir, "wallet_balance.cache.json"), b, 0644)
+		if err := writeRestoredJSON(
+			filepath.Join(dir, "wallet_balance.cache.json"),
+			v,
+		); err != nil {
+			return err
 		}
 	}
 	if v, ok := m["bonus_store"]; ok {
-		if b, err := json.MarshalIndent(v, "", "  "); err == nil {
-			_ = os.WriteFile(filepath.Join(dir, "bonus_store.json"), b, 0644)
+		if err := writeRestoredJSON(
+			filepath.Join(dir, "bonus_store.json"),
+			v,
+		); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -2400,7 +2673,7 @@ func isLikelyBase58Address(s string) bool {
 		return false
 	}
 	// yasak karakterler
-	if strings.IndexAny(s, "0OIl") >= 0 {
+	if strings.ContainsAny(s, "0OIl") {
 		return false
 	}
 	return base58RE.MatchString(s)
@@ -2572,91 +2845,211 @@ func splitByRegex(s string, r *regexp.Regexp) []string {
 /* ================== API bootstrap ================== */
 
 // API'yi arka planda doğrudan process olarak başlatır; logları api_out.log’a yazar.
+func walletAPIStartLockPath(port string) string {
+	safePort := strings.NewReplacer(
+		":", "_",
+		"/", "_",
+		"\\", "_",
+	).Replace(port)
+
+	return filepath.Join(
+		os.TempDir(),
+		"quantumcoin-api-"+safePort+".start.lock",
+	)
+}
+
+func acquireWalletAPIStartLease(
+	port string,
+) (*os.File, string, bool, error) {
+	lockPath := walletAPIStartLockPath(port)
+	deadline := time.Now().Add(20 * time.Second)
+
+	for {
+		lock, err := os.OpenFile(
+			lockPath,
+			os.O_CREATE|os.O_EXCL|os.O_WRONLY,
+			0600,
+		)
+
+		if err == nil {
+			_, _ = fmt.Fprintf(
+				lock,
+				"%d\n",
+				os.Getpid(),
+			)
+
+			return lock, lockPath, true, nil
+		}
+
+		if !os.IsExist(err) {
+			return nil, "", false, fmt.Errorf(
+				"acquire API startup lock: %w",
+				err,
+			)
+		}
+
+		if portHasAPI(port) {
+			return nil, "", false, nil
+		}
+
+		if st, statErr := os.Stat(lockPath); statErr == nil &&
+			time.Since(st.ModTime()) > 15*time.Second {
+			_ = os.Remove(lockPath)
+			continue
+		}
+
+		if time.Now().After(deadline) {
+			return nil, "", false, fmt.Errorf(
+				"API startup lock timeout",
+			)
+		}
+
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+func releaseWalletAPIStartLease(
+	lock *os.File,
+	path string,
+) {
+	if lock != nil {
+		_ = lock.Close()
+	}
+
+	if path != "" {
+		_ = os.Remove(path)
+	}
+}
+
 func startAPIBackground() error {
-	if apiPort == "" {
+	if apiPort != "" {
+		apiPort = normalizeCanonicalAPIPort(apiPort)
+	}
+
+	// A stale legacy port must not cause a second/mismatched backend launch.
+	if apiPort == "" || !portHasAPI(apiPort) {
 		apiPort = detectAPIPort()
 	}
+
+	if portHasAPI(apiPort) {
+		return nil
+	}
+
+	if apiPort == "" {
+		apiPort = canonicalAPIDefaultPort
+	}
+
+	lease, leasePath, acquired, err :=
+		acquireWalletAPIStartLease(apiPort)
+	if err != nil {
+		return err
+	}
+
+	if !acquired {
+		return nil
+	}
+
+	defer releaseWalletAPIStartLease(
+		lease,
+		leasePath,
+	)
+
+	// Recheck after obtaining the cross-GUI startup lease.
 	if portHasAPI(apiPort) {
 		return nil
 	}
 
 	dir := nodeDir()
-	exe := filepath.Join(dir, "quantumcoin.exe")
+	exe := filepath.Join(
+		dir,
+		"quantumcoin.exe",
+	)
+
 	if _, err := os.Stat(exe); err != nil {
-		return fmt.Errorf("quantumcoin.exe not found: %v", err)
+		return fmt.Errorf(
+			"quantumcoin.exe not found: %v",
+			err,
+		)
 	}
 
-	apiLog := filepath.Join(dir, "api_out.log")
-	f, err := os.OpenFile(apiLog, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	apiLog := filepath.Join(
+		dir,
+		"api_out.log",
+	)
+
+	f, err := os.OpenFile(
+		apiLog,
+		os.O_CREATE|os.O_WRONLY|os.O_APPEND,
+		0644,
+	)
 	if err != nil {
 		return err
 	}
 
-	cmd := exec.Command(exe, "api")
+	cmd := exec.Command(
+		exe,
+		"api",
+	)
 	cmd.Dir = dir
 
-	// QC_* adreslerini burada set etmiyoruz; sadece node-dir
-	cmd.Env = append(os.Environ(), "QC_NODE_DIR="+dir)
+	cmd.Env = append(
+		os.Environ(),
+		"QC_NODE_DIR="+dir,
+		"QC_HTTP_PORT=:"+apiPort,
+		"QC_API_LISTEN=127.0.0.1:"+apiPort,
+	)
+
 	cmd.Stdout = f
 	cmd.Stderr = f
+
 	if runtime.GOOS == "windows" {
-		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			HideWindow: true,
+		}
 	}
+
 	if err := cmd.Start(); err != nil {
 		_ = f.Close()
 		return err
 	}
-	go func() { _ = cmd.Wait(); _ = f.Close() }()
 
-	// Sağlık kontrolü
-	health := apiBase() + "/health"
-	deadline := time.Now().Add(10 * time.Second)
+	health := apiBase() + canonicalAPIHealthPath
+
+	deadline :=
+		time.Now().Add(
+			10 * time.Second,
+		)
+
 	for time.Now().Before(deadline) {
-		if ping(health, 500*time.Millisecond) == nil {
+		if ping(
+			health,
+			500*time.Millisecond,
+		) == nil {
+			go func() {
+				_ = cmd.Wait()
+				_ = f.Close()
+			}()
+
 			return nil
 		}
-		time.Sleep(300 * time.Millisecond)
+
+		time.Sleep(
+			300 * time.Millisecond,
+		)
 	}
 
-	// ADD: /health çalışmasa da API'yı bulmak için ek port taraması
-	// portHasAPI() zaten /health, /api/health, /api/status, /api/version ve /'i dener.
-	{
-		tryPorts := []string{}
-		if apiPort != "" {
-			tryPorts = append(tryPorts, apiPort) // mevcut portu öncele
-		}
-		tryPorts = append(tryPorts, "8082", "8081", "3001", "8080", "9090", "9091", "3000")
-
-		seen := map[string]bool{}
-		deadline2 := time.Now().Add(10 * time.Second)
-		for time.Now().Before(deadline2) {
-			// Mevcut apiPort'u kontrol et
-			if apiPort != "" && portHasAPI(apiPort) {
-				return nil
-			}
-
-			// detectAPIPort() tekrar dene (ortam değişmiş olabilir)
-			if p := detectAPIPort(); p != "" && !seen[p] && portHasAPI(p) {
-				apiPort = p
-				return nil
-			}
-
-			// Yaygın portları tara
-			for _, p := range tryPorts {
-				if p == "" || seen[p] {
-					continue
-				}
-				if portHasAPI(p) {
-					apiPort = p
-					return nil
-				}
-				seen[p] = true
-			}
-			time.Sleep(300 * time.Millisecond)
-		}
+	// A backend that never reaches canonical health must not be left behind.
+	if cmd.Process != nil {
+		_ = cmd.Process.Kill()
 	}
 
-	return fmt.Errorf("API timeout")
+	_ = cmd.Wait()
+	_ = f.Close()
+
+	return fmt.Errorf(
+		"API /api/health timeout on 127.0.0.1:%s",
+		apiPort,
+	)
 }
 
 /* ================== Miner starter (görünür CMD) ================== */
@@ -3122,7 +3515,7 @@ func makeWebWalletTab(w fyne.Window) fyne.CanvasObject {
 		}
 		urlLabel.SetText(fmt.Sprintf(T("web_wallet_url"), u()))
 		if err := openWebWalletBrowser(); err != nil {
-			dialog.ShowError(fmt.Errorf("Web wallet could not open: %v", err), w)
+			dialog.ShowError(fmt.Errorf("%s: %v", "Web wallet could not open", err), w)
 			return
 		}
 		dialog.ShowInformation(T("ok"), "Web wallet opened in browser.", w)
@@ -3731,3 +4124,18 @@ func noCacheURL(u string) string {
 	}
 	return u + sep + "_ts=" + strconv.FormatInt(time.Now().UnixNano(), 10)
 }
+
+// QC_STATICCHECK_KEEP_GUI_MINER_HELPERS keeps intentionally retained GUI/miner helpers reachable without changing runtime behavior.
+var (
+	_ = markMinerStoppedFromWatcher
+	_ = &minerStatePollerMu
+	_ = &minerStatePollerRun
+	_ = minerActiveViaAPI
+	_ = minerActiveHeuristic
+	_ = stopMinerTail
+	_ = firstCSVField
+	_ = processImageName
+	_ = isCmdPID
+	_ = cmdWindowTitleByPID
+	_ = minerWindowAlive
+)
