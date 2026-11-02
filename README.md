@@ -114,6 +114,25 @@ Founder binding, transaction denomination, burn rules and activation gates must
 be interpreted with the corresponding consensus and runtime validation code.
 Game, AI, token and automation modules do not independently expand the QC supply.
 
+## Planned: Token Factory and token mining
+
+Once the core infrastructure is ready, we plan to add a **Token Factory** for
+creating project tokens and a connected **token mining/reward infrastructure**.
+
+The planned development covers:
+
+- Tools to create tokens using the supported token framework.
+- Project-specific issuance permissions, supply limits and reward rules.
+- Token mining/reward flows with validated activity and recorded distribution.
+- Wallet and game integration for displaying token balances and eligible rewards.
+
+These are future capabilities. The mining model, token creation workflow,
+operational requirements and launch conditions will be defined and tested before
+release. Existing token authorization and persistence components provide a
+foundation; they are not a released public token-creation or token-mining service.
+Project tokens will have their own rules and will not override QC's fixed-supply
+and consensus restrictions.
+
 ## Repository structure
 
 | Directory | Purpose |
