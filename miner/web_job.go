@@ -7,9 +7,11 @@ import (
 	"encoding/hex"
 )
 
+// WebDifficulty documents the QuantumCoin component used by this module.
 // WebDifficulty: tarayıcı miner için basit model — leading HEX '0' sayısı.
 var WebDifficulty = 5 // config ile besleyebilirsin
 
+// CurrentWebChallenge documents the QuantumCoin component used by this module.
 // CurrentWebChallenge: 32 baytlık rastgele challenge üretir (hex).
 func CurrentWebChallenge() (challengeHex string, difficulty int) {
 	buf := make([]byte, 32)
@@ -40,6 +42,7 @@ func meetsDifficulty(hexHash string, diff int) bool {
 	return true
 }
 
+// VerifyWebSolution documents the QuantumCoin component used by this module.
 // VerifyWebSolution: challenge(hex) + nonce(LE uint32) ⇒ doubleSHA256
 // dönen: (valid, hashHex)
 func VerifyWebSolution(challengeHex string, nonce uint32, diff int) (bool, string) {

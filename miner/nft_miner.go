@@ -1,68 +1,32 @@
+// Package miner contains QuantumCoin project code for this module.
 package miner
 
 import (
-	"fmt"
 	"log"
 	"time"
 
 	"quantumcoin/blockchain"
 )
 
-// ---- Opsiyonel entegrasyon kancaları (DB/Telegram vb.) ----
-// Bu hook'lar nil ise çağrılmaz; böylece dış paketlere ihtiyaç olmadan derlenir.
+// Compatibility hooks remain available to existing callers. The retired
+// mining path never invokes them or represents an NFT award as successful.
 var SaveNFTRewardHook func(address, nftType, txID string, at time.Time) error
 var NotifyTelegramHook func(address, message string)
 
-// NFTMiningReward: nadir NFT ödül kaydı
 type NFTMiningReward struct {
 	Address string
-	Type    string // "rare", "epic", "legendary" vb.
+	Type    string
 	Time    time.Time
-	TxID    string // zincir üstü işlem ID'si (varsa)
+	TxID    string
 }
 
-// GrantNFTBonus: madenciye NFT ödülü verir (+ isteğe bağlı zincir/DB/Telegram bildirimleri)
+// GrantNFTBonus is a retired mining compatibility entry point.
+// Monthly NFTs belong to the Telegram Game program. Neither legacy ENV flag
+// can enable a mining award, chain mutation, database record or notification.
 func GrantNFTBonus(address, nftType string, bc *blockchain.Blockchain) {
-	reward := NFTMiningReward{
-		Address: address,
-		Type:    nftType,
-		Time:    time.Now(),
-	}
-
-	// Terminal çıktısı
-	fmt.Printf("🎁 %s adresine '%s' türünde NFT ödülü verildi! (%s)\n",
-		reward.Address, reward.Type, reward.Time.Format("02 Jan 2006 15:04:05"))
-
-	// 1) Zincir üstü kayıt (stub; gerçek mint akışına bağlanacak)
-	if bc != nil {
-		txID, err := bc.MintNFT(reward.Address, reward.Type, map[string]string{
-			"source": "mining_reward",
-			"date":   reward.Time.Format(time.RFC3339),
-		})
-		if err != nil {
-			log.Printf("[NFT] zincir üstü kayıt başarısız: %v", err)
-		} else {
-			reward.TxID = txID
-			log.Printf("[NFT] zincir üstü kayıt tamamlandı, TxID: %s", txID)
-		}
-	}
-
-	// 2) Veritabanı hook'u (opsiyonel)
-	if SaveNFTRewardHook != nil {
-		if err := SaveNFTRewardHook(reward.Address, reward.Type, reward.TxID, reward.Time); err != nil {
-			log.Printf("[NFT] veritabanı kaydı başarısız: %v", err)
-		}
-	}
-
-	// 3) Telegram bildirim hook'u (opsiyonel)
-	if NotifyTelegramHook != nil {
-		NotifyTelegramHook(reward.Address,
-			fmt.Sprintf("🚀 Uzay madenciliğinde **%s** türünde NFT kazandınız! 🎉", reward.Type))
-	}
+	log.Printf("[NFT_SAFE_BOUNDARY_V1] miner NFT reward skipped for %s (%s): mining awards are disabled; monthly Telegram Game program required", address, nftType)
 }
 
-// Basit rastgele NFT tipi
 func GenerateRandomNFTType() string {
-	types := []string{"rare", "epic", "legendary"}
-	return types[time.Now().UnixNano()%int64(len(types))]
+	return "rare"
 }

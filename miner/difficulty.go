@@ -12,9 +12,10 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
+// DifficultyWidget documents the QuantumCoin component used by this module.
 // DifficultyWidget: görsel zorluk göstergesi (demo)
 func DifficultyWidget(currentDifficulty float64) fyne.CanvasObject {
-	title := canvas.NewText("⛏️ Mining Difficulty", theme.PrimaryColor())
+	title := canvas.NewText("⛏️ Mining Difficulty", theme.Color(theme.ColorNamePrimary))
 	title.TextStyle = fyne.TextStyle{Bold: true}
 	title.Alignment = fyne.TextAlignCenter
 

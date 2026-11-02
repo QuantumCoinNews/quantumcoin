@@ -1,4 +1,6 @@
 // miner/submit_external.go
+
+// Package miner contains QuantumCoin project code for this module.
 package miner
 
 // Bu dosya, web’den gelen geçerli bir çözümü chain’e entegre etme köprüsü.

@@ -12,16 +12,18 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"quantumcoin/blockchain"
 )
 
 type Work struct {
-	Left   []byte
-	Right  []byte
-	Target *big.Int
-	Height int
-	Miner  string
+	Left     []byte
+	Right    []byte
+	Target   *big.Int
+	Height   int
+	Miner    string
+	Template *blockchain.Block
 }
-
 type Backend interface {
 	GetWork(ctx context.Context, address string) (*Work, error)
 	Submit(ctx context.Context, w *Work, nonce uint64, hashHex string) (bool, error)
@@ -64,17 +66,37 @@ func (w *Worker) Run(ctx context.Context) error {
 	}
 }
 
-func (w *Worker) solve(ctx context.Context, work *Work) error {
+func (w *Worker) solve(
+	ctx context.Context,
+	work *Work,
+) error {
+	if work == nil {
+		return fmt.Errorf("worker: nil work")
+	}
+
+	if work.Target == nil {
+		return fmt.Errorf("worker: nil work target")
+	}
+
 	var (
-		wg     sync.WaitGroup
-		stopCh = make(chan struct{})
-		once   sync.Once
+		wg       sync.WaitGroup
+		stopCh   = make(chan struct{})
+		once     sync.Once
+		resultCh = make(chan error, 1)
 	)
+
 	wg.Add(w.cfg.Threads)
+
 	for i := 0; i < w.cfg.Threads; i++ {
-		seed := rand.New(rand.NewSource(time.Now().UnixNano() + int64(i)))
+		seed := rand.New(
+			rand.NewSource(
+				time.Now().UnixNano() + int64(i),
+			),
+		)
+
 		go func() {
 			defer wg.Done()
+
 			for {
 				select {
 				case <-ctx.Done():
@@ -83,42 +105,168 @@ func (w *Worker) solve(ctx context.Context, work *Work) error {
 					return
 				default:
 				}
+
 				nonce := uint64(seed.Int63())
-				h := hashCandidate(work.Left, nonce, work.Right)
-				atomic.AddUint64(&w.HashCount, 1)
-				if new(big.Int).SetBytes(h[:]).Cmp(work.Target) <= 0 {
-					hashHex := hex.EncodeToString(h[:])
+
+				meetsTarget, hash, err :=
+					hashWorkCandidateV1(
+						work,
+						nonce,
+					)
+
+				atomic.AddUint64(
+					&w.HashCount,
+					1,
+				)
+
+				if err != nil {
 					once.Do(func() {
 						close(stopCh)
-						ok, _ := w.backend.Submit(ctx, work, nonce, hashHex)
-						if ok {
-							atomic.AddUint64(&w.found, 1)
-							if w.cfg.GreenOnFound {
-								fmt.Print("\x1b[32m")
-							}
-							fmt.Printf("\n[BLOK BULUNDU] h=%d nonce=%d hash=%s height=%d\n", w.HashCount, nonce, hashHex, work.Height)
-							if w.cfg.GreenOnFound {
-								fmt.Print("\x1b[0m")
-							}
-						} else {
-							fmt.Printf("\n[GEÇERSİZ] nonce=%d hash=%s\n", nonce, hashHex)
-						}
+
+						resultCh <- fmt.Errorf(
+							"worker candidate hash: %w",
+							err,
+						)
 					})
+
 					return
 				}
+
+				if !meetsTarget {
+					continue
+				}
+
+				hashHex := hex.EncodeToString(
+					hash[:],
+				)
+
+				once.Do(func() {
+					close(stopCh)
+
+					submitted, submitErr :=
+						w.backend.Submit(
+							ctx,
+							work,
+							nonce,
+							hashHex,
+						)
+
+					if submitErr != nil {
+						resultCh <- fmt.Errorf(
+							"worker submit: %w",
+							submitErr,
+						)
+
+						return
+					}
+
+					if submitted {
+						atomic.AddUint64(
+							&w.found,
+							1,
+						)
+
+						if w.cfg.GreenOnFound {
+							fmt.Print("\x1b[32m")
+						}
+
+						fmt.Printf(
+							"\n[BLOK BULUNDU] h=%d nonce=%d hash=%s height=%d\n",
+							atomic.LoadUint64(
+								&w.HashCount,
+							),
+							nonce,
+							hashHex,
+							work.Height,
+						)
+
+						if w.cfg.GreenOnFound {
+							fmt.Print("\x1b[0m")
+						}
+					} else {
+						fmt.Printf(
+							"\n[GEÇERSİZ] nonce=%d hash=%s\n",
+							nonce,
+							hashHex,
+						)
+					}
+				})
+
+				return
 			}
 		}()
 	}
+
 	wg.Wait()
-	return nil
+
+	select {
+	case err := <-resultCh:
+		return err
+	default:
+		return nil
+	}
 }
 
-// Zincirin prepareData kuralıyla uyumlu: SHA256(Left || strconv.Itoa(nonce) || Right)
-func hashCandidate(left []byte, nonce uint64, right []byte) [32]byte {
-	nb := []byte(strconv.Itoa(int(nonce)))
-	buf := make([]byte, 0, len(left)+len(nb)+len(right))
-	buf = append(buf, left...)
-	buf = append(buf, nb...)
-	buf = append(buf, right...)
-	return sha256.Sum256(buf)
+// hashWorkCandidateV1 uses the canonical blockchain PoW path when a fixed
+// block template is attached. Template-free mock work keeps the legacy
+// isolated hashing path until the backend is migrated.
+func hashWorkCandidateV1(
+	work *Work,
+	nonce uint64,
+) (bool, [32]byte, error) {
+	var zero [32]byte
+
+	if work == nil {
+		return false, zero, fmt.Errorf(
+			"worker: nil work",
+		)
+	}
+
+	if work.Target == nil {
+		return false, zero, fmt.Errorf(
+			"worker: nil work target",
+		)
+	}
+
+	if work.Template != nil {
+		return blockchain.PoWHashMeetsTargetUint64V1(
+			work.Template,
+			nonce,
+		)
+	}
+	hash := hashCandidate(
+		work.Left,
+		nonce,
+		work.Right,
+	)
+
+	meetsTarget :=
+		new(big.Int).
+			SetBytes(hash[:]).
+			Cmp(work.Target) <= 0
+
+	return meetsTarget, hash, nil
+}
+
+// hashCandidate remains only for template-free mock/legacy work.
+func hashCandidate(
+	left []byte,
+	nonce uint64,
+	right []byte,
+) [32]byte {
+	nonceBytes := []byte(
+		strconv.Itoa(int(nonce)),
+	)
+
+	buffer := make(
+		[]byte,
+		0,
+		len(left)+len(nonceBytes)+len(right),
+	)
+
+	buffer = append(buffer, left...)
+	buffer = append(buffer, nonceBytes...)
+	buffer = append(buffer, right...)
+
+	return sha256.Sum256(buffer)
 }

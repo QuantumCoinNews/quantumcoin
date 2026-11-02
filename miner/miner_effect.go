@@ -15,6 +15,7 @@ func NewEffect(symbol string) *Effect {
 	return &Effect{symbol: symbol, last: time.Now()}
 }
 
+// Frame documents the QuantumCoin component used by this module.
 // Frame: terminalde hafif animasyon (CPU dostu)
 func (e *Effect) Frame(step, nextHeight, difficulty int, hashrate float64) {
 	spin := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}[step%10]

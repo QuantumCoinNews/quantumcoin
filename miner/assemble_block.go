@@ -9,6 +9,7 @@ import (
 // Basit/metinlik stublar — main.go bunları doğrudan kullanmıyor,
 // derlemeyi kolaylaştırmak için uyumlu tutuldu.
 
+//lint:ignore U1000 retained compatibility stub for candidate block assembly experiments
 func assembleCoinbaseAndMetadata(
 	height int64,
 	headerHash []byte,
@@ -38,5 +39,17 @@ func BuildCandidateBlock(
 	}
 }
 
-// Ücret toplamı stub
-func SumFeesAtoms(_ []*blockchain.Transaction) int64 { return 0 }
+// SumFeesAtoms retains the legacy name while delegating to verified UTXO fee
+// accounting. The current ledger stores integer QC amounts; atomic-unit
+// migration is a separate mainnet compatibility decision.
+func SumFeesAtoms(
+	bc *blockchain.Blockchain,
+	txs []*blockchain.Transaction,
+) (int64, error) {
+	fees, err := bc.CalculateBlockFeesSnapshot(txs)
+	if err != nil {
+		return 0, err
+	}
+
+	return int64(fees), nil
+}

@@ -2,8 +2,8 @@ package miner
 
 import "log"
 
-// GrantNFTReward: bonus/NFT tetikleyici (stub – log atar)
-// NOT: Bu pakette aynı isimli ikinci tanım olmamalı (nft_miner.go içinde yok).
+// GrantNFTReward is retained as an inert mining compatibility entry point.
+// NFT awards must be confirmed by the separate monthly Telegram Game flow.
 func GrantNFTReward(address string) {
-	log.Printf("🎁 NFT reward granted to %s (stub)", address)
+	log.Printf("[NFT_SAFE_BOUNDARY_V1] miner NFT reward skipped for %s: mining awards are disabled; monthly Telegram Game program required", address)
 }

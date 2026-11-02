@@ -15,9 +15,9 @@ import (
 	"quantumcoin/blockchain"
 	"quantumcoin/config"
 	"quantumcoin/consolefx"
-	qint "quantumcoin/internal"
 )
 
+// MiningStatus documents the QuantumCoin component used by this module.
 // MiningStatus: dışa raporlanan durum
 type MiningStatus struct {
 	BlockHeight int
@@ -26,6 +26,7 @@ type MiningStatus struct {
 	Timestamp   time.Time
 }
 
+// Options documents the QuantumCoin component used by this module.
 // Options: başlatma seçenekleri ve geri çağrılar
 type Options struct {
 	OnBlock     func(b *blockchain.Block, status MiningStatus) // Blok bulunduğunda
@@ -38,20 +39,22 @@ type Options struct {
 
 // ---- iç durum ----
 var (
-	state         minerState
-	globalBC      *blockchain.Blockchain // geriye dönük uyumluluk
-	yearBonusLock sync.Mutex
-	yearlyGiven   = map[string]int{} // adres → son bonus yılı
+	state    minerState
+	globalBC *blockchain.Blockchain // geriye dönük uyumluluk
 )
 
 type minerState struct {
-	active     atomic.Bool
-	stopCh     chan struct{}
-	wg         sync.WaitGroup
-	bc         *blockchain.Blockchain
-	address    string
-	difficulty int
-	opts       Options
+	active  atomic.Bool
+	stopCh  chan struct{}
+	wg      sync.WaitGroup
+	bc      *blockchain.Blockchain
+	address string
+
+	// requestedDifficulty <= 0 means dynamically resolve from the
+	// current blockchain before every mining attempt.
+	requestedDifficulty int
+	difficulty          int
+	opts                Options
 
 	// görsel/istatistik
 	effect   *Effect
@@ -99,51 +102,113 @@ func addMinedBalance(addr string, deltaQC int) {
 	mb.Updated = time.Now().Unix()
 
 	tmp := p + ".tmp"
-	if b, err := json.MarshalIndent(mb, "", "  "); err == nil {
-		_ = os.WriteFile(tmp, b, 0644)
-		_ = os.Rename(tmp, p) // atomik güncelleme
+	b, err := json.MarshalIndent(mb, "", "  ")
+	if err != nil {
+		log.Printf("miner: mined balance encode failed: %v", err)
+		return
+	}
+	if err := os.WriteFile(tmp, b, 0644); err != nil {
+		log.Printf("miner: mined balance temp write failed: %v", err)
+		return
+	}
+	if err := os.Rename(tmp, p); err != nil {
+		log.Printf("miner: mined balance replace failed: %v", err)
+		if removeErr := os.Remove(tmp); removeErr != nil && !os.IsNotExist(removeErr) {
+			log.Printf("miner: mined balance temp cleanup failed: %v", removeErr)
+		}
 	}
 }
 
+// resolveMinerEntryDifficultyV1 keeps every in-process miner entrypoint on
+// the same network-profile and effective-difficulty policy.
+func resolveMinerEntryDifficultyV1(
+	cfg *config.Config,
+	bc *blockchain.Blockchain,
+	requestedDifficulty int,
+) (int, error) {
+	return resolveRuntimeDifficultyV1(
+		cfg,
+		bc,
+		requestedDifficulty,
+	)
+}
+
+// Start documents the QuantumCoin component used by this module.
 // Start: sürekli kazıma döngüsünü başlatır
-func Start(bc *blockchain.Blockchain, minerAddress string, difficulty int, opts ...Options) error {
+func Start(
+	bc *blockchain.Blockchain,
+	minerAddress string,
+	difficulty int,
+	opts ...Options,
+) error {
 	if bc == nil {
-		return errors.New("miner: blockchain is nil")
+		return errors.New(
+			"miner: blockchain is nil",
+		)
 	}
+
+	minerAddress = strings.TrimSpace(
+		minerAddress,
+	)
 	if minerAddress == "" {
-		return errors.New("miner: miner address required")
+		return errors.New(
+			"miner: miner address required",
+		)
 	}
+
 	if IsActive() {
 		return nil
 	}
 
-	// opsiyonları birleştir
-	merged := Options{Interval: 1200 * time.Millisecond, Animate: true}
+	effectiveDifficulty, err :=
+		resolveMinerEntryDifficultyV1(
+			config.Current(),
+			bc,
+			difficulty,
+		)
+	if err != nil {
+		return fmt.Errorf(
+			"miner start difficulty: %w",
+			err,
+		)
+	}
+
+	merged := Options{
+		Interval: 1200 * time.Millisecond,
+		Animate:  true,
+	}
+
 	if len(opts) > 0 {
-		o := opts[0]
-		if o.OnBlock != nil {
-			merged.OnBlock = o.OnBlock
+		option := opts[0]
+
+		if option.OnBlock != nil {
+			merged.OnBlock = option.OnBlock
 		}
-		if o.OnError != nil {
-			merged.OnError = o.OnError
+		if option.OnError != nil {
+			merged.OnError = option.OnError
 		}
-		if o.OnTick != nil {
-			merged.OnTick = o.OnTick
+		if option.OnTick != nil {
+			merged.OnTick = option.OnTick
 		}
-		if o.Interval > 0 {
-			merged.Interval = o.Interval
+		if option.Interval > 0 {
+			merged.Interval = option.Interval
 		}
-		if o.Broadcaster != nil {
-			merged.Broadcaster = o.Broadcaster
+		if option.Broadcaster != nil {
+			merged.Broadcaster = option.Broadcaster
 		}
-		merged.Animate = o.Animate
+
+		merged.Animate = option.Animate
 	}
 
 	state.bc = bc
 	state.address = minerAddress
-	state.difficulty = difficulty
+	state.requestedDifficulty = difficulty
+	state.difficulty = effectiveDifficulty
 	state.opts = merged
 	state.stopCh = make(chan struct{})
+	state.step = 0
+	state.hashrate = 0
+
 	if merged.Animate {
 		state.effect = NewEffect("QC")
 	} else {
@@ -152,11 +217,13 @@ func Start(bc *blockchain.Blockchain, minerAddress string, difficulty int, opts 
 
 	state.active.Store(true)
 	state.wg.Add(1)
+
 	go loop()
 
 	return nil
 }
 
+// Stop documents the QuantumCoin component used by this module.
 // Stop: sürekli kazımayı durdurur
 func Stop() {
 	if !IsActive() {
@@ -176,44 +243,97 @@ func Stop() {
 	}
 }
 
+// IsActive documents the QuantumCoin component used by this module.
 // IsActive: çalışıyor mu?
 func IsActive() bool {
 	return state.active.Load()
 }
 
+// MineOne documents the QuantumCoin component used by this module.
 // MineOne: tek seferlik blok kazı (paylaşılan bc ile)
-func MineOne(bc *blockchain.Blockchain, address string, difficulty int) (*blockchain.Block, error) {
+func MineOne(
+	bc *blockchain.Blockchain,
+	address string,
+	difficulty int,
+) (*blockchain.Block, error) {
 	if bc == nil {
-		return nil, errors.New("miner: blockchain is nil")
+		return nil, errors.New(
+			"miner: blockchain is nil",
+		)
 	}
+
+	address = strings.TrimSpace(address)
 	if address == "" {
-		return nil, errors.New("miner: miner address required")
+		return nil, errors.New(
+			"miner: miner address required",
+		)
 	}
 
-	// kısa animasyon
-	eff := NewEffect("QC")
-	for i := 0; i < 10; i++ {
-		eff.Frame(i, bc.GetBestHeight()+1, difficulty, 0)
-		time.Sleep(80 * time.Millisecond)
+	effectiveDifficulty, err :=
+		resolveMinerEntryDifficultyV1(
+			config.Current(),
+			bc,
+			difficulty,
+		)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"miner mine one difficulty: %w",
+			err,
+		)
 	}
-	eff.Clear()
 
-	start := time.Now()
-	block, err := bc.MineBlock(address, difficulty)
-	elapsed := time.Since(start)
+	effect := NewEffect("QC")
+
+	for step := 0; step < 10; step++ {
+		effect.Frame(
+			step,
+			bc.BestHeightSnapshot()+1,
+			effectiveDifficulty,
+			0,
+		)
+
+		time.Sleep(
+			80 * time.Millisecond,
+		)
+	}
+
+	effect.Clear()
+
+	candidateHeight := bc.BestHeightSnapshot() + 1
+	reward := bc.ExpectedSubsidyForHeightSnapshot(
+		candidateHeight,
+	)
+
+	startedAt := time.Now()
+
+	block, err := bc.MineBlock(
+		address,
+		effectiveDifficulty,
+	)
+
+	elapsed := time.Since(startedAt)
+
 	if err != nil {
 		return nil, err
 	}
+
 	LogBlock(block)
 
-	rw := blockchain.GetCurrentReward()
-	fmt.Printf("✨ Reward: %d QC (elapsed %.2fs)\n", rw, elapsed.Seconds())
-	showSplitInfoPreview()
-	checkYearlyBonus(address)
-	TrackMiner(address) // sende varsa
+	fmt.Printf(
+		"✨ Reward: %d QC (elapsed %.2fs)\n",
+		reward,
+		elapsed.Seconds(),
+	)
 
-	// >>> YENİ: kazım bakiyesini dosyaya ekle
-	addMinedBalance(address, rw)
+	showSplitInfoPreview(
+		reward,
+	)
+	TrackMiner(address)
+
+	addMinedBalance(
+		address,
+		reward,
+	)
 
 	return block, nil
 }
@@ -229,32 +349,81 @@ func loop() {
 		default:
 		}
 
-		// canlı animasyon karesi
-		if state.opts.Animate && state.effect != nil {
-			nextH := state.bc.GetBestHeight() + 1
-			state.effect.Frame(state.step, nextH, state.difficulty, state.hashrate)
+		effectiveDifficulty, err :=
+			resolveMinerEntryDifficultyV1(
+				config.Current(),
+				state.bc,
+				state.requestedDifficulty,
+			)
+		if err != nil {
+			if state.opts.OnError != nil {
+				state.opts.OnError(
+					fmt.Errorf(
+						"miner loop difficulty: %w",
+						err,
+					),
+				)
+			}
+
+			time.Sleep(
+				450 * time.Millisecond,
+			)
+
+			continue
+		}
+
+		state.difficulty = effectiveDifficulty
+
+		if state.opts.Animate &&
+			state.effect != nil {
+			nextHeight :=
+				state.bc.BestHeightSnapshot() + 1
+
+			state.effect.Frame(
+				state.step,
+				nextHeight,
+				effectiveDifficulty,
+				state.hashrate,
+			)
+
 			state.step++
 		}
 
-		start := time.Now()
-		block, err := state.bc.MineBlock(state.address, state.difficulty)
-		dur := time.Since(start)
+		candidateHeight := state.bc.BestHeightSnapshot() + 1
+		reward := state.bc.ExpectedSubsidyForHeightSnapshot(
+			candidateHeight,
+		)
 
-		// kaba hashrate kestirimi (sadece görsel)
-		state.hashrate = estimateHashrate(dur, state.difficulty)
+		startedAt := time.Now()
+
+		block, err := state.bc.MineBlock(
+			state.address,
+			effectiveDifficulty,
+		)
+
+		duration := time.Since(startedAt)
+
+		state.hashrate = estimateHashrate(
+			duration,
+			effectiveDifficulty,
+		)
 
 		if err != nil {
 			if state.opts.OnError != nil {
 				state.opts.OnError(err)
 			}
-			time.Sleep(450 * time.Millisecond)
+
+			time.Sleep(
+				450 * time.Millisecond,
+			)
+
 			continue
 		}
 
 		status := MiningStatus{
 			BlockHeight: block.Index,
 			BlockHash:   block.Hash,
-			Reward:      blockchain.GetCurrentReward(),
+			Reward:      reward,
 			Timestamp:   time.Now(),
 		}
 
@@ -262,30 +431,50 @@ func loop() {
 			state.effect.Clear()
 		}
 
-		fmt.Printf("🚀 New block #%d mined by %s  (hash=%x, t=%.2fs)\n",
-			block.Index, state.address, block.Hash, dur.Seconds())
+		fmt.Printf(
+			"🚀 New block #%d mined by %s  (hash=%x, t=%.2fs)\n",
+			block.Index,
+			state.address,
+			block.Hash,
+			duration.Seconds(),
+		)
 
-		// ✨ spinner’ı ALT satırda ve interval süresince göster
 		if state.opts.Interval > 0 {
-			consolefx.SpinFor(state.opts.Interval)
+			consolefx.SpinFor(
+				state.opts.Interval,
+			)
 		}
 
-		fmt.Printf("💰 Reward: %d QC\n", status.Reward)
-		showSplitInfoPreview()
-		checkYearlyBonus(state.address)
-		TrackMiner(state.address) // sende varsa
+		fmt.Printf(
+			"💰 Reward: %d QC\n",
+			status.Reward,
+		)
 
-		// >>> YENİ: kazım bakiyesini dosyaya ekle
-		addMinedBalance(state.address, status.Reward)
+		showSplitInfoPreview(
+			status.Reward,
+		)
+		TrackMiner(state.address)
+
+		addMinedBalance(
+			state.address,
+			status.Reward,
+		)
 
 		if state.opts.OnBlock != nil {
-			state.opts.OnBlock(block, status)
+			state.opts.OnBlock(
+				block,
+				status,
+			)
 		}
+
 		if state.opts.Broadcaster != nil {
 			state.opts.Broadcaster(block)
 		}
+
 		if state.opts.Interval > 0 {
-			time.Sleep(state.opts.Interval)
+			time.Sleep(
+				state.opts.Interval,
+			)
 		}
 
 		if state.opts.OnTick != nil {
@@ -294,50 +483,36 @@ func loop() {
 	}
 }
 
+// LogBlock documents the QuantumCoin component used by this module.
 // LogBlock: basit log çıktısı
 func LogBlock(b *blockchain.Block) {
 	log.Printf("🚀 New block: idx=%d hash=%x", b.Index, b.Hash)
 }
 
-// ---- Yıllık bonus + NFT tetikleyici ----
+// ---- Retired annual mining bonus compatibility ----
 
+// checkYearlyBonus is retained only for source compatibility.
+// QMA-0047: the annual CMD mining QC bonus is cancelled.
+// This hook performs no payment, mint, logging or NFT award.
+// Telegram monthly NFT processing is a separate program.
 func checkYearlyBonus(address string) {
-	cfg := config.Current()
-	if cfg == nil || cfg.GenesisUnix <= 0 {
-		return
-	}
-	now := time.Now().Unix()
-	yearIdx := int((now - cfg.GenesisUnix) / (365 * 24 * 60 * 60))
-	if yearIdx < 0 {
-		yearIdx = 0
-	}
-
-	yearBonusLock.Lock()
-	defer yearBonusLock.Unlock()
-	if last, ok := yearlyGiven[address]; ok && last >= yearIdx {
-		return // bu yıl zaten verilmiş
-	}
-
-	// 100 QC bonus (demo; kalıcı muhasebe sende)
-	qint.GiveBonus(address, "Yearly", 100, "Annual miner bonus", "")
-
-	// NFT hediyesi (stub)
-	GrantNFTReward(address) // sende varsa
-
-	fmt.Println("✨ Annual 100 QC + Rare NFT awarded!")
-	yearlyGiven[address] = yearIdx
+	_ = address
 }
 
 // ödül bölüşümü bilgisi (görsel/log; coinbase split chain tarafında uygulanıyor varsayımı)
-func showSplitInfoPreview() {
+func showSplitInfoPreview(
+	baseReward int,
+) {
 	cfg := config.Current()
 	if cfg == nil || cfg.InitialReward <= 0 {
 		return
 	}
-	base := float64(blockchain.GetCurrentReward())
+
+	base := float64(baseReward)
 	if base <= 0 {
 		return
 	}
+
 	miner := base * float64(cfg.RewardPctMiner) / 100.0
 	stake := base * float64(cfg.RewardPctStake) / 100.0
 	dev := base * float64(cfg.RewardPctDev) / 100.0
@@ -346,28 +521,52 @@ func showSplitInfoPreview() {
 	if remain < 0 {
 		remain = 0
 	}
-	fmt.Printf("🧮 split preview → miner:%.2f stake:%.2f dev:%.2f burn:%.2f community:%.2f\n",
-		miner, stake, dev, burn, remain)
+
+	fmt.Printf(
+		"🧮 split preview → miner:%.2f stake:%.2f dev:%.2f burn:%.2f community:%.2f\n",
+		miner,
+		stake,
+		dev,
+		burn,
+		remain,
+	)
 }
 
 // ---- Geriye dönük uyumluluk katmanı ----
 
 func SetGlobalBlockchain(bc *blockchain.Blockchain) { globalBC = bc }
 
-func StartMining(minerAddress string, animationUpdate func(status MiningStatus)) {
+func StartMining(
+	minerAddress string,
+	animationUpdate func(status MiningStatus),
+) {
 	if IsActive() || globalBC == nil {
 		return
 	}
-	_ = Start(globalBC, minerAddress, config.Current().DefaultDifficultyBits, Options{
-		OnBlock: func(b *blockchain.Block, st MiningStatus) {
-			if animationUpdate != nil {
-				animationUpdate(st)
-			}
-		},
-		Interval: 1500 * time.Millisecond,
-		Animate:  true,
-	})
-}
 
+	err := Start(
+		globalBC,
+		minerAddress,
+		0,
+		Options{
+			OnBlock: func(
+				_ *blockchain.Block,
+				status MiningStatus,
+			) {
+				if animationUpdate != nil {
+					animationUpdate(status)
+				}
+			},
+			Interval: 1500 * time.Millisecond,
+			Animate:  true,
+		},
+	)
+	if err != nil {
+		log.Printf(
+			"miner StartMining failed: %v",
+			err,
+		)
+	}
+}
 func StopMining()          { Stop() }
 func IsMiningActive() bool { return IsActive() }
