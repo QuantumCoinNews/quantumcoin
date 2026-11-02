@@ -1,3 +1,4 @@
+// Package tests contains QuantumCoin project code for this module.
 package tests
 
 import (
@@ -5,6 +6,7 @@ import (
 	"quantumcoin/blockchain"
 )
 
+// StartTestnet documents the QuantumCoin component used by this module.
 // StartTestnet: Örnek test zinciri başlatır
 func StartTestnet() *blockchain.Blockchain {
 	fmt.Println("[Testnet] Yerel test ağı başlatılıyor...")

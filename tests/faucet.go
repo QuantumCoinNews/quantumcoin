@@ -1,3 +1,4 @@
+// Package tests contains QuantumCoin project code for this module.
 package tests
 
 import (
@@ -5,6 +6,7 @@ import (
 	"quantumcoin/blockchain"
 )
 
+// Faucet documents the QuantumCoin component used by this module.
 // Faucet: Testnet için adrese QC gönderimi yapar
 func Faucet(bc *blockchain.Blockchain, to string, amount int) {
 	tx, err := blockchain.NewTransaction("faucet", to, amount, bc)

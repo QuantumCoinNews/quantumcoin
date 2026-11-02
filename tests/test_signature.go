@@ -1,3 +1,4 @@
+// Package tests contains QuantumCoin project code for this module.
 package tests
 
 import (
