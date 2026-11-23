@@ -637,6 +637,7 @@
         "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET_SIM.ps1",
         "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET_SIM_NORELOAD.ps1",
         "telegram_game/telegram_game/admin_panel_safety_v1.py",
+        "telegram_game/telegram_game/social_reward_activation.py",
         "telegram_game/telegram_game/testnet_connection_v1.py",
         "telegram_game/telegram_game/tgwt_bsc_claim_safety_v1.py",
         "telegram_game/telegram_game/watch_earn_final_safety_v1.py"
@@ -1395,6 +1396,7 @@
         "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET_SIM.ps1",
         "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET_SIM_NORELOAD.ps1",
         "telegram_game/telegram_game/admin_panel_safety_v1.py",
+        "telegram_game/telegram_game/social_reward_activation.py",
         "telegram_game/telegram_game/testnet_connection_v1.py",
         "telegram_game/telegram_game/tgwt_bsc_claim_safety_v1.py",
         "telegram_game/telegram_game/watch_earn_final_safety_v1.py"
@@ -1930,7 +1932,8 @@
       "aliasFor": null,
       "sourceReferences": [
         "autopublisher/src/runtime/cli.ts",
-        "autopublisher/src/runtime/oauth.ts"
+        "autopublisher/src/runtime/oauth.ts",
+        "autopublisher/src/runtime/xOAuth2.ts"
       ]
     },
     {
@@ -2329,7 +2332,8 @@
         "telegram_game/_item5_make_valid_initdata.py",
         "telegram_game/telegram_game/config.py",
         "telegram_game/telegram_game/dev_api.py",
-        "telegram_game/telegram_game/main_bot.py"
+        "telegram_game/telegram_game/main_bot.py",
+        "telegram_game/telegram_game/telegram_reward_verifier.py"
       ]
     },
     {
@@ -2368,6 +2372,7 @@
         "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET_SIM.ps1",
         "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET_SIM_NORELOAD.ps1",
         "telegram_game/telegram_game/admin_panel_safety_v1.py",
+        "telegram_game/telegram_game/social_reward_activation.py",
         "telegram_game/telegram_game/testnet_connection_v1.py",
         "telegram_game/telegram_game/tgwt_bsc_claim_safety_v1.py",
         "telegram_game/telegram_game/watch_earn_final_safety_v1.py"
@@ -2469,6 +2474,32 @@
       "aliasFor": null,
       "sourceReferences": [
         "telegram_game/telegram_game/persistence.py"
+      ]
+    },
+    {
+      "key": "QC_TGWT_REWARD_SIGNING_SEED_FILE",
+      "kind": "absolute-path",
+      "owners": [
+        "game"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/social_provider_security.py"
+      ]
+    },
+    {
+      "key": "QC_TGWT_SOCIAL_REWARDS_ENABLED",
+      "kind": "boolean",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/social_reward_activation.py"
       ]
     },
     {
@@ -2733,7 +2764,7 @@
       "status": "active",
       "aliasFor": null,
       "sourceReferences": [
-        "telegram_game/telegram_game/x_reward_verifier.py"
+        "telegram_game/telegram_game/social_provider_security.py"
       ]
     },
     {
@@ -2771,6 +2802,58 @@
       "aliasFor": null,
       "sourceReferences": [
         "telegram_game/telegram_game/config.py"
+      ]
+    },
+    {
+      "key": "QC_YOUTUBE_CALLBACK_URL",
+      "kind": "text",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/youtube_reward_verifier.py"
+      ]
+    },
+    {
+      "key": "QC_YOUTUBE_CLIENT_ID",
+      "kind": "text",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/youtube_reward_verifier.py"
+      ]
+    },
+    {
+      "key": "QC_YOUTUBE_CLIENT_SECRET",
+      "kind": "text",
+      "owners": [
+        "game"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/youtube_reward_verifier.py"
+      ]
+    },
+    {
+      "key": "QC_YOUTUBE_STATE_ENCRYPTION_KEY",
+      "kind": "text",
+      "owners": [
+        "game"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/youtube_reward_verifier.py"
       ]
     },
     {
@@ -2836,7 +2919,8 @@
         "telegram_game/_item5_make_valid_initdata.py",
         "telegram_game/telegram_game/config.py",
         "telegram_game/telegram_game/dev_api.py",
-        "telegram_game/telegram_game/main_bot.py"
+        "telegram_game/telegram_game/main_bot.py",
+        "telegram_game/telegram_game/telegram_reward_verifier.py"
       ]
     },
     {
@@ -2923,7 +3007,8 @@
       "sourceReferences": [
         "telegram_game/_item5_make_valid_initdata.py",
         "telegram_game/telegram_game/config.py",
-        "telegram_game/telegram_game/dev_api.py"
+        "telegram_game/telegram_game/dev_api.py",
+        "telegram_game/telegram_game/telegram_reward_verifier.py"
       ]
     },
     {
@@ -2940,6 +3025,7 @@
         "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET_SIM.ps1",
         "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET_SIM_NORELOAD.ps1",
         "telegram_game/telegram_game/admin_panel_safety_v1.py",
+        "telegram_game/telegram_game/social_reward_activation.py",
         "telegram_game/telegram_game/testnet_connection_v1.py",
         "telegram_game/telegram_game/tgwt_bsc_claim_safety_v1.py",
         "telegram_game/telegram_game/watch_earn_final_safety_v1.py"
@@ -2975,6 +3061,7 @@
         "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET_SIM.ps1",
         "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET_SIM_NORELOAD.ps1",
         "telegram_game/telegram_game/admin_panel_safety_v1.py",
+        "telegram_game/telegram_game/social_reward_activation.py",
         "telegram_game/telegram_game/testnet_connection_v1.py",
         "telegram_game/telegram_game/tgwt_bsc_claim_safety_v1.py",
         "telegram_game/telegram_game/watch_earn_final_safety_v1.py"
@@ -3147,6 +3234,48 @@
       "aliasFor": "X_APP_SECRET",
       "sourceReferences": [
         "autopublisher/src/platforms/x.ts"
+      ]
+    },
+    {
+      "key": "X_OAUTH2_CLIENT_ID",
+      "kind": "text",
+      "owners": [
+        "publisher",
+        "tooling"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/xOAuth2.ts"
+      ]
+    },
+    {
+      "key": "X_OAUTH2_CLIENT_SECRET",
+      "kind": "text",
+      "owners": [
+        "publisher",
+        "tooling"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/xOAuth2.ts"
+      ]
+    },
+    {
+      "key": "X_OAUTH2_TOKEN_JSON",
+      "kind": "text",
+      "owners": [
+        "publisher",
+        "tooling"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/xOAuth2.ts"
       ]
     },
     {
