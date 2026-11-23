@@ -3784,6 +3784,24 @@
         "title": "SocialLinks",
         "type": "object"
       },
+      "SocialProviderVerifyIn": {
+        "properties": {
+          "campaignId": {
+            "title": "Campaignid",
+            "type": "string"
+          },
+          "playerId": {
+            "title": "Playerid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "playerId",
+          "campaignId"
+        ],
+        "title": "SocialProviderVerifyIn",
+        "type": "object"
+      },
       "StoreBuyIn": {
         "properties": {
           "campaignId": {
@@ -4163,6 +4181,14 @@
             "title": "Provideradaptersconfiguredautomatically",
             "type": "boolean"
           },
+          "socialRewardsEnabled": {
+            "title": "Socialrewardsenabled",
+            "type": "boolean"
+          },
+          "socialRewardsNetwork": {
+            "title": "Socialrewardsnetwork",
+            "type": "string"
+          },
           "verificationRequired": {
             "const": true,
             "title": "Verificationrequired",
@@ -4173,7 +4199,9 @@
           "ok",
           "campaigns",
           "verificationRequired",
-          "providerAdaptersConfiguredAutomatically"
+          "providerAdaptersConfiguredAutomatically",
+          "socialRewardsEnabled",
+          "socialRewardsNetwork"
         ],
         "title": "TGWTRewardCampaigns",
         "type": "object"
@@ -4219,6 +4247,14 @@
             "title": "Remaining U",
             "type": "integer"
           },
+          "socialRewardsEnabled": {
+            "title": "Socialrewardsenabled",
+            "type": "boolean"
+          },
+          "socialRewardsNetwork": {
+            "title": "Socialrewardsnetwork",
+            "type": "string"
+          },
           "tokenContract": {
             "title": "Tokencontract",
             "type": "string"
@@ -4238,7 +4274,9 @@
           "gasPayer",
           "gasAsset",
           "tokenContract",
-          "bscClaimEnabled"
+          "bscClaimEnabled",
+          "socialRewardsEnabled",
+          "socialRewardsNetwork"
         ],
         "title": "TGWTRewardPool",
         "type": "object"
@@ -5160,6 +5198,91 @@
           "expiresAt"
         ],
         "title": "XVerificationStarted",
+        "type": "object"
+      },
+      "YouTubeRewardAlreadyCredited": {
+        "additionalProperties": false,
+        "properties": {
+          "alreadyCredited": {
+            "const": true,
+            "title": "Alreadycredited",
+            "type": "boolean"
+          },
+          "credited_u": {
+            "const": 0,
+            "title": "Credited U",
+            "type": "integer"
+          },
+          "ok": {
+            "const": true,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "rewardId": {
+            "title": "Rewardid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "alreadyCredited",
+          "rewardId",
+          "credited_u"
+        ],
+        "title": "YouTubeRewardAlreadyCredited",
+        "type": "object"
+      },
+      "YouTubeRewardCompleteIn": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "playerId": {
+            "title": "Playerid",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "playerId",
+          "state",
+          "code"
+        ],
+        "title": "YouTubeRewardCompleteIn",
+        "type": "object"
+      },
+      "YouTubeVerificationStarted": {
+        "additionalProperties": false,
+        "properties": {
+          "authorizeUrl": {
+            "title": "Authorizeurl",
+            "type": "string"
+          },
+          "expiresAt": {
+            "title": "Expiresat",
+            "type": "integer"
+          },
+          "ok": {
+            "const": true,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "authorizeUrl",
+          "state",
+          "expiresAt"
+        ],
+        "title": "YouTubeVerificationStarted",
         "type": "object"
       }
     },
@@ -15397,6 +15520,159 @@
     },
     {
       "auth": "telegram-session-bearer",
+      "handler": "telegram_game.dev_api.verify_telegram_reward",
+      "lifecycle": "active",
+      "method": "POST",
+      "owner": "telegram_game",
+      "path": "/api/social/telegram/verify",
+      "request": {
+        "body": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SocialProviderVerifyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": []
+      },
+      "response": {
+        "explicitStatusCodes": [],
+        "literalKeys": [
+          "error",
+          "ok"
+        ],
+        "openapi": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/VerifiedTaskReward"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorDocument"
+                    }
+                  ],
+                  "title": "Response 200 Verify Telegram Reward Api Social Telegram Verify Post"
+                }
+              }
+            },
+            "description": "Existing wire response; inspect ok/error as well as HTTP status."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDocument"
+                }
+              }
+            },
+            "description": "Guard or handler error, when applicable; never implies feature activation."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDocument"
+                }
+              }
+            },
+            "description": "Guard or handler error, when applicable; never implies feature activation."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDocument"
+                }
+              }
+            },
+            "description": "Guard or handler error, when applicable; never implies feature activation."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDocument"
+                }
+              }
+            },
+            "description": "Guard or handler error, when applicable; never implies feature activation."
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDocument"
+                }
+              }
+            },
+            "description": "Guard or handler error, when applicable; never implies feature activation."
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDocument"
+                }
+              }
+            },
+            "description": "Guard or handler error, when applicable; never implies feature activation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/RedactedValidationFailure"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorDocument"
+                    }
+                  ],
+                  "title": "Response 422 Verify Telegram Reward Api Social Telegram Verify Post"
+                }
+              }
+            },
+            "description": "Redacted validation issues; request inputs and secrets are not echoed."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDocument"
+                }
+              }
+            },
+            "description": "Guard or handler error, when applicable; never implies feature activation."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDocument"
+                }
+              }
+            },
+            "description": "Guard or handler error, when applicable; never implies feature activation."
+          }
+        },
+        "schemaKind": "named-wire-contract",
+        "typedSuccessSchema": true
+      },
+      "security": [
+        {
+          "TelegramSession": []
+        }
+      ]
+    },
+    {
+      "auth": "telegram-session-bearer",
       "handler": "telegram_game.dev_api.complete_x_reward_verification",
       "lifecycle": "configuration-gated",
       "method": "POST",
@@ -15669,6 +15945,315 @@
                     }
                   ],
                   "title": "Response 422 Start X Reward Verification Api Social X Start Post"
+                }
+              }
+            },
+            "description": "Redacted validation issues; request inputs and secrets are not echoed."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDocument"
+                }
+              }
+            },
+            "description": "Guard or handler error, when applicable; never implies feature activation."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDocument"
+                }
+              }
+            },
+            "description": "Guard or handler error, when applicable; never implies feature activation."
+          }
+        },
+        "schemaKind": "named-wire-contract",
+        "typedSuccessSchema": true
+      },
+      "security": [
+        {
+          "TelegramSession": []
+        }
+      ]
+    },
+    {
+      "auth": "telegram-session-bearer",
+      "handler": "telegram_game.dev_api.complete_youtube_reward_verification",
+      "lifecycle": "active",
+      "method": "POST",
+      "owner": "telegram_game",
+      "path": "/api/social/youtube/complete",
+      "request": {
+        "body": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/YouTubeRewardCompleteIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": []
+      },
+      "response": {
+        "explicitStatusCodes": [],
+        "literalKeys": [
+          "error",
+          "ok"
+        ],
+        "openapi": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/VerifiedTaskReward"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorDocument"
+                    }
+                  ],
+                  "title": "Response 200 Complete Youtube Reward Verification Api Social Youtube Complete Post"
+                }
+              }
+            },
+            "description": "Existing wire response; inspect ok/error as well as HTTP status."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDocument"
+                }
+              }
+            },
+            "description": "Guard or handler error, when applicable; never implies feature activation."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDocument"
+                }
+              }
+            },
+            "description": "Guard or handler error, when applicable; never implies feature activation."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDocument"
+                }
+              }
+            },
+            "description": "Guard or handler error, when applicable; never implies feature activation."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDocument"
+                }
+              }
+            },
+            "description": "Guard or handler error, when applicable; never implies feature activation."
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDocument"
+                }
+              }
+            },
+            "description": "Guard or handler error, when applicable; never implies feature activation."
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDocument"
+                }
+              }
+            },
+            "description": "Guard or handler error, when applicable; never implies feature activation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/RedactedValidationFailure"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorDocument"
+                    }
+                  ],
+                  "title": "Response 422 Complete Youtube Reward Verification Api Social Youtube Complete Post"
+                }
+              }
+            },
+            "description": "Redacted validation issues; request inputs and secrets are not echoed."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDocument"
+                }
+              }
+            },
+            "description": "Guard or handler error, when applicable; never implies feature activation."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDocument"
+                }
+              }
+            },
+            "description": "Guard or handler error, when applicable; never implies feature activation."
+          }
+        },
+        "schemaKind": "named-wire-contract",
+        "typedSuccessSchema": true
+      },
+      "security": [
+        {
+          "TelegramSession": []
+        }
+      ]
+    },
+    {
+      "auth": "telegram-session-bearer",
+      "handler": "telegram_game.dev_api.start_youtube_reward_verification",
+      "lifecycle": "active",
+      "method": "POST",
+      "owner": "telegram_game",
+      "path": "/api/social/youtube/start",
+      "request": {
+        "body": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SocialProviderVerifyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": []
+      },
+      "response": {
+        "explicitStatusCodes": [],
+        "literalKeys": [
+          "error",
+          "ok"
+        ],
+        "openapi": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/YouTubeVerificationStarted"
+                    },
+                    {
+                      "$ref": "#/components/schemas/YouTubeRewardAlreadyCredited"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorDocument"
+                    }
+                  ],
+                  "title": "Response 200 Start Youtube Reward Verification Api Social Youtube Start Post"
+                }
+              }
+            },
+            "description": "Existing wire response; inspect ok/error as well as HTTP status."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDocument"
+                }
+              }
+            },
+            "description": "Guard or handler error, when applicable; never implies feature activation."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDocument"
+                }
+              }
+            },
+            "description": "Guard or handler error, when applicable; never implies feature activation."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDocument"
+                }
+              }
+            },
+            "description": "Guard or handler error, when applicable; never implies feature activation."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDocument"
+                }
+              }
+            },
+            "description": "Guard or handler error, when applicable; never implies feature activation."
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDocument"
+                }
+              }
+            },
+            "description": "Guard or handler error, when applicable; never implies feature activation."
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDocument"
+                }
+              }
+            },
+            "description": "Guard or handler error, when applicable; never implies feature activation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/RedactedValidationFailure"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorDocument"
+                    }
+                  ],
+                  "title": "Response 422 Start Youtube Reward Verification Api Social Youtube Start Post"
                 }
               }
             },
@@ -16581,6 +17166,8 @@
           "campaigns",
           "ok",
           "providerAdaptersConfiguredAutomatically",
+          "socialRewardsEnabled",
+          "socialRewardsNetwork",
           "verificationRequired"
         ],
         "openapi": {
@@ -16732,6 +17319,8 @@
           "ok",
           "onChainFundingVerified",
           "remaining_u",
+          "socialRewardsEnabled",
+          "socialRewardsNetwork",
           "tokenContract",
           "total_u"
         ],
@@ -21197,6 +21786,26 @@
             }
           }
         ]
+      },
+      "response": {
+        "explicitStatusCodes": [],
+        "literalKeys": [],
+        "openapi": {},
+        "schemaKind": "named-wire-contract",
+        "typedSuccessSchema": false
+      },
+      "security": []
+    },
+    {
+      "auth": "public",
+      "handler": "telegram_game.dev_api.youtube_reward_oauth_callback",
+      "lifecycle": "active",
+      "method": "GET",
+      "owner": "telegram_game",
+      "path": "/oauth/youtube/callback",
+      "request": {
+        "body": null,
+        "parameters": []
       },
       "response": {
         "explicitStatusCodes": [],
