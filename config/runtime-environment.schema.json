@@ -3333,6 +3333,48 @@
       ],
       "x-aliasFor": "X_APP_SECRET"
     },
+    "X_OAUTH2_CLIENT_ID": {
+      "type": "string",
+      "x-kind": "text",
+      "x-owners": [
+        "publisher",
+        "tooling"
+      ],
+      "x-secret": true,
+      "x-status": "active",
+      "x-source": [
+        "autopublisher/src/runtime/xOAuth2.ts",
+        "autopublisher/src/runtime/secrets.ts"
+      ]
+    },
+    "X_OAUTH2_CLIENT_SECRET": {
+      "type": "string",
+      "x-kind": "text",
+      "x-owners": [
+        "publisher",
+        "tooling"
+      ],
+      "x-secret": true,
+      "x-status": "active",
+      "x-source": [
+        "autopublisher/src/runtime/xOAuth2.ts",
+        "autopublisher/src/runtime/secrets.ts"
+      ]
+    },
+    "X_OAUTH2_TOKEN_JSON": {
+      "type": "string",
+      "x-kind": "text",
+      "x-owners": [
+        "publisher",
+        "tooling"
+      ],
+      "x-secret": true,
+      "x-status": "active",
+      "x-source": [
+        "autopublisher/src/runtime/xOAuth2.ts",
+        "autopublisher/src/runtime/secrets.ts"
+      ]
+    },
     "YOUTUBE_API_OR_APPROVED_VERIFICATION_ADAPTER_LATER": {
       "type": "string",
       "x-kind": "text",

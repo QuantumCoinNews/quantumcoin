@@ -5,7 +5,7 @@ patterns={
  'openai-key':re.compile(rb'sk-(?:proj-)?[A-Za-z0-9_-]{36,}'),
  'private-key':re.compile(rb'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----'),
  'oauth-token-field':re.compile(rb'"(?:refresh_token|access_token|client_secret)"\s*:\s*"(?!fixture|example|test|new-fixture)[^"\r\n]{16,}"'),
- 'env-secret':re.compile(rb'(?im)^(?:OPENAI_API_KEY|TW_CONSUMER_SECRET|TW_ACCESS_SECRET|TELEGRAM_BOT_TOKEN|X_APP_SECRET)[ \t]*=[ \t]*(?!\[REDACTED_API_KEY\])[^\s#\r\n]{16,}')}
+ 'env-secret':re.compile(rb'(?im)^(?:OPENAI_API_KEY|TW_CONSUMER_SECRET|TW_ACCESS_SECRET|TELEGRAM_BOT_TOKEN|X_APP_SECRET|X_OAUTH2_CLIENT_SECRET|X_OAUTH2_TOKEN_JSON)[ \t]*=[ \t]*(?!\[REDACTED_API_KEY\])[^\s#\r\n]{16,}')}
 excluded={'.git','node_modules','dist','.venv','venv','__pycache__'}
 def findings(data):return [kind for kind,rx in patterns.items() if rx.search(data)]
 import os

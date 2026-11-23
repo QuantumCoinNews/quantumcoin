@@ -25,7 +25,8 @@ class SharedEnvironmentTests(unittest.TestCase):
             with self.subTest(key=key):
                 entry=schema['properties'][key]
                 self.assertTrue(entry['x-owners']);self.assertTrue(entry['x-kind'])
-        for key in ['QC_API_TOKEN','OPENAI_API_KEY','YOUTUBE_CLIENT_JSON','QC_X_STATE_ENCRYPTION_KEY']:
+        for key in ['QC_API_TOKEN','OPENAI_API_KEY','YOUTUBE_CLIENT_JSON','QC_X_STATE_ENCRYPTION_KEY',
+                    'X_OAUTH2_CLIENT_ID','X_OAUTH2_CLIENT_SECRET','X_OAUTH2_TOKEN_JSON']:
             self.assertTrue(schema['properties'][key]['x-secret'])
         refs=inventory()
         for key in ['QC_DEBUG_CMD','QC_NO_PSH','QC_OVERWRITE_RUN_MINER','QC_PS_INLINE','QC_RUN_DIRECT']:

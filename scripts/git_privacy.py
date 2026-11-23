@@ -23,7 +23,7 @@ SANITIZERS = (
     ("telegram-token", rb"[0-9]{7,12}:[A-Za-z0-9_-]{35}", b"[REDACTED_BOT_TOKEN]"),
     ("private-key-pem", rb"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----", b"[REDACTED_PRIVATE_KEY]"),
     ("credential-field", rb'''(?i)(["'](?:refresh_token|access_token|client_secret|api_key|api_secret|consumer_key|consumer_secret|private_key|privatekey|priv_hex|privhex|mnemonic|seed_phrase|password)["']\s*:\s*["'])(?!\[REDACTED_SECRET\]["'])[^"'\r\n]{16,}(["'])''', rb"\1[REDACTED_SECRET]\2"),
-    ("env-secret", rb'''(?im)^([ \t]*(?:\$env:)?(?:OPENAI_API_KEY|TW_CONSUMER_SECRET|TW_ACCESS_SECRET|TELEGRAM_BOT_TOKEN|X_APP_SECRET|QC_API_TOKEN)[ \t]*=[ \t]*)(["']?)[A-Za-z0-9_./+:=-]{16,}\2([ \t]*(?:#.*)?)$''', rb"\1\2[REDACTED_SECRET]\2\3"),
+    ("env-secret", rb'''(?im)^([ \t]*(?:\$env:)?(?:OPENAI_API_KEY|TW_CONSUMER_SECRET|TW_ACCESS_SECRET|TELEGRAM_BOT_TOKEN|X_APP_SECRET|X_OAUTH2_CLIENT_SECRET|X_OAUTH2_TOKEN_JSON|QC_API_TOKEN)[ \t]*=[ \t]*)(["']?)[A-Za-z0-9_./+:=-]{16,}\2([ \t]*(?:#.*)?)$''', rb"\1\2[REDACTED_SECRET]\2\3"),
     ("windows-personal-path", rb'''([A-Za-z]:[\\/]+Users[\\/]+)(?!USER(?:[\\/]|$))[^\\/\s"'<>`]+''', rb"\1USER"),
     ("unix-personal-path", rb'''(/(?:home|Users)/)(?!USER(?:/|$))[^/\s"'<>`]+''', rb"\1USER"),
 )

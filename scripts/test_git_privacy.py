@@ -135,10 +135,15 @@ class GitPrivacyTests(unittest.TestCase):
     def test_redaction_preserves_quoted_assignments_and_is_idempotent(self):
         token=b"synthetic-"+b"long-token-for-test"
         value=b"synthetic-"+b"long-secret-for-test"
-        source=b'{"refresh_token":"'+token+b'"}\n'+b"$env:X_APP_SECRET = '"+value+b"' # keep comment\n"
+        oauth_client_secret=b"synthetic-"+b"oauth-client-secret-fixture"
+        source=(b'{"refresh_token":"'+token+b'"}\n'+b"$env:X_APP_SECRET = '"+value+b"' # keep comment\n"+
+                b'X_OAUTH2_CLIENT_SECRET="'+oauth_client_secret+b'"\n'+
+                b'X_OAUTH2_TOKEN_JSON={"access_token":"'+token+b'"}\n')
         cleaned=sanitize_blob(source)
         self.assertIn(b"'[REDACTED_SECRET]' # keep comment",cleaned)
         self.assertEqual(detect(cleaned),[])
+        self.assertNotIn(oauth_client_secret,cleaned)
+        self.assertNotIn(token,cleaned)
         self.assertEqual(sanitize_blob(cleaned),cleaned)
 
     def test_rtf_terminator_is_preserved_but_does_not_hide_credentials(self):
