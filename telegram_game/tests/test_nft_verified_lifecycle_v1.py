@@ -289,7 +289,10 @@ d=json.loads(sys.argv[2]); print(json.dumps(draw_monthly_winner_v1(lambda:sqlite
         with log_path.open("w",encoding="utf-8") as log:
             process=subprocess.Popen(["go","test","./node","-run","^TestNFTVerifiedLifecycleContractV1$","-count=1","-timeout=180s","-v"],cwd=repo,env=env,stdout=log,stderr=subprocess.STDOUT)
             try:
-                deadline=time.monotonic()+90
+                # A clean Windows checkout may compile the Go node test for
+                # several minutes before it emits the local contract file.
+                # Keep the wait below isolated_contracts.ScriptCase's limit.
+                deadline=time.monotonic()+210
                 while not live_path.exists():
                     if process.poll() is not None or time.monotonic()>deadline:
                         self.fail("live Go node did not start: "+log_path.read_text(encoding="utf-8"))
