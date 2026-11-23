@@ -1,4 +1,5 @@
 import os
+import importlib.util
 from pathlib import Path
 import sqlite3
 import sys
@@ -9,10 +10,17 @@ from unittest.mock import patch
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives import serialization
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
 from telegram_game import reward_evidence
 from telegram_game.social_reward_activation import social_rewards_enabled
-from config.runtime_environment import validate_environment
+_runtime_spec = importlib.util.spec_from_file_location(
+    "qc_test_runtime_environment", REPO_ROOT / "config/runtime_environment.py")
+if _runtime_spec is None or _runtime_spec.loader is None:
+    raise RuntimeError("canonical runtime environment validator is unavailable")
+_runtime_environment = importlib.util.module_from_spec(_runtime_spec)
+_runtime_spec.loader.exec_module(_runtime_environment)
+validate_environment = _runtime_environment.validate_environment
 
 
 MAINNET = {
