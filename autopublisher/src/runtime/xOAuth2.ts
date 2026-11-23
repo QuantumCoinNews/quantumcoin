@@ -4,6 +4,7 @@ import { PublisherError } from './types.js';
 const TOKEN_ENDPOINT = 'https://api.x.com/2/oauth2/token';
 const REFRESH_WINDOW_MS = 5 * 60 * 1000;
 const MIN_REFRESH_WINDOW_MS = 30 * 1000;
+const MAX_TOKEN_LIFETIME_SECONDS = 365 * 24 * 60 * 60;
 
 export interface XOAuth2Tokens {
   access_token: string;
@@ -20,7 +21,8 @@ function readTokens(raw: string | undefined): XOAuth2Tokens | undefined {
     const value = JSON.parse(raw) as Partial<XOAuth2Tokens>;
     if (typeof value.access_token !== 'string' || !value.access_token ||
         !Number.isSafeInteger(value.expires_at) || (value.expires_at ?? 0) <= 0 ||
-        !Number.isSafeInteger(value.expires_in) || (value.expires_in ?? 0) <= 0 ||
+        !Number.isSafeInteger(value.expires_in) || (value.expires_in ?? 0) <= 0 || (value.expires_in ?? 0) > MAX_TOKEN_LIFETIME_SECONDS ||
+        Math.abs(value.expires_at ?? 0) > 8.64e15 ||
         (value.refresh_token !== undefined && typeof value.refresh_token !== 'string')) return undefined;
     return value as XOAuth2Tokens;
   } catch { return undefined; }
@@ -91,7 +93,8 @@ export async function ensureXOAuth2AccessToken(
   try { fresh = await response.json() as Partial<XOAuth2Tokens>; }
   catch { throw new PublisherError('CREDENTIAL_REFRESH_FAILED'); }
   if (typeof fresh.access_token !== 'string' || !fresh.access_token || !Number.isSafeInteger(fresh.expires_in) ||
-      (fresh.expires_in ?? 0) <= 0 || (fresh.refresh_token !== undefined && typeof fresh.refresh_token !== 'string')) {
+      (fresh.expires_in ?? 0) <= 0 || (fresh.expires_in ?? 0) > MAX_TOKEN_LIFETIME_SECONDS ||
+      (fresh.refresh_token !== undefined && typeof fresh.refresh_token !== 'string')) {
     throw new PublisherError('CREDENTIAL_REFRESH_FAILED');
   }
   const expiresIn = fresh.expires_in as number;

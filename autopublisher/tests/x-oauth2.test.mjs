@@ -40,3 +40,8 @@ test('X OAuth2 does not attempt renewal until its calculated window',async()=>{
  const env={X_OAUTH2_CLIENT_ID:'fixture-client',X_OAUTH2_TOKEN_JSON:token()};let calls=0;
  assert.equal(await ensureXOAuth2AccessToken(env,{now:()=>instant,fetcher:async()=>{calls++;throw Error('unexpected');}}),'fixture-access');assert.equal(calls,0);
 });
+
+test('invalid or extreme local expiry data fails closed without throwing diagnostics',()=>{
+ assert.equal(xOAuth2TokenStatus({X_OAUTH2_CLIENT_ID:'fixture',X_OAUTH2_TOKEN_JSON:token({expires_at:9e15})},instant),'reauthorization-required');
+ assert.equal(xOAuth2TokenStatus({X_OAUTH2_CLIENT_ID:'fixture',X_OAUTH2_TOKEN_JSON:token({expires_in:Number.MAX_SAFE_INTEGER})},instant),'reauthorization-required');
+});

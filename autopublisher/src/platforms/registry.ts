@@ -9,7 +9,7 @@ export const providers: Record<Platform, Provider>={youtube:{readiness:youtubeRe
 // Only explicit API rejections known not to have delivered may be retried.
 // Timeouts, connection loss, 5xx and a crash after submission require review.
 export function deliveryError(error: unknown): string {
-  if(error instanceof PublisherError && ['PROVIDER_CONFIGURATION_INVALID','PROVIDER_CREDENTIAL_REVOKED'].includes(error.code))return 'PROVIDER_REJECTED';
+  if(error instanceof PublisherError && ['PROVIDER_CONFIGURATION_INVALID','PROVIDER_CREDENTIAL_REVOKED','CREDENTIAL_REFRESH_FAILED','CREDENTIAL_REFRESH_RATE_LIMITED','CREDENTIAL_PERSISTENCE_REQUIRED','CREDENTIAL_PERSISTENCE_FAILED'].includes(error.code))return 'PROVIDER_REJECTED';
   const code=providerStatus(error);
   if(code===429)return 'RATE_LIMITED';
   if(code!==undefined && [400,401,402,403,404,422].includes(code))return 'PROVIDER_REJECTED';
