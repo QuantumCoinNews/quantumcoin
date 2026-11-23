@@ -1,0 +1,9 @@
+{
+  "genesis_profile": "network-v4",
+  "default_difficulty_bits": 8,
+  "http_port": ":18082",
+  "p2p_port": ":13001",
+  "chain_file": "chain_data_testnet.dat",
+  "bonus_file": "bonus_store_testnet.json",
+  "wallet_file": "wallet_data_testnet.json"
+}

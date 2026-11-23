@@ -6,15 +6,21 @@ import (
 	"strings"
 	"testing"
 
+	"quantumcoin/blockchain"
 	qcconfig "quantumcoin/config"
+	qnode "quantumcoin/node"
 )
 
 func TestNetworkLabelEndpointShowsTestnetV1(t *testing.T) {
-	t.Setenv("QC_TESTNET", "1")
-
-	oldCfg := cfg
-	cfg = &qcconfig.Config{ChainFile: qcconfig.QCTestnetChainFileV1}
-	defer func() { cfg = oldCfg }()
+	oldRuntime := nodeRuntime
+	t.Cleanup(func() { nodeRuntime = oldRuntime })
+	chain := blockchain.NewBlockchain(50, 1000)
+	if err := chain.BindRuntimeNetworkIdentityV1("testnet-local"); err != nil {
+		t.Fatal(err)
+	}
+	nodeRuntime = qnode.NewRuntime(chain, &qcconfig.Config{ChainFile: qcconfig.QCTestnetChainFileV1})
+	// Late environment changes cannot relabel the live runtime.
+	t.Setenv("QC_MAINNET", "1")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/network/label", nil)
 	rr := httptest.NewRecorder()
@@ -35,5 +41,17 @@ func TestNetworkLabelEndpointShowsTestnetV1(t *testing.T) {
 	}
 	if !strings.Contains(rr.Body.String(), `"is_testnet":true`) {
 		t.Fatalf("expected is_testnet true, got %s", rr.Body.String())
+	}
+}
+
+func TestNetworkLabelEndpointWithoutIdentityIsUnverifiedV1(t *testing.T) {
+	oldRuntime := nodeRuntime
+	t.Cleanup(func() { nodeRuntime = oldRuntime })
+	t.Setenv("QC_MAINNET", "1")
+	nodeRuntime = nil
+	w := httptest.NewRecorder()
+	handleNetworkLabelV1(w, httptest.NewRequest(http.MethodGet, "/api/network/label", nil))
+	if w.Code != http.StatusOK || w.Header().Get("X-QuantumCoin-Network-Label") != "UNVERIFIED" {
+		t.Fatalf("unbound node received a network label: status=%d body=%s", w.Code, w.Body.String())
 	}
 }

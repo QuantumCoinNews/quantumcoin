@@ -16,7 +16,13 @@ func (r *Runtime) MineNFTMonthlyAwardAndPersistV1(
 	miner string,
 	record blockchain.NFTMintRecordV1,
 	proof blockchain.NFTAwardProofV1,
-) (*blockchain.Block, error) {
+) (result *blockchain.Block, err error) {
+	defer func() {
+		if result != nil && err == nil {
+			r.recordAdvisoryBlock(result.Index)
+			r.persistAdvisory()
+		}
+	}()
 	if r == nil {
 		return nil, fmt.Errorf("persistent NFT runtime: unavailable")
 	}
@@ -26,6 +32,9 @@ func (r *Runtime) MineNFTMonthlyAwardAndPersistV1(
 	// the writer returns. Do not call another runtime RLock method here.
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	if r.stopping {
+		return nil, ErrRuntimeShuttingDownV1
+	}
 	if r.APIReadOnly {
 		return nil, fmt.Errorf("persistent NFT runtime: API is read-only")
 	}

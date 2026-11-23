@@ -7,85 +7,30 @@ import (
 	"testing"
 )
 
-func TestCanonicalSendRequestAcceptsGUIPayload(
-	t *testing.T,
-) {
-	raw := []byte(`{
-"from":"GUI_FROM",
-"to":"GUI_TO",
-"amount":"7",
-"priv_hex":"deadbeef"
-}`)
-
-	var req SendRequest
-	if err := json.Unmarshal(raw, &req); err != nil {
-		t.Fatalf(
-			"canonical GUI payload rejected: %v",
-			err,
-		)
-	}
-
-	if req.From != "GUI_FROM" {
-		t.Fatalf("from = %q", req.From)
-	}
-
-	if req.To != "GUI_TO" {
-		t.Fatalf("to = %q", req.To)
-	}
-
-	if req.Amount.String() != "7" {
-		t.Fatalf(
-			"amount = %q, want %q",
-			req.Amount.String(),
-			"7",
-		)
-	}
-
-	if req.PrivHex != "deadbeef" {
-		t.Fatalf(
-			"priv_hex = %q",
-			req.PrivHex,
-		)
-	}
-}
-
-func TestCanonicalServerSignsGUIRequest(
-	t *testing.T,
-) {
-	data, err := os.ReadFile("main.go")
+func TestCanonicalSendRequestOnlyCarriesSignedPublicData(t *testing.T) {
+	data, err := json.Marshal(SendRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	source := string(data)
-
-	required := []string{
-		`"/api/tx/send",`,
-		`var req SendRequest`,
-		`wallet.ImportPrivateKeyHex(privHex)`,
-		`tx.Sign(priv)`,
-		`tx.Verify()`,
-		`nodeRuntime.BroadcastP2P(p2p.TxMessage(tx))`,
+	if strings.Contains(string(data), "priv_hex") || strings.Contains(string(data), "amount") {
+		t.Fatal("HTTP envelope contains signing intent or secrets")
 	}
+}
 
-	for _, item := range required {
-		if !strings.Contains(source, item) {
-			t.Fatalf(
-				"canonical send contract missing %q",
-				item,
-			)
+func TestCanonicalServerVerifiesWithoutSigningGUIRequest(t *testing.T) {
+	data, err := os.ReadFile("node_app_transactions.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, required := range []string{"decoder.DisallowUnknownFields()", "bc.VerifyTransaction(tx)", "bc.AddTransaction(tx)", "nodeRuntime.BroadcastP2P(p2p.TxMessage(tx))"} {
+		if !strings.Contains(source, required) {
+			t.Fatal("signed submission boundary missing", required)
 		}
 	}
-
-	for _, forbidden := range []string{
-		"type txDTO struct",
-		`"/api/tx/build"`,
-	} {
+	for _, forbidden := range []string{".Sign(", "ImportPrivateKeyHex", "req.PrivHex"} {
 		if strings.Contains(source, forbidden) {
-			t.Fatalf(
-				"retired/noncanonical tx contract present %q",
-				forbidden,
-			)
+			t.Fatal("HTTP server still signs or receives keys", forbidden)
 		}
 	}
 }
@@ -104,12 +49,11 @@ func TestWalletUsesSingleCanonicalSendPath(
 
 	required := []string{
 		"type canonicalSendRequest struct",
-		"type canonicalSendResponse struct",
 		`apiBase()+"/api/tx/send"`,
 		"validateCanonicalSendResponse",
-		"if !out.Success",
+		"walletsigner.ValidateSendResponseV1(",
 		"apiSendTransactionV1(",
-		"Özel fee canonical /api/tx/send",
+		"özel fee canonical /api/tx/send",
 	}
 
 	for _, item := range required {

@@ -7,6 +7,8 @@ import (
 	"errors"
 	"os"
 	"strings"
+
+	"quantumcoin/config"
 )
 
 const TokenSafeBoundaryVersion = "TOKEN_SAFE_BOUNDARY_V1"
@@ -23,7 +25,11 @@ var (
 
 func TokenMinerBridgeEnabled() bool {
 	v := strings.TrimSpace(strings.ToLower(os.Getenv("QC_ENABLE_TOKEN_MINER_BRIDGE")))
-	return v == "1" || v == "true" || v == "yes" || v == "on"
+	if v != "1" && v != "true" && v != "yes" && v != "on" {
+		return false
+	}
+	profile, err := config.ResolveNetworkProfileV1("")
+	return err == nil && !profile.IsTestnet
 }
 
 func validTokenAddress(addr string) bool {

@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// Compatibility name retained; activation refers to Telegram Game, not mainnet.
+// ErrMonthlyNFTActivationRequiredV1 Compatibility name retained; activation refers to Telegram Game, not mainnet.
 var ErrMonthlyNFTActivationRequiredV1 = qconsensus.ErrMonthlyNFTGameActivationRequiredV1
 
 // MonthlyNFTPeriodsFromActivationV1 delegates to the one canonical program

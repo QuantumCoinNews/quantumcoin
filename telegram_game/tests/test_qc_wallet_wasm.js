@@ -1,0 +1,34 @@
+"use strict";
+const {test}=require("node:test"),assert=require("node:assert/strict"),fs=require("node:fs"),path=require("node:path"),vm=require("node:vm"),{spawnSync}=require("node:child_process"),{webcrypto}=require("node:crypto");
+const assets=path.resolve(__dirname,"../telegram_game/dev_ui/assets/qc_wallet_crypto");
+test("actual Go browser wallet restores legacy QC, encrypts, locks and signs only ownership proofs",async()=>{
+  globalThis.crypto ||= webcrypto;
+  vm.runInThisContext(fs.readFileSync(path.join(assets,"wasm_exec.js"),"utf8"));
+  const go=new Go();const wasm=await WebAssembly.instantiate(fs.readFileSync(path.join(assets,"wallet_crypto.wasm")),go.importObject);
+  go.run(wasm.instance).catch(()=>{});
+  const call=request=>JSON.parse(QCWalletCrypto(JSON.stringify(request)));
+  const words="abandon ".repeat(11)+"about",password="test-only-long-local-password";
+  const restored=call({action:"restore",words,password,address:"1FLm5EcKtdBGNYg42Q21tfoXFwA5KYZy8W"});
+  assert.equal(restored.ok,true);assert.equal(restored.address,"1FLm5EcKtdBGNYg42Q21tfoXFwA5KYZy8W");
+  assert.equal(restored.vault.includes("abandon"),false);assert.equal(restored.words,undefined);
+  assert.equal(call({action:"restore",words,password,address:"QCbad"}).ok,false);
+  assert.equal(call({action:"unlock",vault:restored.vault,password:"incorrect-password"}).ok,false);
+  assert.equal(call({action:"unlock",vault:restored.vault,password}).ok,true);
+  // Decode the public address payload independently of the recovery code.
+  const alphabet="123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  let n=0n;for(const c of restored.address)n=n*58n+BigInt(alphabet.indexOf(c));
+  let hex=n.toString(16);if(hex.length%2)hex="0"+hex;
+  const decoded=Buffer.from("00".repeat(restored.address.match(/^1*/)[0].length)+hex,"hex");
+  const now=Math.floor(Date.now()/1000);
+  const challenge={version:"QC_GAME_WALLET_LINK_V1",networkID:"testnet",genesisHex:"1".repeat(64),playerId:"tg_42",address:restored.address,walletOwner:decoded.subarray(1,21).toString("hex"),nonce:"2".repeat(64),issuedAt:now,expiresAt:now+300};
+  const signed=call({action:"link",playerId:"tg_42",challenge});assert.equal(signed.ok,true);
+  assert.deepEqual(Object.keys(signed.proof).sort(),["address","nonce","playerId","publicKey","signature"]);
+  const python=process.env.QC_TEST_PYTHON||"python";
+  const checked=spawnSync(python,["-c",`import json,sys\nfrom cryptography.hazmat.primitives import hashes\nfrom cryptography.hazmat.primitives.asymmetric import ec\nx=json.load(sys.stdin)\np=x['proof']; c=x['challenge']\nraw=bytes.fromhex(p['publicKey'])\nmessage=b'QC_GAME_WALLET_LINK_V1\\0'+json.dumps(c,sort_keys=True,separators=(',',':'),ensure_ascii=True).encode('ascii')\nec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(),raw).verify(bytes.fromhex(p['signature']),message,ec.ECDSA(hashes.SHA256()))\nprint('verified')`],{input:JSON.stringify({proof:signed.proof,challenge}),encoding:"utf8"});
+  assert.equal(checked.status,0,checked.stderr);assert.equal(checked.stdout.trim(),"verified");
+  assert.equal(call({action:"link",playerId:"tg_43",challenge}).ok,false);
+  assert.equal(call({action:"signTransaction",words}).ok,false);
+  call({action:"lock"});assert.equal(call({action:"link",playerId:"tg_42",challenge}).ok,false);
+  assert.equal(call({action:"reveal",vault:restored.vault,password}).words,words);
+  const fresh=call({action:"create",password});assert.equal(fresh.ok,true);assert.equal(fresh.words.split(" ").length,24);assert.notEqual(fresh.address,restored.address);
+});

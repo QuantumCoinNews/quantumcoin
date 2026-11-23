@@ -1,6 +1,7 @@
 # QuantumCoin Admin Panel Auth / Pagination
 
-Status: QC_ADMIN_PANEL_AUTH_PAGINATION_V1
+Document ID: `QC_ADMIN_PANEL_AUTH_PAGINATION_V1`\
+Evidence stage: **Runtime wired**. See [scope and release status](POLICY_EVIDENCE_REGISTER.md).
 
 Date: 20260618_231600
 

@@ -1,6 +1,7 @@
 # QuantumCoin Telegram Game Testnet Connection
 
-Status: QC_TG_TESTNET_CONNECTION_V1
+Document ID: `QC_TG_TESTNET_CONNECTION_V1`\
+Evidence stage: **Implementation**. See [scope and release status](POLICY_EVIDENCE_REGISTER.md).
 
 Date: 20260618_203750
 

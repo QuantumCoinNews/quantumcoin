@@ -55,21 +55,13 @@ func TestTokenAuthorizedTransferV1MovesBalanceAndConsumesNonce(
 	owner := wallet.NewWallet()
 	recipient := wallet.NewWallet()
 
-	subject := New(
+	subject := newTestAuthorizedToken(t,
 		"TST",
 		"Authorized Token",
 		8,
 		1000,
 		owner.GetAddress(),
 	)
-
-	if err := subject.Mint(
-		owner.GetAddress(),
-		owner.GetAddress(),
-		100,
-	); err != nil {
-		t.Fatalf("mint test balance: %v", err)
-	}
 
 	authorization := signedLegacyTokenTransferV1(
 		t,
@@ -135,21 +127,13 @@ func TestTokenLegacyTransferV1IsLocked(
 	owner := wallet.NewWallet()
 	recipient := wallet.NewWallet()
 
-	subject := New(
+	subject := newTestAuthorizedToken(t,
 		"TST",
 		"Locked Legacy Token",
 		8,
 		1000,
 		owner.GetAddress(),
 	)
-
-	if err := subject.Mint(
-		owner.GetAddress(),
-		owner.GetAddress(),
-		100,
-	); err != nil {
-		t.Fatalf("mint test balance: %v", err)
-	}
 
 	err := subject.Transfer(
 		owner.GetAddress(),
@@ -202,21 +186,13 @@ func TestTokenAuthorizedTransferV1RejectsTamperingAndReplay(
 	owner := wallet.NewWallet()
 	recipient := wallet.NewWallet()
 
-	subject := New(
+	subject := newTestAuthorizedToken(t,
 		"TST",
 		"Replay Safe Token",
 		8,
 		1000,
 		owner.GetAddress(),
 	)
-
-	if err := subject.Mint(
-		owner.GetAddress(),
-		owner.GetAddress(),
-		100,
-	); err != nil {
-		t.Fatalf("mint test balance: %v", err)
-	}
 
 	authorization := signedLegacyTokenTransferV1(
 		t,
@@ -290,21 +266,13 @@ func TestTokenAuthorizedTransferV1DoesNotConsumeNonceOnOperationFailure(
 	owner := wallet.NewWallet()
 	recipient := wallet.NewWallet()
 
-	subject := New(
+	subject := newTestAuthorizedToken(t,
 		"TST",
 		"Failure Safe Token",
 		8,
 		1000,
 		owner.GetAddress(),
 	)
-
-	if err := subject.Mint(
-		owner.GetAddress(),
-		owner.GetAddress(),
-		100,
-	); err != nil {
-		t.Fatalf("mint test balance: %v", err)
-	}
 
 	failing := signedLegacyTokenTransferV1(
 		t,
@@ -364,21 +332,13 @@ func TestTokenAuthorizedTransferV1SerializesSameNonce(
 	firstRecipient := wallet.NewWallet()
 	secondRecipient := wallet.NewWallet()
 
-	subject := New(
+	subject := newTestAuthorizedToken(t,
 		"TST",
 		"Concurrent Token",
 		8,
 		1000,
 		owner.GetAddress(),
 	)
-
-	if err := subject.Mint(
-		owner.GetAddress(),
-		owner.GetAddress(),
-		100,
-	); err != nil {
-		t.Fatalf("mint test balance: %v", err)
-	}
 
 	firstAuthorization := signedLegacyTokenTransferV1(
 		t,

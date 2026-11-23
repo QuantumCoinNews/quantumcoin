@@ -74,6 +74,21 @@ func TestResolveEffectiveDifficultyBitsV1UsesDynamicBits(
 	}
 }
 
+func TestRuntimeFixedDifficultyRequiresIsolatedLocalChain(t *testing.T) {
+	clearRuntimeNetworkPolicyEnvV1(t)
+	t.Setenv("QC_DIFFICULTY_BITS", "12")
+	cfg := Default()
+	if err := ValidateRuntimeNetworkProfileV1(cfg); err == nil || !strings.Contains(err.Error(), "isolated local") {
+		t.Fatal("shared mainnet filename accepted local fixed difficulty", err)
+	}
+	cfg.ChainFile = QCIsolatedLocalChainFileV1
+	cfg.HTTPPort = QCIsolatedLocalHTTPPortV1
+	cfg.P2PPort = QCIsolatedLocalP2PPortV1
+	if err := ValidateRuntimeNetworkProfileV1(cfg); err != nil {
+		t.Fatal("isolated local override rejected", err)
+	}
+}
+
 func TestResolveEffectiveDifficultyBitsV1AllowsLocalReleaseOverride(
 	t *testing.T,
 ) {

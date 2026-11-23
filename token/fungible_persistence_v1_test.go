@@ -18,21 +18,14 @@ func TestFungiblePersistenceV1RoundTripsBothModels(
 		"holder",
 	)
 
-	controlled := New(
+	controlled := newTestTokenWithAllocations(t,
 		"MINE",
 		"Mineable Token",
 		8,
 		1000,
 		owner,
+		map[string]uint64{holder: 25},
 	)
-
-	if err := controlled.Mint(
-		owner,
-		holder,
-		25,
-	); err != nil {
-		t.Fatalf("mint controlled token: %v", err)
-	}
 
 	fixed := NewQC20TokenWithOwner(
 		"Fixed Token",
@@ -137,7 +130,7 @@ func TestFungiblePersistenceV1PreservesHistoricalInnerJSON(
 		"Mineable Token",
 		8,
 		1000,
-		"owner",
+		canonicalAddressFixture("owner"),
 	)
 
 	fixed := NewQC20TokenWithOwner(
@@ -145,7 +138,7 @@ func TestFungiblePersistenceV1PreservesHistoricalInnerJSON(
 		"FIX",
 		100,
 		8,
-		"owner",
+		canonicalAddressFixture("owner"),
 	)
 
 	controlledRaw, err := json.Marshal(controlled)
@@ -314,12 +307,12 @@ func qc20StateFixture(
 	state := map[string]any{
 		"Name":        "Fixed Token",
 		"Symbol":      "FIX",
-		"Owner":       "owner",
+		"Owner":       canonicalAddressFixture("owner"),
 		"MaxSupply":   uint64(100),
 		"TotalSupply": uint64(100),
 		"Decimals":    uint8(8),
 		"Balances": map[string]uint64{
-			"owner": 100,
+			canonicalAddressFixture("owner"): 100,
 		},
 		"Allowances": map[string]map[string]uint64{},
 	}
@@ -344,7 +337,7 @@ func TestQC20PersistenceIntegrityV1RejectsAtomically(
 		"FIX",
 		100,
 		8,
-		"owner",
+		canonicalAddressFixture("owner"),
 	)
 
 	cases := []struct {
@@ -362,7 +355,7 @@ func TestQC20PersistenceIntegrityV1RejectsAtomically(
 			name: "balance mismatch",
 			overrides: map[string]any{
 				"Balances": map[string]uint64{
-					"owner": 99,
+					canonicalAddressFixture("owner"): 99,
 				},
 			},
 		},
@@ -391,7 +384,7 @@ func TestQC20PersistenceIntegrityV1RejectsAtomically(
 			overrides: map[string]any{
 				"Allowances": map[string]map[string]uint64{
 					" ": {
-						"spender": 1,
+						canonicalAddressFixture("spender"): 1,
 					},
 				},
 			},
@@ -429,10 +422,10 @@ func TestQC20PersistenceIntegrityV1RejectsAtomically(
 
 				if subject.Name() != "Fixed Token" ||
 					subject.Symbol() != "FIX" ||
-					subject.Owner() != "owner" ||
+					subject.Owner() != canonicalAddressFixture("owner") ||
 					subject.MaxSupply() != 100 ||
 					subject.TotalSupply() != 100 ||
-					subject.BalanceOf("owner") != 100 {
+					subject.BalanceOf(canonicalAddressFixture("owner")) != 100 {
 					t.Fatal(
 						"invalid load changed existing QC20 state",
 					)

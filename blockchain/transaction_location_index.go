@@ -1,6 +1,9 @@
 package blockchain
 
-import "encoding/hex"
+import (
+	"encoding/hex"
+	"time"
+)
 
 // TransactionLocation is a point-in-time lookup result for one canonical
 // transaction identifier.
@@ -25,7 +28,7 @@ func transactionLocationIndexKey(txID []byte) string {
 }
 
 // rebuildTransactionLocationIndexesLocked rebuilds ephemeral lookup indexes
-// from authoritative Blocks and pendingTxs state.
+// from authoritative Blocks and pendingTxs state, including block hash lookup.
 //
 // The caller must own stateMu exclusively, or the Blockchain must not yet
 // have been published to other goroutines.
@@ -35,10 +38,15 @@ func (bc *Blockchain) rebuildTransactionLocationIndexesLocked() {
 	}
 
 	confirmed := make(map[string]int)
+	blocksByHash := make(map[string]*Block, len(bc.Blocks))
 
 	for _, block := range bc.Blocks {
 		if block == nil {
 			continue
+		}
+		// Preserve the first-match contract of the former forward scan.
+		if key := string(block.Hash); blocksByHash[key] == nil {
+			blocksByHash[key] = block
 		}
 
 		for _, tx := range block.Transactions {
@@ -76,6 +84,12 @@ func (bc *Blockchain) rebuildTransactionLocationIndexesLocked() {
 
 	bc.confirmedTxIndex = confirmed
 	bc.pendingTxIndex = pending
+	bc.blockHashIndex = blocksByHash
+	for key := range bc.pendingObservedAt {
+		if _, retained := pending[key]; !retained {
+			delete(bc.pendingObservedAt, key)
+		}
+	}
 }
 
 func (bc *Blockchain) ensureTransactionLocationIndexesLocked() {
@@ -84,7 +98,7 @@ func (bc *Blockchain) ensureTransactionLocationIndexesLocked() {
 	}
 
 	if bc.confirmedTxIndex != nil &&
-		bc.pendingTxIndex != nil {
+		bc.pendingTxIndex != nil && bc.blockHashIndex != nil {
 		return
 	}
 
@@ -103,6 +117,15 @@ func (bc *Blockchain) indexConfirmedBlockTransactionsLocked(
 	}
 
 	bc.ensureTransactionLocationIndexesLocked()
+	// Some append paths clone their candidate before storing it. Cache the
+	// chain-owned block, not a candidate that can be returned to its caller.
+	if len(bc.Blocks) > 0 {
+		if owned := bc.Blocks[len(bc.Blocks)-1]; owned != nil {
+			if key := string(owned.Hash); bc.blockHashIndex[key] == nil {
+				bc.blockHashIndex[key] = owned
+			}
+		}
+	}
 
 	for _, tx := range block.Transactions {
 		if tx == nil {
@@ -139,6 +162,10 @@ func (bc *Blockchain) indexPendingTransactionLocked(
 	}
 
 	bc.pendingTxIndex[key] = struct{}{}
+	if bc.pendingObservedAt == nil {
+		bc.pendingObservedAt = make(map[string]time.Time)
+	}
+	bc.pendingObservedAt[key] = time.Now().UTC()
 }
 
 // clearPendingTransactionIndexLocked mirrors an authoritative pendingTxs
@@ -151,6 +178,7 @@ func (bc *Blockchain) clearPendingTransactionIndexLocked() {
 	}
 
 	bc.pendingTxIndex = make(map[string]struct{})
+	bc.pendingObservedAt = nil
 }
 
 func (bc *Blockchain) transactionLocationLocked(

@@ -1,6 +1,7 @@
 # QuantumCoin Monthly NFT Placeholder
 
-Status: NFT_MONTHLY_PLACEHOLDER_V1
+Document ID: `NFT_MONTHLY_PLACEHOLDER_V1`\
+Evidence stage: **Implementation**. See [scope and release status](POLICY_EVIDENCE_REGISTER.md).
 
 Date: 20260618_215353
 

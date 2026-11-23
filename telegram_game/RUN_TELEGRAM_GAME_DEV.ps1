@@ -27,12 +27,3 @@ Write-QcInfo "===== QUANTUMCOIN TELEGRAM GAME DEV =====" -ForegroundColor Cyan
 Write-QcInfo "Opening desktop GUI launcher..." -ForegroundColor Yellow
 if (!(Test-Path $DesktopCmd)) { throw "Desktop launcher missing: $DesktopCmd" }
 Start-Process $DesktopCmd
-
-
-
-
-
-
-
-
-

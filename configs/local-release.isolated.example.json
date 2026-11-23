@@ -1,0 +1,5 @@
+{
+  "chain_file": "chain_data_local.dat",
+  "http_port": ":28082",
+  "p2p_port": ":23001"
+}

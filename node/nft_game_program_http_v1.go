@@ -1,12 +1,12 @@
 package node
 
 import (
-	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
 
 	"quantumcoin/consensus"
+	"quantumcoin/internal/httpresponse"
 )
 
 const NFTGameProgramCapabilityVersionV1 = "QC_NFT_GAME_PROGRAM_HTTP_V1"
@@ -72,11 +72,5 @@ func (r *Runtime) ServeNFTGameProgramV1(w http.ResponseWriter, request *http.Req
 }
 
 func writeNFTGameProgramHTTPV1(w http.ResponseWriter, status int, value any) {
-	data, err := json.Marshal(value)
-	if err != nil {
-		status, data = http.StatusInternalServerError, []byte(`{"success":false,"message":"program response unavailable"}`)
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_, _ = w.Write(append(data, '\n'))
+	httpresponse.WriteJSON(w, status, value)
 }

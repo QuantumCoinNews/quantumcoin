@@ -1,12 +1,13 @@
-// Package game contains QuantumCoin project code for this module.
+// Package game retains historical signed-score projection compatibility.
+// Authenticated Telegram SQLite services own runtime gameplay and rewards.
 package game
 
 import (
+	"errors"
 	"sync"
 )
 
-// GameState documents the QuantumCoin component used by this module.
-// GameState: thread-safe basit skor deposu
+// GameState is an advisory projection cache, never a gameplay/economic ledger.
 type GameState struct {
 	mu     sync.RWMutex
 	scores map[string]int // player -> score
@@ -20,16 +21,9 @@ func NewGameState() *GameState {
 	}
 }
 
-// AddScore documents the QuantumCoin component used by this module.
-// AddScore: oyuncu skoruna delta ekle (negatif olabilir)
-func (gs *GameState) AddScore(player string, delta int) {
-	if gs == nil || player == "" || delta == 0 {
-		return
-	}
-	gs.mu.Lock()
-	gs.scores[player] += delta
-	gs.mu.Unlock()
-}
+// AddScore is a retired demo API. Only verified signed projections may update this cache.
+// Deprecated: gameplay is owned by the authenticated Telegram SQLite backend.
+func (gs *GameState) AddScore(player string, delta int) error { return ErrLegacyGameDisabled }
 
 // GetScore documents the QuantumCoin component used by this module.
 // GetScore: oyuncu mevcut skoru
@@ -42,3 +36,5 @@ func (gs *GameState) GetScore(player string) int {
 	gs.mu.RUnlock()
 	return score
 }
+
+var ErrLegacyGameDisabled = errors.New("legacy Go gameplay/rewards disabled; use authenticated Telegram backend")

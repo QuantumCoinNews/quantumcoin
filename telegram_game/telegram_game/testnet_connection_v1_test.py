@@ -29,10 +29,14 @@ def clean_env():
         "TELEGRAM_GAME_NETWORK",
         "QC_CHAIN_MODE",
         "QC_NETWORK",
+        "QC_NETWORK_MODE",
         "QC_MODE",
         "QC_NET_MAGIC",
         "QC_TESTNET",
         "QC_PUBLIC_TESTNET",
+        "QC_API_PUBLIC_TESTNET",
+        "QC_TESTNET_PUBLIC_API",
+        "QC_MAINNET",
         "QC_API_BASE",
         "QUANTUMCOIN_API_BASE",
         "QC_NODE_API",
@@ -92,8 +96,8 @@ def test_testnet_info_flags():
         assert info["version"] == "QC_TG_TESTNET_CONNECTION_V1"
         assert info["isTestnet"] is True
         assert info["networkLabelPath"] == NETWORK_LABEL_PATH
-        assert info["testnetSimulatedMiningOnly"] is True
-        assert info["realChainMiningAllowed"] is False
+        assert info["testnetSimulatedMiningOnly"] is False
+        assert info["realChainMiningAllowed"] is True
 
 
 def test_assert_safe_mainnet_local():
@@ -103,6 +107,26 @@ def test_assert_safe_mainnet_local():
         assert info["qcApiBase"] == DEFAULT_LOCAL_QC_API_BASE
 
 
+def test_conflicting_network_and_origin_are_rejected():
+    for values in (
+        {"QC_NETWORK": "mainnet", "QC_TESTNET": "1"},
+        {"QC_MODE": "not-testnet"},
+        {"QC_TESTNET": "enabled"},
+        {"QC_NETWORK": "local-release", "QC_NETWORK_MODE": "testnet-public"},
+        {"QC_API_BASE": "https://node.example", "QC_NODE_API": "https://different.example"},
+        {"QC_API_BASE": "http://node.example:8082"},
+        {"QC_API_BASE": "https://fake:password@node.example"},
+        {"QC_API_BASE": "https://node.example/api"},
+    ):
+        with clean_env():
+            os.environ.update(values)
+            expect_error(get_qc_api_base_for_mode_v1, "ambiguous or unsafe config")
+    with clean_env():
+        os.environ.update(QC_API_PUBLIC_TESTNET="yes", QC_NETWORK="testnet-public",
+                          QC_API_BASE="https://node.example/", QC_NODE_API="https://node.example")
+        assert get_qc_api_base_for_mode_v1() == "https://node.example"
+
+
 if __name__ == "__main__":
     test_default_local_base()
     test_testnet_default_base()
@@ -110,4 +134,5 @@ if __name__ == "__main__":
     test_local_rejects_testnet_port()
     test_testnet_info_flags()
     test_assert_safe_mainnet_local()
+    test_conflicting_network_and_origin_are_rejected()
     print("QC_TG_TESTNET_CONNECTION_V1_TEST_PASS")

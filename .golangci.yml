@@ -21,14 +21,8 @@ issues:
       text: U1000
       justification: Kept for future API/back-compat
 
-    # UI Printf format uyarıları
-    - path: ^ui/send_ui\.go$
-      linters: [staticcheck]
-      text: SA1006
-      justification: UI prints kept as-is
-
     # Legacy/deprecated API'ler
-    - path: ^miner/difficulty\.go$|^ui/settings_ui\.go$|^utils/hash\.go$
+    - path: ^miner/difficulty\.go$|^utils/hash\.go$
       linters: [staticcheck]
       text: SA1019
       justification: Legacy compatibility kept

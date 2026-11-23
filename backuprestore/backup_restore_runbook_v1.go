@@ -43,7 +43,7 @@ type Runbook struct {
 }
 
 func DefaultRunbookV1() Runbook {
-	return Runbook{
+	runbook := Runbook{
 		Version: BackupRestoreRunbookVersionV1,
 		Mode:    "RUNBOOK_ONLY_NO_LIVE_RESTORE",
 		Artifacts: []BackupArtifact{
@@ -55,8 +55,8 @@ func DefaultRunbookV1() Runbook {
 				RequiresHash:          true,
 				RequiresSizeCheck:     true,
 				RequiresManifestEntry: true,
-				RequiresEncryption:    false,
-				AppendOnlyPreferred:   true,
+				RequiresEncryption:    true,
+				AppendOnlyPreferred:   false,
 				RestoreDryRunRequired: true,
 				AdminApprovalRequired: true,
 				LiveRestoreForbidden:  true,
@@ -69,7 +69,7 @@ func DefaultRunbookV1() Runbook {
 				RequiresHash:          true,
 				RequiresSizeCheck:     true,
 				RequiresManifestEntry: true,
-				RequiresEncryption:    false,
+				RequiresEncryption:    true,
 				AppendOnlyPreferred:   false,
 				RestoreDryRunRequired: true,
 				AdminApprovalRequired: true,
@@ -83,7 +83,7 @@ func DefaultRunbookV1() Runbook {
 				RequiresHash:          true,
 				RequiresSizeCheck:     true,
 				RequiresManifestEntry: true,
-				RequiresEncryption:    false,
+				RequiresEncryption:    true,
 				AppendOnlyPreferred:   true,
 				RestoreDryRunRequired: true,
 				AdminApprovalRequired: true,
@@ -97,7 +97,7 @@ func DefaultRunbookV1() Runbook {
 				RequiresHash:          true,
 				RequiresSizeCheck:     true,
 				RequiresManifestEntry: true,
-				RequiresEncryption:    false,
+				RequiresEncryption:    true,
 				AppendOnlyPreferred:   true,
 				RestoreDryRunRequired: true,
 				AdminApprovalRequired: true,
@@ -111,7 +111,7 @@ func DefaultRunbookV1() Runbook {
 				RequiresHash:          true,
 				RequiresSizeCheck:     true,
 				RequiresManifestEntry: true,
-				RequiresEncryption:    false,
+				RequiresEncryption:    true,
 				AppendOnlyPreferred:   true,
 				RestoreDryRunRequired: true,
 				AdminApprovalRequired: true,
@@ -125,7 +125,7 @@ func DefaultRunbookV1() Runbook {
 				RequiresHash:          true,
 				RequiresSizeCheck:     true,
 				RequiresManifestEntry: true,
-				RequiresEncryption:    false,
+				RequiresEncryption:    true,
 				AppendOnlyPreferred:   true,
 				RestoreDryRunRequired: true,
 				AdminApprovalRequired: true,
@@ -139,7 +139,7 @@ func DefaultRunbookV1() Runbook {
 				RequiresHash:          true,
 				RequiresSizeCheck:     true,
 				RequiresManifestEntry: true,
-				RequiresEncryption:    false,
+				RequiresEncryption:    true,
 				AppendOnlyPreferred:   false,
 				RestoreDryRunRequired: true,
 				AdminApprovalRequired: true,
@@ -151,9 +151,24 @@ func DefaultRunbookV1() Runbook {
 			"dev":     "Runbook only. No live restore is executed in this step.",
 			"testnet": "Testnet backup names, manifests, and restore dry-runs must be separated from mainnet.",
 			"mainnet": "Mainnet restore requires explicit admin approval, manifest verification, hash verification, dry-run, and downtime plan.",
-			"keys":    "Private keys are never shared in reports. If key backup is needed, use encrypted external custody/manual procedure only.",
+			"keys":    "Encrypted wallet backup and a public custody record are mandatory. Private keys and passwords never enter reports.",
 		},
 	}
+	for _, name := range []string{"wallet_encrypted_backup", "wallet_custody_record"} {
+		artifact := runbook.Artifacts[0]
+		artifact.Name = name
+		artifact.Kind = ArtifactConfig
+		artifact.RequiresEncryption = true
+		artifact.AppendOnlyPreferred = false
+		if name == "wallet_encrypted_backup" {
+			artifact.Kind = ArtifactWalletKey
+			artifact.RequiresEncryption = true
+		}
+		runbook.Artifacts = append(runbook.Artifacts, artifact)
+	}
+	runbook.Notes["walletRecovery"] = "Encrypted wallet backup and custody record are mandatory; never include private keys or passwords in reports. Test recovery offline before activation."
+	return runbook
+
 }
 
 func SafeBoundaryV1() map[string]bool {
@@ -188,6 +203,9 @@ func ValidateRunbookV1(runbook Runbook) error {
 		return errors.New("backup artifacts required")
 	}
 
+	if err := HasRequiredArtifactsV1(runbook); err != nil {
+		return err
+	}
 	seen := map[string]bool{}
 	for _, a := range runbook.Artifacts {
 		name := strings.TrimSpace(a.Name)
@@ -199,8 +217,14 @@ func ValidateRunbookV1(runbook Runbook) error {
 		}
 		seen[name] = true
 
-		if strings.TrimSpace(string(a.Kind)) == "" {
-			return errors.New("artifact kind required: " + name)
+		if !validArtifactKindV1(a.Kind) {
+			return errors.New("unknown artifact kind: " + name)
+		}
+		if a.Name != name {
+			return errors.New("artifact name must be canonical: " + name)
+		}
+		if !a.RequiresEncryption {
+			return errors.New("artifact encryption required")
 		}
 		if !a.TestnetSeparated || !a.MainnetSeparated {
 			return errors.New("testnet/mainnet backup separation required: " + name)
@@ -260,13 +284,22 @@ func RequiredArtifactNamesV1() []string {
 		"admin_event_log",
 		"monitoring_event_log",
 		"runtime_config_examples",
+		"wallet_encrypted_backup",
+		"wallet_custody_record",
 	}
 }
 
 func HasRequiredArtifactsV1(runbook Runbook) error {
 	seen := map[string]bool{}
+	expected := map[string]ArtifactKind{}
+	for _, a := range DefaultRunbookV1().Artifacts {
+		expected[a.Name] = a.Kind
+	}
 	for _, a := range runbook.Artifacts {
 		seen[a.Name] = true
+		if kind, required := expected[a.Name]; required && kind != a.Kind {
+			return errors.New("required artifact kind mismatch: " + a.Name)
+		}
 	}
 	for _, name := range RequiredArtifactNamesV1() {
 		if !seen[name] {
@@ -305,4 +338,12 @@ func validateExactSafeBoundaryMapV1(
 	}
 
 	return nil
+}
+
+func validArtifactKindV1(kind ArtifactKind) bool {
+	switch kind {
+	case ArtifactChainFile, ArtifactSQLiteDB, ArtifactJSONLedger, ArtifactJSONLAppendOnly, ArtifactConfig, ArtifactWalletKey:
+		return true
+	}
+	return false
 }

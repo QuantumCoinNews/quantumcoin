@@ -2,11 +2,12 @@
 package wallet
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"encoding/json"
 	"errors"
 	"os"
-	"path/filepath"
+	"sort"
 	"sync"
 
 	"quantumcoin/config"
@@ -41,41 +42,52 @@ func walletFilePath() string {
 }
 
 func readStore() (*diskStore, error) {
-	path := walletFilePath()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return &diskStore{Wallets: map[string]string{}, Default: ""}, nil
-		}
-		return nil, err
-	}
+	return readStoreAt(walletFilePath())
+}
 
-	var st diskStore
-	if err := json.Unmarshal(data, &st); err != nil {
+func readStoreAt(path string) (*diskStore, error) {
+	data, err := readWalletBytes(path)
+	if err != nil {
 		return nil, err
 	}
-	if st.Wallets == nil {
-		st.Wallets = map[string]string{}
+	defer clear(data)
+	var st diskStore
+	if err = decodeWalletJSON(data, &st); err != nil {
+		return nil, err
+	}
+	if err = validateDiskStore(&st); err != nil {
+		return nil, err
 	}
 	return &st, nil
 }
 
-func writeStore(st *diskStore) error {
-	path := walletFilePath()
-	dir := filepath.Dir(path)
-	if dir != "." && dir != "" {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return err
+func validateDiskStore(st *diskStore) error {
+	if st == nil || st.Wallets == nil {
+		return ErrWalletStoreCorrupt
+	}
+	if st.Default != "" {
+		if _, ok := st.Wallets[st.Default]; !ok {
+			return ErrWalletStoreCorrupt
 		}
 	}
+	for address := range st.Wallets {
+		if _, ok := loadWalletByAddress(st, address); !ok {
+			return ErrWalletStoreCorrupt
+		}
+	}
+	return nil
+}
 
-	data, err := json.MarshalIndent(st, "", "  ")
+func writeStoreAt(path string, st *diskStore) error {
+	if err := validateDiskStore(st); err != nil {
+		return err
+	}
+	raw, err := json.MarshalIndent(st, "", "  ")
 	if err != nil {
 		return err
 	}
-
-	// Private key içeren dosya olduğu için 0600 kullanıyoruz.
-	return os.WriteFile(path, data, 0o600)
+	defer clear(raw)
+	return writeWalletFileAtomic(path, raw)
 }
 
 // SaveWalletToFile documents the QuantumCoin component used by this module.
@@ -86,75 +98,82 @@ func SaveWalletToFile(w *Wallet) error { return SaveWallet(w) }
 // Yeni: cüzdanı kaydet.
 // Store formatı: address -> raw 32-byte private key hex.
 func SaveWallet(w *Wallet) error {
+	return SaveWalletAt(walletFilePath(), w)
+}
+
+// SaveWalletAt supports local wallet commands without loading node config.
+func SaveWalletAt(path string, w *Wallet) error {
+	if path == "" {
+		return errors.New("wallet/save: path required")
+	}
 	if w == nil || w.PrivateKey == nil {
 		return errors.New("wallet/save: invalid wallet")
 	}
-
-	addr := w.GetAddress()
-	privHex := w.ExportPrivateKeyHex()
-	if addr == "" || privHex == "" {
-		return errors.New("wallet/save: empty address or private key")
+	addr, privHex := w.GetAddress(), w.ExportPrivateKeyHex()
+	imported, err := ImportPrivateKeyHex(privHex)
+	if err != nil || imported == nil || !bytes.Equal(publicKeyBytes(&imported.PublicKey), w.PublicKey) {
+		return errors.New("wallet/save: key and address do not match")
 	}
-
 	storeMu.Lock()
 	defer storeMu.Unlock()
 
-	st, err := readStore()
+	unlock, err := lockWalletStore(path)
 	if err != nil {
 		return err
 	}
-	if st.Wallets == nil {
-		st.Wallets = map[string]string{}
+	defer unlock()
+	st, err := readStoreAt(path)
+	if os.IsNotExist(err) {
+		st = &diskStore{Wallets: map[string]string{}}
+	} else if err != nil {
+		return err
 	}
-
 	st.Wallets[addr] = privHex
 	if st.Default == "" {
 		st.Default = addr
 	}
 
-	return writeStore(st)
+	return writeStoreAt(path, st)
 }
 
-// LoadWalletFromFile documents the QuantumCoin component used by this module.
-// Depodan cüzdan yükle:
-// - "default" varsa onu döndürür
-// - yoksa ilk bulduğunu döndürür
-// - hiç yoksa yeni üretip kaydeder
+// LoadWalletFromFile is the compatibility wrapper. It never creates a wallet
+// or modifies a file while loading; nil indicates a missing or invalid store.
 func LoadWalletFromFile() *Wallet {
+	w, _ := LoadWalletFromFileWithError()
+	return w
+}
+
+func LoadWalletFromFileWithError() (*Wallet, error) { return LoadStoredWalletAt(walletFilePath()) }
+
+// LoadStoredWalletAt preserves read/permission/format errors for callers that
+// need to present recovery options. Loading never writes a new default either.
+func LoadStoredWalletAt(path string) (*Wallet, error) {
 	storeMu.Lock()
 	defer storeMu.Unlock()
-
-	st, err := readStore()
+	st, err := readStoreAt(path)
+	if os.IsNotExist(err) {
+		return nil, ErrWalletNotFound
+	}
 	if err != nil {
-		st = &diskStore{Wallets: map[string]string{}, Default: ""}
+		return nil, err
 	}
-
-	if st.Default != "" {
-		if w, ok := loadWalletByAddress(st, st.Default); ok {
-			return w
+	if len(st.Wallets) == 0 {
+		return nil, ErrWalletNotFound
+	}
+	address := st.Default
+	if address == "" {
+		addresses := make([]string, 0, len(st.Wallets))
+		for a := range st.Wallets {
+			addresses = append(addresses, a)
 		}
+		sort.Strings(addresses)
+		address = addresses[0]
 	}
-
-	for addr := range st.Wallets {
-		if w, ok := loadWalletByAddress(st, addr); ok {
-			st.Default = addr
-			_ = writeStore(st)
-			return w
-		}
+	w, ok := loadWalletByAddress(st, address)
+	if !ok {
+		return nil, ErrWalletStoreCorrupt
 	}
-
-	nw := NewWallet()
-	addr := nw.GetAddress()
-	privHex := nw.ExportPrivateKeyHex()
-
-	if st.Wallets == nil {
-		st.Wallets = map[string]string{}
-	}
-	st.Wallets[addr] = privHex
-	st.Default = addr
-	_ = writeStore(st)
-
-	return nw
+	return w, nil
 }
 
 // LoadWalletByAddress documents the QuantumCoin component used by this module.
@@ -192,16 +211,26 @@ func loadWalletByAddress(st *diskStore, address string) (*Wallet, bool) {
 		return nil, false
 	}
 
-	return &Wallet{PrivateKey: priv, PublicKey: pub}, true
+	w := &Wallet{PrivateKey: priv, PublicKey: pub}
+	if !ValidateAddress(address) || w.GetAddress() != address {
+		return nil, false
+	}
+	return w, true
 }
 
 // SetDefaultWallet documents the QuantumCoin component used by this module.
 // Varsayılan adresi işaretle.
 func SetDefaultWallet(address string) error {
+	path := walletFilePath()
 	storeMu.Lock()
 	defer storeMu.Unlock()
 
-	st, err := readStore()
+	unlock, err := lockWalletStore(path)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	st, err := readStoreAt(path)
 	if err != nil {
 		return err
 	}
@@ -209,7 +238,7 @@ func SetDefaultWallet(address string) error {
 		return errors.New("wallet not found in store")
 	}
 	st.Default = address
-	return writeStore(st)
+	return writeStoreAt(path, st)
 }
 
 // Base58DecodeAddress QC adresinden pubKeyHash'i çıkarır.
@@ -246,22 +275,9 @@ func Base58DecodeAddressSafe(address string) ([]byte, error) {
 }
 
 func publicKeyBytes(pub *ecdsa.PublicKey) []byte {
-	if pub == nil || pub.X == nil || pub.Y == nil {
+	raw, err := utils.SecpPublicBytesV1(pub)
+	if err != nil {
 		return nil
 	}
-
-	out := make([]byte, 65)
-	out[0] = 0x04
-
-	xBytes := pub.X.Bytes()
-	yBytes := pub.Y.Bytes()
-
-	if len(xBytes) > 32 || len(yBytes) > 32 {
-		return nil
-	}
-
-	copy(out[1+32-len(xBytes):33], xBytes)
-	copy(out[33+32-len(yBytes):65], yBytes)
-
-	return out
+	return raw
 }

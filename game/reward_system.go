@@ -1,37 +1,16 @@
-// Package game contains QuantumCoin project code for this module.
 package game
 
-import "fmt"
-
-// Eşikler (gerekirse config'e taşınabilir)
+// Historical thresholds are not economic policy or payable milestones.
 const (
 	RewardThresholdBronze = 500
 	RewardThresholdSilver = 1000
 	RewardThresholdGold   = 2000
 )
 
-// GiveReward documents the QuantumCoin component used by this module.
-// Basit ödül yazdırma (zincir içi bonus entegrasyonu yoksa sorun çıkarmaz)
-func GiveReward(player string, rewardType string, amount int) {
-	if player == "" || amount <= 0 {
-		return
-	}
-	fmt.Printf("[REWARD] %s -> %d x %s\n", player, amount, rewardType)
-}
+// GiveReward never prints a fake payment or changes a balance.
+// Deprecated: rewards require canonical Telegram evidence and ledger accounting.
+func GiveReward(player string, rewardType string, amount int) error { return ErrLegacyGameDisabled }
 
-// EvaluateAndReward documents the QuantumCoin component used by this module.
-// Skora göre ödül mantığı (yalnızca çağrıldığında işler)
-func EvaluateAndReward(gs *GameState, player string) {
-	if gs == nil || player == "" {
-		return
-	}
-	score := gs.GetScore(player)
-	switch {
-	case score >= RewardThresholdGold:
-		GiveReward(player, "GoldMilestone", 20)
-	case score >= RewardThresholdSilver:
-		GiveReward(player, "SilverMilestone", 10)
-	case score >= RewardThresholdBronze:
-		GiveReward(player, "BronzeMilestone", 5)
-	}
-}
+// EvaluateAndReward explicitly rejects the retired demo milestone path.
+// No claim state is fabricated for rewards that do not exist.
+func EvaluateAndReward(gs *GameState, player string) error { return ErrLegacyGameDisabled }

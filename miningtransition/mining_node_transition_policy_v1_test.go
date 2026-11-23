@@ -13,7 +13,7 @@ func TestDefaultMiningTransitionPolicyValid(t *testing.T) {
 func TestPrimaryMiningRewardSchedule(t *testing.T) {
 	policy := DefaultPolicyV1()
 
-	expectedRewards := []string{"50", "25", "12.5", "6.25", "3.125"}
+	expectedRewards := []string{"50", "25", "12", "6", "3"}
 	if len(policy.PrimaryRewardSchedule) != len(expectedRewards) {
 		t.Fatalf("primary reward schedule length mismatch")
 	}
@@ -27,7 +27,7 @@ func TestPrimaryMiningRewardSchedule(t *testing.T) {
 func TestBitcoinStyleContinuationSchedule(t *testing.T) {
 	policy := DefaultPolicyV1()
 
-	expectedRewards := []string{"1.5625", "0.78125", "0.390625"}
+	expectedRewards := []string{"1", "1", "1"}
 	for i, reward := range expectedRewards {
 		if policy.PostTenYearExampleSchedule[i].RewardQC != reward {
 			t.Fatalf("post-ten-year reward mismatch at period %d", i)

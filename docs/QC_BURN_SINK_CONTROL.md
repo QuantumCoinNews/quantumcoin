@@ -1,6 +1,7 @@
 # QuantumCoin Burn / Dead Wallet Control
 
-Status: QC_BURN_SINK_CONTROL_V1
+Document ID: `QC_BURN_SINK_CONTROL_V1`\
+Evidence stage: **Tested**. See [scope and release status](POLICY_EVIDENCE_REGISTER.md).
 
 Date: 20260619_191812
 

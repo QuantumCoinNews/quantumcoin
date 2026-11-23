@@ -4,6 +4,8 @@ package security
 const NodeSyncDriftDetectorVersion = "NODE_SYNC_DRIFT_DETECTOR_V1"
 
 type NodeSyncDriftInput struct {
+	NetworkHeightKnown    bool  `json:"networkHeightKnown"`
+	NetworkHeightUnknown  bool  `json:"networkHeightUnknown"`
 	LocalHeight           int   `json:"localHeight"`
 	NetworkHeight         int   `json:"networkHeight"`
 	MaxPeerHeight         int   `json:"maxPeerHeight"`
@@ -15,6 +17,26 @@ type NodeSyncDriftInput struct {
 }
 
 func EvaluateNodeSyncDrift(input NodeSyncDriftInput) map[string]any {
+	if input.NetworkHeightUnknown {
+		copy := input
+		copy.NetworkHeightUnknown = false
+		copy.NetworkHeight = input.LocalHeight
+		copy.MaxPeerHeight = input.LocalHeight
+		copy.MinPeerHeight = input.LocalHeight
+		out := EvaluateNodeSyncDrift(copy)
+		out["networkHeight"] = nil
+		out["maxPeerHeight"] = nil
+		out["minPeerHeight"] = nil
+		out["driftBlocks"] = nil
+		out["absoluteDriftBlocks"] = nil
+		out["networkHeightKnown"] = false
+		if input.PeerCount > 0 && input.LatestBlockAgeSeconds <= 21600 {
+			out["health"] = "UNKNOWN"
+			out["syncStatus"] = "PEER_HEIGHT_UNKNOWN"
+			out["risk"] = "UNKNOWN"
+		}
+		return out
+	}
 	warningBlocks := input.DriftWarningBlocks
 	if warningBlocks <= 0 {
 		warningBlocks = 3
@@ -56,7 +78,7 @@ func EvaluateNodeSyncDrift(input NodeSyncDriftInput) map[string]any {
 		warnings = append(warnings, "node has no connected peers; sync view is local only")
 	}
 
-	if networkHeight == 0 && localHeight == 0 {
+	if networkHeight == 0 && localHeight == 0 && !input.NetworkHeightKnown {
 		if health == "OK" {
 			health = "WATCH"
 			syncStatus = "NO_HEIGHT_DATA"

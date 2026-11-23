@@ -65,7 +65,7 @@ type nftMonthlyMintHTTPReceiptV1 struct {
 	PersistedTipHash    string `json:"persistedTipHash"`
 }
 
-// The actual main mux supplies header authentication and its existing limiter.
+// ServeNFTMonthlyMintV1 The actual main mux supplies header authentication and its existing limiter.
 // Receipt lookup uses the same signed evidence and never writes chain state.
 func (r *Runtime) ServeNFTMonthlyMintV1(w http.ResponseWriter, request *http.Request) {
 	r.serveNFTMonthlyAwardHTTPV1(w, request, true)
@@ -76,7 +76,7 @@ func (r *Runtime) ServeNFTMonthlyReceiptV1(w http.ResponseWriter, request *http.
 }
 
 func nftMonthlyHTTPFailureV1(w http.ResponseWriter, status int, code string) {
-	writeNFTGameProgramHTTPV1(w, status, map[string]any{"success": false, "version": NFTMonthlyMintReceiptVersionV1, "code": code})
+	writeNFTGameProgramHTTPV1(w, status, map[string]any{"success": false, "message": strings.ReplaceAll(code, "_", " "), "version": NFTMonthlyMintReceiptVersionV1, "code": code})
 }
 
 func (r *Runtime) serveNFTMonthlyAwardHTTPV1(w http.ResponseWriter, request *http.Request, mint bool) {
@@ -138,6 +138,9 @@ func (r *Runtime) nftMonthlyHTTPAwardV1(record blockchain.NFTMintRecordV1, proof
 	defer r.miningMu.Unlock()
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	if mint && r.stopping {
+		return nftMonthlyMintHTTPReceiptV1{}, http.StatusServiceUnavailable, "runtime_shutting_down"
+	}
 	if mint && r.APIReadOnly {
 		return nftMonthlyMintHTTPReceiptV1{}, http.StatusForbidden, "runtime_read_only"
 	}

@@ -15,9 +15,9 @@ const (
 
 	LegacyInitialSubsidyQC int64 = CanonicalInitialMiningRewardQCV1
 
-	LegacyHalvingIntervalBlocks uint64 = 2_102_400
+	LegacyHalvingIntervalBlocks uint64 = CanonicalHalvingIntervalBlocksV1
 
-	LegacyTargetBlockTime time.Duration = 30 * time.Second
+	LegacyTargetBlockTime time.Duration = CanonicalBlockTimeSecondsV1 * time.Second
 )
 
 // Params bir QuantumCoin consensus sürümünün değişmez

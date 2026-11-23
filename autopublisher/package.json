@@ -4,28 +4,37 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx src/index.ts",
-    "start": "node dist/index.js",
-    "build": "tsc -p tsconfig.json",
-    "check": "tsc -p tsconfig.json --noEmit"
+    "dev": "npm run build && node -- publisher.mjs",
+    "start": "node -- publisher.mjs",
+    "build": "pwsh -NoProfile -NonInteractive -File scripts/build.ps1",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "prestart": "npm run build",
+    "doctor": "node -- publisher.mjs doctor",
+    "test": "npm run build && node --test tests/*.test.mjs"
   },
   "dependencies": {
-    "axios": "^1.7.2",
+    "axios": "1.21.1",
     "dotenv": "^16.6.1",
     "fluent-ffmpeg": "^2.1.3",
-    "form-data": "^4.0.0",
+    "form-data": "4.0.6",
     "fs-extra": "^11.2.0",
-    "googleapis": "^131.0.0",
-    "node-cron": "^3.0.3",
-    "node-telegram-bot-api": "^0.66.0",
-    "openai": "^4.104.0",
+    "googleapis": "189.0.0",
+    "node-cron": "4.6.0",
+    "node-telegram-bot-api": "2.3.0",
+    "openai": "7.52.0",
     "p-limit": "^5.0.0",
     "playwright": "^1.47.2",
-    "twitter-api-v2": "^1.27.0"
+    "twitter-api-v2": "1.31.0"
   },
   "devDependencies": {
+    "@types/fluent-ffmpeg": "2.1.28",
+    "@types/fs-extra": "11.0.4",
     "@types/node": "^22.5.1",
+    "@types/node-telegram-bot-api": "0.64.15",
     "tsx": "^4.15.7",
     "typescript": "^5.5.4"
+  },
+  "engines": {
+    "node": ">=22.0.0"
   }
 }

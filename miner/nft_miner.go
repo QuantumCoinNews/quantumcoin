@@ -8,7 +8,7 @@ import (
 	"quantumcoin/blockchain"
 )
 
-// Compatibility hooks remain available to existing callers. The retired
+// SaveNFTRewardHook Compatibility hooks remain available to existing callers. The retired
 // mining path never invokes them or represents an NFT award as successful.
 var SaveNFTRewardHook func(address, nftType, txID string, at time.Time) error
 var NotifyTelegramHook func(address, message string)

@@ -35,12 +35,18 @@ public release preparation continue alongside them.
 QuantumCoin is a mineable blockchain ecosystem built around:
 
 - **Wallet-based mining:** a direct connection between the user, miner and chain.
+
 - **QC transactions and records:** validated transfers, balances and persisted state.
 - **Cinematic Web3 gaming:** Telegram Space Miner and a lunar mining world.
 - **Community incentives:** TGWT, watch tasks and verified engagement workflows.
 - **Evidence-based NFT awards:** activity, wallet control, draw evidence and signed approvals.
 - **AI-assisted insight:** telemetry, analysis, recommendations and monitoring support.
 - **Social power:** content tools, community participation and multilingual growth.
+
+GUI and Telegram mining use one selected QC network and solo PoW. The accepted
+block's miner receives the existing miner reward; participants do not receive
+separate platform rewards or proportional shares. See the
+[solo mining contract and operator setup](docs/SOLO_MINING_CONTRACT.md).
 
 ![QuantumCoin ecosystem architecture](assets/readme/ecosystem-map.svg)
 
@@ -294,9 +300,11 @@ remain separate development areas.
 
 ### Build the core
 
-The latest Windows source validation used **Go 1.24.5**. The module declaration
-is in [`go.mod`](go.mod). Desktop builds need CGO, a C compiler and the Fyne/OpenGL
-environment. Python services should run in an isolated environment.
+The Windows toolchain is pinned in [`configs/windows-build-toolchain.json`](configs/windows-build-toolchain.json):
+**Go 1.26.11, Node 22.23.5, Python 3.14.10 and FFmpeg 9.0.2**. The module requires
+Go 1.26.0. Desktop builds need CGO, the pinned C compiler and Fyne/OpenGL.
+Python services use a separate environment with the hash-locked requirements.
+See the [dependency security gate](docs/DEPENDENCY_BOUNDARIES_AND_AUDIT.md).
 
 ```powershell
 git clone https://github.com/QuantumCoinNews/quantumcoin.git
@@ -310,7 +318,7 @@ go test ./... -count=1
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -r telegram_game/requirements.txt -r telegram_game/requirements-nft-witness.txt
+python -m pip install --require-hashes -r telegram_game/requirements.txt
 python scripts/monthly_nft_catalog_v1.py --check
 python scripts/test_monthly_nft_catalog_v1.py
 ```
@@ -321,10 +329,11 @@ source control.
 
 ### Verification milestones
 
-**1,088 Go tests across 24 tested packages** and **23 isolated Python regression
-scripts** passed for the integrated runtime, including the game-to-Go-node
-mint/receipt flow. Launch/check PowerShell sources were syntax-checked.
-These counts describe software verification, not live users or network adoption.
+The Windows dependency-update candidate passed the full Go package test suite
+and 70 isolated game/policy/runtime scripts, including Go-backed NFT fixtures.
+Native node/miner/wallet/launcher builds are checked separately. Source security
+acceptance is recorded by the dependency gate; hosted CI and signed release
+acceptance remain separate. These checks do not measure live users or adoption.
 
 [Runtime integration](docs/RUNTIME_INTEGRATION.md) ·
 [Verification coverage](docs/NFT_RUNTIME_TEST_COVERAGE.md) ·
@@ -335,5 +344,5 @@ These counts describe software verification, not live users or network adoption.
 <p align="center">
   <strong>Real mining. Wallet-based rewards. Verifiable blockchain records.</strong><br>
   QuantumCoin — Mine. Earn. Transfer.<br><br>
-  <sub>Experimental software under active development · MIT, as stated by the project</sub>
+  <sub>Experimental software under active development · <a href="LICENSE">MIT License</a> · Copyright © 2026 QuantumCoinNews</sub>
 </p>

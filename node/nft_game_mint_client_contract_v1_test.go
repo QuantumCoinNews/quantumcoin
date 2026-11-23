@@ -1,7 +1,6 @@
 package node
 
 import (
-	"crypto/elliptic"
 	"crypto/sha256"
 	"encoding/json"
 	"net/http"
@@ -29,7 +28,10 @@ func TestNFTVerifiedLifecycleContractV1(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	public := elliptic.Marshal(key.Curve, key.X, key.Y)
+	public, err := consensus.UncompressedPublicKeyV1(key)
+	if err != nil {
+		t.Fatal(err)
+	}
 	testNFTGameMintClientContractV1(t, wallet.HashPubKey(public), "QMA_NFT_LIFECYCLE_CONTRACT_PATH")
 }
 

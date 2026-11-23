@@ -4,7 +4,7 @@ import "fmt"
 
 // LegacyMinimumSubsidyQC mevcut legacy zincirde blok ödülünün
 // düşebileceği en düşük tam QC miktarıdır.
-const LegacyMinimumSubsidyQC int64 = 1
+const LegacyMinimumSubsidyQC int64 = CanonicalMinimumSubsidyQCV1
 
 // SubsidyAtHeight verilen consensus parametrelerine göre
 // blok yüksekliğinin madencilik ödülünü hesaplar.
@@ -45,7 +45,7 @@ func SubsidyAtHeight(
 	return subsidy, nil
 }
 
-// LegacySubsidyAtHeight mevcut QuantumCoin legacy
+// CapSubsidyByRemainingSupply LegacySubsidyAtHeight mevcut QuantumCoin legacy
 // parametreleriyle blok ödülünü hesaplar.
 // CapSubsidyByRemainingSupply temel blok ödülünü kalan toplam arza göre sınırlar.
 //

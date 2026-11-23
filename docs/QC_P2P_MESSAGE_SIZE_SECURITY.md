@@ -1,6 +1,7 @@
 # QuantumCoin P2P Message Size Security
 
-Status: QC_P2P_MESSAGE_SIZE_STRICT_V1
+Document ID: `QC_P2P_MESSAGE_SIZE_STRICT_V1`\
+Evidence stage: **Runtime wired**. See [scope and release status](POLICY_EVIDENCE_REGISTER.md).
 
 Date: 20260617_193535
 

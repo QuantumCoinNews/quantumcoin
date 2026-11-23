@@ -75,6 +75,12 @@ func (tx *Transaction) Serialize() []byte {
 }
 
 func (tx *Transaction) Hash() []byte {
+	// A valid V2 commitment identifies the activated encoding without adding
+	// fields to the historical Gob/wire structure. Chain validation still
+	// enforces exactly one codec; this helper is not an admission decision.
+	if ValidateTransactionIDV2(tx) == nil {
+		return append([]byte(nil), tx.ID...)
+	}
 	id, err := CanonicalTransactionIDV1(tx)
 	if err != nil {
 		log.Panicf("tx hash error: %v", err)
@@ -178,7 +184,7 @@ func NewTransaction(
 	)
 }
 
-// NewTransactionInProtocolUnitsV1 creates a transaction whose amount is
+// NewTransactionFromQCAmountV1 NewTransactionInProtocolUnitsV1 creates a transaction whose amount is
 // already expressed in the integer monetary unit required by the candidate
 // protocol height.
 //
@@ -241,29 +247,6 @@ func NewTransactionInProtocolUnitsV1(
 	defer bc.stateMu.Unlock()
 
 	spendHeight := bc.nextSpendHeightV1()
-
-	return newTransactionAtHeightLockedV1(
-		from,
-		to,
-		amountUnits,
-		spendHeight,
-		bc,
-	)
-}
-
-func newTransactionAtHeightV1(
-	from string,
-	to string,
-	amountUnits int,
-	spendHeight int,
-	bc *Blockchain,
-) (*Transaction, error) {
-	if bc == nil {
-		return nil, fmt.Errorf("nil blockchain")
-	}
-
-	bc.stateMu.Lock()
-	defer bc.stateMu.Unlock()
 
 	return newTransactionAtHeightLockedV1(
 		from,
@@ -364,7 +347,9 @@ func newTransactionAtHeightLockedV1(
 		Amount:    float64(amountUnits),
 	}
 
-	tx.ID = tx.Hash()
+	if err := bc.assignTransactionIDLockedV2(tx); err != nil {
+		return nil, err
+	}
 
 	return tx, nil
 }
@@ -372,6 +357,10 @@ func newTransactionAtHeightLockedV1(
 // Sign documents the QuantumCoin component used by this module.
 // Tüm input'ları imzala (secp256k1)
 func (tx *Transaction) Sign(priv *ecdsa.PrivateKey) error {
+	return tx.signForGenesisV2(priv, nil)
+}
+
+func (tx *Transaction) signForGenesisV2(priv *ecdsa.PrivateKey, genesis *[32]byte) error {
 	if tx == nil {
 		return fmt.Errorf("nil tx")
 	}
@@ -396,7 +385,10 @@ func (tx *Transaction) Sign(priv *ecdsa.PrivateKey) error {
 		)
 	}
 	for i := range tx.Inputs {
-		message := signMessageBytes(tx, i)
+		message, err := transactionMessageForGenesisV2(tx, i, genesis)
+		if err != nil {
+			return err
+		}
 
 		var digest [32]byte
 		if len(message) != len(digest) {
@@ -427,7 +419,12 @@ func (tx *Transaction) Sign(priv *ecdsa.PrivateKey) error {
 			append([]byte(nil), pub...)
 	}
 
-	id, err := CanonicalTransactionIDV1(tx)
+	var id []byte
+	if genesis != nil {
+		id, err = CanonicalTransactionIDV2(tx)
+	} else {
+		id, err = CanonicalTransactionIDV1(tx)
+	}
 	if err != nil {
 		return fmt.Errorf(
 			"compute canonical transaction id: %w",
@@ -442,11 +439,19 @@ func (tx *Transaction) Sign(priv *ecdsa.PrivateKey) error {
 // Verify documents the QuantumCoin component used by this module.
 // İmzaları doğrula (coinbase hariç).
 func (tx *Transaction) Verify() bool {
+	return tx.verifyForGenesisV2(nil)
+}
+
+func (tx *Transaction) verifyForGenesisV2(genesis *[32]byte) bool {
 	if tx == nil {
 		return false
 	}
 
-	if err := ValidateTransactionIDV1(tx); err != nil {
+	if genesis != nil {
+		if ValidateTransactionIDV2(tx) != nil {
+			return false
+		}
+	} else if ValidateTransactionIDV1(tx) != nil {
 		return false
 	}
 
@@ -476,7 +481,10 @@ func (tx *Transaction) Verify() bool {
 			return false
 		}
 
-		message := signMessageBytes(tx, i)
+		message, err := transactionMessageForGenesisV2(tx, i, genesis)
+		if err != nil {
+			return false
+		}
 
 		var digest [32]byte
 		if len(message) != len(digest) {

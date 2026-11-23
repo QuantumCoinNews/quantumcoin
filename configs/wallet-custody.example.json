@@ -1,0 +1,6 @@
+{
+  "custodians": ["REPLACE_WITH_OFFLINE_CUSTODIAN_REFERENCE"],
+  "recoveryProcedure": "REPLACE_WITH_SECURE_PASSWORD_CUSTODY_AND_RECOVERY_INSTRUCTIONS_REFERENCE; never include passwords, seeds or keys here",
+  "addresses": ["REPLACE_WITH_EVERY_PUBLIC_ADDRESS_IN_THIS_WALLET_BACKUP"],
+  "lastDrillUtc": "0001-01-01T00:00:00Z"
+}

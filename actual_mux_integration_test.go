@@ -494,10 +494,10 @@ func TestActualMuxPaginationHeadersV1(t *testing.T) {
 	clearActualMuxTestEnvV1(t)
 	t.Setenv("QC_API_TOKEN", actualMuxTestTokenV1)
 
-	originalBlockchain := bc
-	bc = &blockchain.Blockchain{}
+	originalRuntime := nodeRuntime
+	nodeRuntime = qnode.NewRuntime(&blockchain.Blockchain{}, nil)
 	t.Cleanup(func() {
-		bc = originalBlockchain
+		nodeRuntime = originalRuntime
 	})
 
 	handler := newActualMuxTestHandlerV1(t)

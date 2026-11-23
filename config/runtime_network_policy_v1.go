@@ -37,6 +37,9 @@ func ValidateRuntimeNetworkProfileV1(c *Config) error {
 			err,
 		)
 	}
+	if err := ValidateGenesisProfileV1(c.GenesisProfile, profile.Profile); err != nil {
+		return err
+	}
 
 	gotChain := strings.ToLower(
 		filepath.Base(strings.TrimSpace(c.ChainFile)),
@@ -104,11 +107,16 @@ func ValidateRuntimeNetworkProfileV1(c *Config) error {
 		return err
 	}
 
-	if _, err := ResolveEffectiveDifficultyBitsV1(
+	difficulty, err := ResolveEffectiveDifficultyBitsV1(
 		c,
 		c.DefaultDifficultyBits,
-	); err != nil {
+	)
+	if err != nil {
 		return err
+	}
+	if difficulty.OverrideApplied && profile.ExpectedChainFile != QCIsolatedLocalChainFileV1 {
+		return fmt.Errorf("%s: fixed difficulty requires the isolated local profile and chain file %s",
+			QCRuntimeNetworkPolicyVersionV1, QCIsolatedLocalChainFileV1)
 	}
 
 	return nil

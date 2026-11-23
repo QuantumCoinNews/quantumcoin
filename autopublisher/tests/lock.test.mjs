@@ -1,0 +1,10 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
+import { acquireLock } from '../dist/runtime/lock.js';
+test('OS lease excludes concurrent slots, survives stale file, and releases',async t=>{const dir=await fs.mkdtemp(path.join(os.tmpdir(),'qc-lock-test-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));await fs.writeFile(path.join(dir,'runtime.lock'),'old lock contents');const a=await acquireLock(dir);try{await assert.rejects(acquireLock(dir),{code:'RUN_IN_PROGRESS'});a.assert();}finally{await a.release();}const b=await acquireLock(dir);b.assert();await b.release();});
+test('owner crash releases OS lease without stale deletion',async t=>{const dir=await fs.mkdtemp(path.join(os.tmpdir(),'qc-lock-crash-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));const moduleURL=new URL('../dist/runtime/lock.js',import.meta.url).href;const child=spawn(process.execPath,['--input-type=module','-e',`import {acquireLock} from ${JSON.stringify(moduleURL)};await acquireLock(${JSON.stringify(dir)});console.log('READY');setInterval(()=>{},1000);`],{stdio:['ignore','pipe','ignore'],windowsHide:true});t.after(()=>child.kill());await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('owner timeout')),60000);child.stdout.once('data',()=>{clearTimeout(timer);resolve();});child.once('error',reject);});await assert.rejects(acquireLock(dir),{code:'RUN_IN_PROGRESS'});const exited=once(child,'exit');child.kill();await exited;let lease;for(let i=0;i<10;i++){try{lease=await acquireLock(dir);break;}catch(e){if(e.code!=='RUN_IN_PROGRESS')throw e;await new Promise(r=>setTimeout(r,100));}}assert.ok(lease);await lease.release();assert.equal(await fs.readFile(path.join(dir,'runtime.lock'),'utf8'),'');});

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	qtoken "quantumcoin/token"
+	"quantumcoin/wallet"
 )
 
 func TestStateEncapsulationV1ExternalStructsExposeNoFields(
@@ -14,6 +15,7 @@ func TestStateEncapsulationV1ExternalStructsExposeNoFields(
 		reflect.TypeOf(qtoken.Token{}),
 		reflect.TypeOf(qtoken.QC20Token{}),
 		reflect.TypeOf(qtoken.QC721Token{}),
+		reflect.TypeOf(qtoken.Registry{}),
 	}
 
 	for _, currentType := range types {
@@ -34,12 +36,14 @@ func TestStateEncapsulationV1ExternalStructsExposeNoFields(
 func TestStateEncapsulationV1ExternalReadAPIs(
 	t *testing.T,
 ) {
+	owner := wallet.NewWallet().GetAddress()
+
 	base := qtoken.New(
 		"BAS",
 		"Base Token",
 		8,
 		1000,
-		"owner",
+		owner,
 	)
 
 	if base.Symbol() != "BAS" ||
@@ -47,7 +51,7 @@ func TestStateEncapsulationV1ExternalReadAPIs(
 		base.Decimals() != 8 ||
 		base.MaxSupply() != 1000 ||
 		base.TotalSupply() != 0 ||
-		base.Owner() != "owner" {
+		base.Owner() != owner {
 		t.Fatal("base token scalar API returned incorrect state")
 	}
 
@@ -63,12 +67,12 @@ func TestStateEncapsulationV1ExternalReadAPIs(
 		"FCT",
 		1000,
 		8,
-		"owner",
+		owner,
 	)
 
 	if qc20.Name() != "Factory Token" ||
 		qc20.Symbol() != "FCT" ||
-		qc20.Owner() != "owner" ||
+		qc20.Owner() != owner ||
 		qc20.MaxSupply() != 1000 ||
 		qc20.TotalSupply() != 1000 ||
 		qc20.Decimals() != 8 {
@@ -76,33 +80,33 @@ func TestStateEncapsulationV1ExternalReadAPIs(
 	}
 
 	qc20Balances := qc20.BalancesSnapshotV1()
-	qc20Balances["owner"] = 0
+	qc20Balances[owner] = 0
 	qc20Balances["attacker"] = 1000
 
-	if qc20.BalanceOf("owner") != 1000 ||
+	if qc20.BalanceOf(owner) != 1000 ||
 		qc20.BalanceOf("attacker") != 0 {
 		t.Fatal("external QC20 balance snapshot mutated state")
 	}
 
 	qc20Allowances := qc20.AllowancesSnapshotV1()
-	qc20Allowances["owner"] =
+	qc20Allowances[owner] =
 		map[string]uint64{
 			"attacker": 1000,
 		}
 
-	if qc20.Allowance("owner", "attacker") != 0 {
+	if qc20.Allowance(owner, "attacker") != 0 {
 		t.Fatal("external QC20 allowance snapshot mutated state")
 	}
 
 	qc721 := qtoken.NewQC721TokenWithOwner(
 		"Collection",
 		"NFT",
-		"owner",
+		owner,
 	)
 
 	if qc721.Name() != "Collection" ||
 		qc721.Symbol() != "NFT" ||
-		qc721.Owner() != "owner" {
+		qc721.Owner() != owner {
 		t.Fatal("QC721 scalar API returned incorrect state")
 	}
 

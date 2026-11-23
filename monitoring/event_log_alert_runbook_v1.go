@@ -62,12 +62,31 @@ func NormalizeSeverity(raw string) Severity {
 		return SeverityCritical
 	case "WARNING", "WARN", "MEDIUM":
 		return SeverityWarning
-	default:
+	case "INFO":
 		return SeverityInfo
+	default:
+		return Severity(strings.ToUpper(strings.TrimSpace(raw)))
 	}
 }
 
 func ValidateEvent(e Event) error {
+	if strings.TrimSpace(e.ID) == "" {
+		return errors.New("monitoring event ID is required")
+	}
+	if at, err := time.Parse(time.RFC3339Nano, e.At); err != nil || at.IsZero() {
+		return errors.New("monitoring event timestamp is required and must be RFC3339")
+	}
+	if e.Severity != SeverityInfo && e.Severity != SeverityWarning && e.Severity != SeverityCritical {
+		return errors.New("unknown monitoring severity")
+	}
+	if len(e.ID) > 128 || len(e.Source) > 128 || len(e.Category) > 128 || len(e.Message) > 2048 || len(e.Metadata) > 16 {
+		return errors.New("monitoring event exceeds limits")
+	}
+	for k, v := range e.Metadata {
+		if len(k) > 64 || len(v) > 256 {
+			return errors.New("monitoring metadata exceeds limits")
+		}
+	}
 	if strings.TrimSpace(e.Source) == "" {
 		return errors.New("monitoring event source is required")
 	}
@@ -85,6 +104,9 @@ func ValidateEvent(e Event) error {
 }
 
 func ClassifyAlert(e Event) Alert {
+	if err := ValidateEvent(e); err != nil {
+		return Alert{Open: true, Severity: SeverityCritical, Category: "invalid_event", Action: "Review invalid event: " + err.Error(), Escalate: true, SafeBoundary: "ADVISORY_ONLY"}
+	}
 	sev := NormalizeSeverity(string(e.Severity))
 	entry := RunbookForCategory(e.Category)
 

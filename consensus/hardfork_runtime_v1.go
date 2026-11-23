@@ -50,7 +50,7 @@ func LoadCanonicalHardforkReleaseV1() (*HardforkReleaseV1, string, error) {
 	return LoadHardforkReleaseManifestV1(filepath.Dir(executable), *trust)
 }
 
-// The fixed detached manifest cannot supply or override authorities/quorums.
+// LoadHardforkReleaseManifestV1 The fixed detached manifest cannot supply or override authorities/quorums.
 // A manifest is mandatory once the compiled trust root enables governance.
 func LoadHardforkReleaseManifestV1(directory string, trust HardforkTrustV1) (*HardforkReleaseV1, string, error) {
 	data, err := os.ReadFile(filepath.Join(directory, "hardfork-release.json"))

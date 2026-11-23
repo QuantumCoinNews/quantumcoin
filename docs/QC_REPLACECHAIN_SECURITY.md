@@ -1,6 +1,7 @@
 # QuantumCoin ReplaceChain Security
 
-Status: QC_REPLACECHAIN_STRICT_VALIDATION_V1
+Document ID: `QC_REPLACECHAIN_STRICT_VALIDATION_V1`\
+Evidence stage: **Tested**. See [scope and release status](POLICY_EVIDENCE_REGISTER.md).
 
 Date: 20260617_192821
 

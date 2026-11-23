@@ -1,7 +1,6 @@
 package main
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -14,7 +13,7 @@ func readGUIHealthContractSource(
 	t.Helper()
 
 	path := filepath.Join(parts...)
-	data, err := os.ReadFile(path)
+	data, err := readNodeContractSourceV1(path)
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
 	}
@@ -88,7 +87,7 @@ func TestCanonicalGUIHealthContract(
 			tt.path...,
 		)
 
-		if !strings.Contains(source, "/api/health") {
+		if !strings.Contains(source, "apiclient.EnsureLocalBackendV1(") {
 			t.Fatalf(
 				"%s does not use canonical /api/health",
 				tt.name,
@@ -117,10 +116,10 @@ func TestWalletHealthDiscoveryUsesCanonicalEndpoint(
 	)
 
 	required := []string{
-		`canonicalAPIHealthPath = "/api/health"`,
-		`canonicalAPIDefaultPort = "8082"`,
-		`health := apiBase() + canonicalAPIHealthPath`,
-		`"QC_API_LISTEN=127.0.0.1:"+apiPort`,
+		`apiclient.EnsureLocalBackendV1(`,
+		`apiclient.ConfiguredAPIPortV1()`,
+		`apiclient.NormalizeAPIPortV1(`,
+		`"QC_API_LISTEN=127.0.0.1:"`,
 	}
 
 	for _, item := range required {
@@ -148,62 +147,16 @@ func TestWalletHealthDiscoveryUsesCanonicalEndpoint(
 	}
 }
 
-func TestGUILaunchersRequireFinalHealthCheck(
-	t *testing.T,
-) {
-	mainGUI := readGUIHealthContractSource(
-		t,
-		"cmd",
-		"quantumcoin-gui",
-		"main.go",
-	)
-
-	if strings.Contains(
-		mainGUI,
-		`_ = waitOK(port, 5*time.Second)`,
-	) {
-		t.Fatal("main GUI still ignores final health result")
-	}
-	if !strings.Contains(
-		mainGUI,
-		`if err := waitOK(port, 5*time.Second); err != nil {`,
-	) {
-		t.Fatal("main GUI does not fail closed on final health timeout")
-	}
-
-	apitestGUI := readGUIHealthContractSource(
-		t,
-		"cmd",
-		"apitest",
-		"quantumcoin-gui",
-		"main.go",
-	)
-
-	if strings.Contains(
-		apitestGUI,
-		`_ = waitHealth(httpPort, 5*time.Second)`,
-	) {
-		t.Fatal("apitest GUI still ignores final health result")
-	}
-
-	if !strings.Contains(
-		apitestGUI,
-		"if err := waitHealth(",
-	) {
-		t.Fatal("apitest GUI does not validate final health")
-	}
-
-	if !strings.Contains(
-		mainGUI,
-		`Timeout: 500 * time.Millisecond`,
-	) {
-		t.Fatal("main GUI health request has no bounded client timeout")
-	}
-
-	if !strings.Contains(
-		apitestGUI,
-		`Timeout: 500 * time.Millisecond`,
-	) {
-		t.Fatal("apitest GUI health request has no bounded client timeout")
+func TestGUILaunchersRequireFinalHealthCheck(t *testing.T) {
+	for _, parts := range [][]string{{"cmd", "quantumcoin-gui", "main.go"}, {"cmd", "apitest", "quantumcoin-gui", "main.go"}} {
+		source := readGUIHealthContractSource(t, parts...)
+		for _, required := range []string{"apiclient.EnsureLocalBackendV1(", "context.WithTimeout(context.Background(), 20*time.Second)", "stopStartedBackend(cmd)", "releaseStartedBackend(cmd)"} {
+			if !strings.Contains(source, required) {
+				t.Fatalf("%s is missing shared health/process ownership contract %q", filepath.Join(parts...), required)
+			}
+		}
+		if strings.Contains(source, "time.Since(st.ModTime())") {
+			t.Fatal("GUI still steals startup leases by age")
+		}
 	}
 }

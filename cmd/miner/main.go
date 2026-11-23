@@ -7,49 +7,28 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
 	"time"
 
-	"quantumcoin/config"
 	"quantumcoin/miner"
 )
 
 var (
 	flagAddr    = flag.String("address", "", "Coinbase reward address (required)")
 	flagThreads = flag.Int("threads", runtime.NumCPU(), "Number of CPU threads")
-	flagMode    = flag.String("mode", "local", "Mode: mock | local")
+	flagMode    = flag.String("mode", "node", "Mode: node | mock")
 	flagLog     = flag.String("log", "", "Log file (e.g., miner.log)")
-	flagConfig  = flag.String("config", "config.json", "Config file path")
-	flagChain   = flag.String("chain", "", "Optional chain data file override; config chain_file is used when empty")
-	flagP2P     = flag.String("p2p", ":3001", "P2P listen port (for adapter broadcast)")
+	flagAPI     = flag.String("api", "", "Node API origin (default QC_API_BASE or loopback port 8082)")
 )
 
 func main() {
 	flag.Parse()
 
-	if chainPath := strings.TrimSpace(
-		*flagChain,
-	); chainPath != "" {
-		if err := config.ValidateChainFilePathForModeV1(
-			chainPath,
-		); err != nil {
-			log.Fatalf(
-				"miner chain file mode guard: %v",
-				err,
-			)
-		}
-	}
 	if *flagAddr == "" {
-		fmt.Println("Usage: miner -address <QC_ADDRESS> [-threads N] [-mode mock|local] [-config config.json] [-chain optional_override.dat] [-p2p :3001] [-log miner.log]")
+		fmt.Println("Usage: miner -address <QC_ADDRESS> [-threads N] [-mode node|mock] [-api NODE_ORIGIN] [-log miner.log]")
 		os.Exit(2)
-	}
-
-	// Double-click support: use exe directory as working directory
-	if exe, err := os.Executable(); err == nil {
-		_ = os.Chdir(filepath.Dir(exe))
 	}
 
 	if cl := *flagLog; cl != "" {
@@ -73,16 +52,21 @@ func main() {
 	switch *flagMode {
 	case "mock":
 		backend = miner.NewMockBackend(*flagAddr)
-	case "local":
-		ad, err := miner.NewQCLocalAdapter(miner.QCLocalOpts{
-			ConfigPath: *flagConfig,
-			ChainPath:  *flagChain,
-			P2PPort:    *flagP2P,
-		})
+	case "node":
+		base := strings.TrimSpace(*flagAPI)
+		if base == "" {
+			base = strings.TrimSpace(os.Getenv("QC_API_BASE"))
+		}
+		if base == "" {
+			base = "http://127.0.0.1:8082"
+		}
+		ad, err := miner.NewNodeBackend(base, os.Getenv("QC_API_TOKEN"))
 		if err != nil {
 			log.Fatalf("adapter init failed: %v", err)
 		}
 		backend = ad
+	case "local":
+		log.Fatal("local chain-file mining is retired in this command; select -mode node")
 	default:
 		log.Fatalf("unknown mode: %s", *flagMode)
 	}

@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -12,6 +12,8 @@ import json
 import urllib.parse
 import hashlib
 import hmac
+import math
+from contextlib import closing
 from typing import Optional, Dict, Any
 from telegram_game.utils.qc_api import (
     fetch_health as qc_fetch_health,
@@ -21,18 +23,33 @@ from telegram_game.utils.qc_api import (
     fetch_send_tx as qc_fetch_send_tx,
 )
 
-APP_DB = "dev_api_state.db"
+from .persistence import database_path, connect_database
+from . import exact_numbers
+from .response_contracts import (
+    HealthResponse, IdentityStatusResponse, IdentityVerificationResponse, RouteError,
+    RouteOK, WalletChallengeResponse, WalletLinkResponse, WithdrawStatusResponse,
+)
+APP_DB = database_path()
 _NFT_REPOSITORY_ROOT_V1 = Path(__file__).resolve().parents[2]
 ONLINE_TTL_SEC = 90
 
-UNIT = 1_000_000  # TGWT micro-unit
-TGWT_POOL_TOTAL_U = 3_000_000 * UNIT
+from .tgwt_pool_policy import TGWT_UNIT as UNIT, TGWT_POOL_TOTAL_U
 
-WITHDRAW_FEE_BPS = 20   # 0.20%
+WITHDRAW_FEE_BPS = 0  # BNB gas is paid by the user wallet, never fabricated as a TGWT deduction.
 DROP_CHANCE = 0.002     # 0.2%
 DROP_AMOUNT_U = 1 * UNIT
 
-app = FastAPI(title="Space Miner Dev API", version="0.4")
+app = FastAPI(title="QuantumCoin Telegram Game", version="0.5")
+from .endpoint_response_contracts import ContractRoute
+app.router.route_class = ContractRoute
+
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+
+@app.exception_handler(RequestValidationError)
+async def _redacted_request_validation_error(request, exc):
+    return JSONResponse(status_code=422, content={"detail": [{"loc": item.get("loc", []), "type": item.get("type", "invalid"), "msg": "invalid request value"} for item in exc.errors()]})
+
 
 # ACTION_BURST_GUARD_V1
 # Purpose: lightweight player+endpoint+client burst guard for sensitive action endpoints.
@@ -43,10 +60,22 @@ _QC_ACTION_BURST_BLOCKS_V1 = []
 
 _QC_ACTION_BURST_POLICY_V1 = {
     "/api/security/action-burst/test-ping": {"limit": 2, "windowSec": 10, "category": "safe_test"},
+    "/api/mine/work": {"limit":60,"windowSec":60,"category":"client_pow"},
+    "/api/mine/work/submit": {"limit":60,"windowSec":60,"category":"client_pow"},
+    "/api/mine/work/status": {"limit":60,"windowSec":60,"category":"client_pow_status"},
+    "/api/tgwt/rewards/claim": {"limit":8,"windowSec":60,"category":"verified_reward"},
+    "/api/admin/tgwt/campaigns": {"limit":6,"windowSec":60,"category":"reward_policy"},
+    "/api/social/x/start": {"limit":4,"windowSec":60,"category":"x_verification"},
+    "/api/social/x/complete": {"limit":4,"windowSec":60,"category":"x_verification"},
+    "/api/social/telegram/verify": {"limit":4,"windowSec":60,"category":"telegram_social_verification"},
+    "/api/social/youtube/start": {"limit":4,"windowSec":60,"category":"youtube_social_verification"},
+    "/api/social/youtube/complete": {"limit":4,"windowSec":60,"category":"youtube_social_verification"},
     "/api/mine/start": {"limit": 6, "windowSec": 20, "category": "mining_session"},
     "/api/mine/finish": {"limit": 4, "windowSec": 20, "category": "mining_reward"},
     "/api/wallet/send-qc": {"limit": 3, "windowSec": 30, "category": "chain_send"},
     "/api/wallet/link-qc-address": {"limit": 5, "windowSec": 60, "category": "wallet_link"},
+    "/api/wallet/link-challenge": {"limit": 4, "windowSec": 60, "category": "wallet_link"},
+    "/api/v1/withdraw/cancel": {"limit": 6, "windowSec": 60, "category": "tgwt_withdraw"},
     "/api/withdraw/request": {"limit": 3, "windowSec": 60, "category": "withdraw"},
     "/api/withdraw/mark-pending": {"limit": 4, "windowSec": 60, "category": "withdraw_admin"},
     "/api/withdraw/mock-confirm": {"limit": 4, "windowSec": 60, "category": "withdraw_admin"},
@@ -80,21 +109,13 @@ def _qc_action_burst_now_v1() -> int:
     return int(time.time())
 
 
+def _runtime_limit_db_v1():
+    # Separate short-lived connection, same canonical path. No economy hooks.
+    return connect_database(APP_DB)
+
+
 def _qc_action_burst_client_v1(request) -> str:
-    try:
-        xf = request.headers.get("x-forwarded-for") or request.headers.get("X-Forwarded-For")
-        if xf:
-            return xf.split(",")[0].strip()[:80]
-    except Exception:
-        pass
-
-    try:
-        if request.client and request.client.host:
-            return str(request.client.host)[:80]
-    except Exception:
-        pass
-
-    return "unknown-client"
+    return str(request.client.host)[:80] if request.client and request.client.host else "unknown-client"
 
 
 def _qc_action_burst_extract_player_v1(body_bytes: bytes) -> str:
@@ -171,34 +192,22 @@ def _qc_action_burst_block_response_v1(path: str, client: str, player: str, poli
 
 @app.middleware("http")
 async def _qc_action_burst_guard_v1(request, call_next):
-    path = getattr(request.url, "path", "")
-    method = getattr(request, "method", "")
-
-    if method.upper() not in ("POST", "PUT", "PATCH", "DELETE") or path not in _QC_ACTION_BURST_POLICY_V1:
+    path = request.url.path.rstrip("/")
+    if request.method.upper() not in ("POST", "PUT", "PATCH", "DELETE") or path not in _QC_ACTION_BURST_POLICY_V1:
         return await call_next(request)
-
-    body_bytes = await request.body()
-
-    async def _qc_action_burst_receive_v1():
-        return {"type": "http.request", "body": body_bytes, "more_body": False}
-
-    request._receive = _qc_action_burst_receive_v1
-
+    from .player_auth import ACTOR
+    from .durable_limits import admit
     policy = _QC_ACTION_BURST_POLICY_V1[path]
     now = _qc_action_burst_now_v1()
+    # Authentication is outermost. Actor is independent of IP/body/requestId.
     client = _qc_action_burst_client_v1(request)
-    player = _qc_action_burst_extract_player_v1(body_bytes)
-    key = _qc_action_burst_key_v1(path, client, player)
-
-    events = _qc_action_burst_prune_v1(key, now, int(policy.get("windowSec", 60)))
-    limit = int(policy.get("limit", 1))
-
-    if len(events) >= limit:
-        return _qc_action_burst_block_response_v1(path, client, player, policy, len(events))
-
-    events.append(now)
-    _QC_ACTION_BURST_EVENTS_V1[key] = events
-
+    actor = ACTOR.get() or ("bootstrap:"+client if path=="/api/telegram/identity/verify" else "operator")
+    allowed = admit(_runtime_limit_db_v1, [(path+":actor",actor,int(policy["limit"]),int(policy["windowSec"])),
+                          (path+":peer",client,max(120,int(policy["limit"])*10),int(policy["windowSec"]))],now)
+    # Retire old unbounded maps. Preserve their names for historic diagnostics.
+    _QC_ACTION_BURST_EVENTS_V1.clear()
+    if not allowed:
+        return _qc_action_burst_block_response_v1(path,client,actor,policy,int(policy["limit"]))
     return await call_next(request)
 
 
@@ -288,7 +297,7 @@ def _qc_security_action_burst_test_ping_v1(payload: dict = None):
 
 def _qc_rate_limit_db_path_v1() -> str:
     from pathlib import Path
-    return str(Path(__file__).resolve().parents[1] / "dev_api_state.db")
+    return APP_DB
 
 
 def _qc_rate_limit_source_text_v1() -> str:
@@ -402,7 +411,7 @@ def _qc_security_rate_limit_status_v1(limit: int = 50):
 
     endpoint_risk_rows = _qc_rate_limit_endpoint_audit_v1(text, safe_limit)
 
-    conn = sqlite3.connect(_qc_rate_limit_db_path_v1())
+    conn = connect_database(_qc_rate_limit_db_path_v1())
     conn.row_factory = sqlite3.Row
 
     table_names = set(
@@ -550,7 +559,7 @@ def _qc_security_rate_limit_status_v1(limit: int = 50):
 
 def _qc_conflict_db_path_v1() -> str:
     from pathlib import Path
-    return str(Path(__file__).resolve().parents[1] / "dev_api_state.db")
+    return APP_DB
 
 
 def _qc_conflict_rows_v1(conn, sql: str, args=()):
@@ -591,7 +600,7 @@ def _qc_security_conflicts_status_v1(limit: int = 20):
 
     safe_limit = max(1, min(int(limit or 20), 100))
 
-    conn = sqlite3.connect(_qc_conflict_db_path_v1())
+    conn = connect_database(_qc_conflict_db_path_v1())
     conn.row_factory = sqlite3.Row
 
     table_names = set(
@@ -812,7 +821,7 @@ def _qc_security_conflicts_status_v1(limit: int = 20):
 
 def _qc_idem_db_path_v1() -> str:
     from pathlib import Path
-    return str(Path(__file__).resolve().parents[1] / "dev_api_state.db")
+    return APP_DB
 
 
 def _qc_idem_now_v1() -> int:
@@ -822,7 +831,9 @@ def _qc_idem_now_v1() -> int:
 
 def _qc_idem_connect_v1():
     import sqlite3
-    return sqlite3.connect(_qc_idem_db_path_v1(), timeout=30, isolation_level=None)
+    conn = connect_database(_qc_idem_db_path_v1())
+    conn.isolation_level = None
+    return conn
 
 
 def _qc_idem_ensure_v1(conn) -> None:
@@ -899,166 +910,19 @@ def _qc_idem_block_response_v1(player_id: str, site_id: str, request_id: str, ke
     )
 
 
-@app.middleware("http")
-async def _qc_mine_finish_idempotency_guard_v1(request, call_next):
-    if request.method.upper() != "POST" or request.url.path != "/api/mine/finish":
-        return await call_next(request)
-
-    import json
-    import sqlite3
-
-    body = await request.body()
-
-    async def _receive():
-        return {"type": "http.request", "body": body, "more_body": False}
-
-    request._receive = _receive
-
-    try:
-        data = json.loads(body.decode("utf-8") if body else "{}")
-        if not isinstance(data, dict):
-            data = {}
-    except Exception:
-        data = {}
-
-    player_id = str(data.get("playerId") or data.get("player_id") or "").strip()
-    site_id = str(data.get("siteId") or data.get("site_id") or "").strip()
-    request_id = str(
-        data.get("requestId")
-        or data.get("request_id")
-        or data.get("idempotencyKey")
-        or data.get("idempotency_key")
-        or ""
-    ).strip()
-
-    reserved_id = ""
-
-    if player_id and site_id:
-        conn = _qc_idem_connect_v1()
-        try:
-            conn.execute("BEGIN IMMEDIATE")
-            _qc_idem_ensure_v1(conn)
-
-            session_started_at = _qc_idem_session_started_at_v1(conn, player_id, site_id)
-
-            # If the client provides requestId/idempotencyKey, replay is blocked by that key.
-            # If no requestId exists, we protect concurrent duplicate finish calls for the same active session.
-            raw_key = request_id or ("auto-session:%s:%s:%s" % (player_id, site_id, session_started_at or "no_active_session"))
-            key_hash = _qc_idem_key_hash_v1("mine_finish", raw_key)
-            now = _qc_idem_now_v1()
-            reserved_id = "idem_" + key_hash[:32]
-
-            try:
-                conn.execute(
-                    """
-                    INSERT INTO action_idempotency_v1
-                    (id, action, key_hash, player_id, site_id, request_id, session_started_at, status, created_at, note)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        reserved_id,
-                        "mine_finish",
-                        key_hash,
-                        player_id,
-                        site_id,
-                        request_id,
-                        session_started_at,
-                        "IN_PROGRESS",
-                        now,
-                        "reserved before /api/mine/finish reached chain/reward code",
-                    ),
-                )
-                conn.execute("COMMIT")
-            except sqlite3.IntegrityError:
-                conn.execute("ROLLBACK")
-                return _qc_idem_block_response_v1(player_id, site_id, request_id, key_hash)
-        except Exception:
-            try:
-                conn.execute("ROLLBACK")
-            except Exception:
-                pass
-            raise
-        finally:
-            try:
-                conn.close()
-            except Exception:
-                pass
-
-    response = await call_next(request)
-
-    if reserved_id:
-        try:
-            conn2 = _qc_idem_connect_v1()
-            _qc_idem_ensure_v1(conn2)
-            conn2.execute(
-                """
-                UPDATE action_idempotency_v1
-                SET status = ?, completed_at = ?, response_status = ?, note = ?
-                WHERE id = ?
-                """,
-                (
-                    "COMPLETED",
-                    _qc_idem_now_v1(),
-                    int(getattr(response, "status_code", 0) or 0),
-                    "endpoint completed after idempotency reservation",
-                    reserved_id,
-                ),
-            )
-            conn2.close()
-        except Exception:
-            pass
-
-    return response
-
-
+# Retired: durable server-owned game_mining_runs_v1 now reserves completion.
 @app.get("/api/security/idempotency/status")
 def _qc_idempotency_status_v1(limit: int = 10):
-    import sqlite3
-
-    conn = _qc_idem_connect_v1()
-    conn.row_factory = sqlite3.Row
-    _qc_idem_ensure_v1(conn)
-
-    rows = [
-        dict(r)
-        for r in conn.execute(
-            """
-            SELECT id, action, player_id, site_id, request_id, session_started_at,
-                   status, created_at, completed_at, response_status, note
-            FROM action_idempotency_v1
-            ORDER BY created_at DESC
-            LIMIT ?
-            """,
-            (max(1, min(int(limit or 10), 50)),),
-        ).fetchall()
-    ]
-
-    total = conn.execute("SELECT COUNT(*) FROM action_idempotency_v1").fetchone()[0]
-    conn.close()
-
-    return {
-        "ok": True,
-        "diagnosticVersion": "IDEMPOTENCY_REPLAY_GUARD_V1",
-        "table": "action_idempotency_v1",
-        "totalRows": total,
-        "latestRows": rows,
-        "safeBoundary": {
-            "readOnly": True,
-            "startsMining": False,
-            "changesChain": False,
-            "changesBalances": False,
-            "mints": False,
-            "changesSupply": False
-        }
-    }
+    with closing(_db()) as conn:
+        states = dict(conn.execute("SELECT status,COUNT(*) FROM game_mining_runs_v1 GROUP BY status").fetchall())
+    return {"ok": True, "guard": "server_owned_mining_runs_v1", "states": states,
+            "guarantee": "at_most_once_node_submission", "automaticRetry": False}
 
 
-
-# TG_DEV_UI_STATIC_ROUTES_V1
 # Serve the Space Miner UI and assets from the canonical QuantumCoin repo path.
 _BASE_DIR = Path(__file__).resolve().parent
 _DEV_UI_DIR = _BASE_DIR / "dev_ui"
-_GAME_HTML = _DEV_UI_DIR / "space_miner_prototype.html"
+_GAME_HTML = _DEV_UI_DIR / "game.html"
 _ASSETS_DIR = _DEV_UI_DIR / "assets"
 
 if _ASSETS_DIR.exists():
@@ -1081,7 +945,7 @@ def space_miner_game():
 # DEV CORS (en sorunsuz)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[origin.strip() for origin in os.getenv("QC_GAME_CORS_ORIGINS", "").split(",") if origin.strip() and origin.strip() != "*"],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -1095,15 +959,27 @@ def _now() -> int:
 
 
 def _db():
-    conn = sqlite3.connect(APP_DB, check_same_thread=False)
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA synchronous=NORMAL;")
-    return conn
+    return connect_database(APP_DB)
 
 
 def _init():
     with _lock:
         conn = _db()
+
+        from .player_auth import ensure_schema as ensure_auth_schema
+        from .mining_sessions import ensure_schema as ensure_run_schema
+        ensure_auth_schema(conn)
+        ensure_run_schema(conn)
+        from .reward_evidence import ensure_schema as ensure_reward_evidence
+        from .durable_limits import ensure_schema as ensure_limit_schema
+        from .game_pow import ensure_schema as ensure_pow_schema
+        ensure_reward_evidence(conn)
+        ensure_limit_schema(conn)
+        ensure_pow_schema(conn)
+        from .x_reward_verifier import ensure_schema as ensure_x_schema
+        ensure_x_schema(conn)
+        from .youtube_reward_verifier import ensure_schema as ensure_youtube_schema
+        ensure_youtube_schema(conn)
 
         # Players
         conn.execute("""
@@ -1117,6 +993,8 @@ def _init():
             last_seen    INTEGER NOT NULL DEFAULT 0
         )
         """)
+        if "qc_address" not in {row[1] for row in conn.execute("PRAGMA table_info(players)")}:
+            conn.execute("ALTER TABLE players ADD COLUMN qc_address TEXT")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_players_last_seen ON players(last_seen)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_players_total_qc ON players(total_qc)")
 
@@ -1229,6 +1107,7 @@ def _init():
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_withdraw_user_created ON withdraw_requests(user_id, created_at DESC)")
 
+        exact_numbers.ensure_schema(conn)
         conn.commit()
         conn.close()
 
@@ -1243,6 +1122,7 @@ class HeartbeatIn(BaseModel):
 
 
 class SessionCompleteIn(BaseModel):
+    model_config = {"allow_inf_nan": False}
     playerId: str
     qcEarned: float = 0.0
     xpEarned: float = 0.0
@@ -1265,7 +1145,9 @@ class MineStartIn(BaseModel):
 
 
 class MineFinishIn(BaseModel):
+    model_config = {"allow_inf_nan": False}
     playerId: str
+    sessionId: str = ""
     siteId: int = 1
     durationSec: float = 0.0
     qcEarned: Optional[float] = None
@@ -1290,7 +1172,7 @@ class TGWTVerifyIn(BaseModel):
 class WithdrawRequestIn(BaseModel):
     userId: str
     asset: str
-    amount: float
+    amount: str  # Exact decimal text; JSON floating-point amounts are rejected.
     toAddress: str
     nonce: str
 
@@ -1299,12 +1181,16 @@ class SocialClaimIn(BaseModel):
     playerId: str
     platform: str
     nonce: str
+    campaignId: str = ""
+    proof: Optional[dict] = None
 
 
 class StoreBuyIn(BaseModel):
     playerId: str
     shipId: str
     nonce: str
+    campaignId: str = ""
+    proof: Optional[dict] = None
 
 
 
@@ -1329,16 +1215,17 @@ def _telegram_bot_token() -> str:
 
 
 def _telegram_auth_required() -> bool:
-    raw = (
-        os.getenv("QC_TG_WEBAPP_AUTH_REQUIRED")
-        or os.getenv("TELEGRAM_WEBAPP_AUTH_REQUIRED")
-        or "0"
-    )
-    return str(raw).strip().lower() in ("1", "true", "yes", "on", "required")
+    # Identity protection cannot be disabled by a development environment flag.
+    return True
 
 
 def _telegram_player_id_from_user(tg_user: dict) -> str:
-    uid = str((tg_user or {}).get("id") or "").strip()
+    if not isinstance(tg_user, dict):
+        return ""
+    value = tg_user.get("id")
+    if type(value) is not int or value <= 0 or value > 2**52:
+        return ""
+    uid = str(value)
     if not uid:
         return ""
     return "tg_" + uid
@@ -1346,8 +1233,8 @@ def _telegram_player_id_from_user(tg_user: dict) -> str:
 
 def _validate_telegram_webapp_init_data(init_data: str, max_age_sec: int = 86400) -> dict:
     raw = (init_data or "").strip()
-    if not raw:
-        return {"ok": False, "error": "empty_initData"}
+    if not raw or len(raw.encode("utf-8")) > 16384:
+        return {"ok": False, "error": "invalid_initData_size"}
 
     bot_token = _telegram_bot_token()
     if not bot_token:
@@ -1359,6 +1246,8 @@ def _validate_telegram_webapp_init_data(init_data: str, max_age_sec: int = 86400
 
     try:
         pairs = urllib.parse.parse_qsl(raw, keep_blank_values=True, strict_parsing=False)
+        if len(pairs) != len({key for key, _ in pairs}):
+            return {"ok": False, "error": "duplicate_initData_key"}
         data = dict(pairs)
     except Exception as e:
         return {"ok": False, "error": "initData_parse_failed", "detail": str(e)}
@@ -1394,7 +1283,7 @@ def _validate_telegram_webapp_init_data(init_data: str, max_age_sec: int = 86400
         auth_date = 0
 
     now_ts = _now()
-    if auth_date <= 0:
+    if auth_date <= 0 or auth_date > now_ts + 60:
         return {"ok": False, "error": "invalid_auth_date"}
 
     age_sec = max(0, now_ts - auth_date)
@@ -1462,8 +1351,8 @@ def _touch_player(conn, pid: str, name: Optional[str]):
     ts = _now()
     conn.execute(
         """
-        INSERT OR IGNORE INTO players(player_id, display_name, first_seen, last_seen)
-        VALUES(?,?,?,?)
+        INSERT OR IGNORE INTO players(player_id, display_name, first_seen, last_seen, numeric_version)
+        VALUES(?,?,?,?,1)
         """,
         (pid, (name or None), ts, ts),
     )
@@ -1476,14 +1365,9 @@ def _touch_player(conn, pid: str, name: Optional[str]):
 _rl = {}  # (user_id, key) -> (win_start, count)
 
 def _rl_hit(user_id: str, key: str, limit: int, window_sec: int) -> bool:
-    now = _now()
-    k = (user_id, key)
-    win, cnt = _rl.get(k, (now, 0))
-    if now - win >= window_sec:
-        win, cnt = now, 0
-    cnt += 1
-    _rl[k] = (win, cnt)
-    return cnt <= limit
+    from .durable_limits import admit
+    _rl.clear()
+    return admit(_runtime_limit_db_v1, [("domain:"+key,user_id,limit,window_sec)],_now())
 
 
 def _fee_u(amount_u: int) -> int:
@@ -1536,100 +1420,26 @@ def _tgwt_touch(conn, user_id: str):
 
 def _tgwt_get(conn, user_id: str) -> Dict[str, int]:
     _tgwt_touch(conn, user_id)
-    cur = conn.execute(
-        "SELECT earned_u, pending_u, verified_u, withdrawn_u, rev FROM tgwt_state WHERE user_id=?",
-        (user_id,),
-    )
-    row = cur.fetchone()
-    if not row:
-        return {"earned_u": 0, "pending_u": 0, "verified_u": 0, "withdrawn_u": 0, "rev": 0}
-    return {
-        "earned_u": int(row[0] or 0),
-        "pending_u": int(row[1] or 0),
-        "verified_u": int(row[2] or 0),
-        "withdrawn_u": int(row[3] or 0),
-        "rev": int(row[4] or 0),
-    }
+    from .withdraw_ledger import amounts
+    return amounts(conn, user_id)
 
 
 def _tgwt_bump_rev(conn, user_id: str):
     conn.execute("UPDATE tgwt_state SET rev = rev + 1, updated_at=? WHERE user_id=?", (_now(), user_id))
 
 
-def _nonce_once(conn, user_id: str, nonce: str) -> bool:
-    try:
-        conn.execute(
-            "INSERT INTO tgwt_nonces(user_id, nonce, created_at) VALUES(?,?,?)",
-            (user_id, nonce, _now()),
-        )
-        return True
-    except sqlite3.IntegrityError:
-        return False
-
-
-def _parse_amount_to_micro(amount_str: str) -> int:
-    s = (amount_str or "").strip().replace(",", ".")
-    if not s:
-        return 0
-    if s.count(".") > 1:
-        return 0
-    parts = s.split(".")
-    whole = parts[0] if parts[0] else "0"
-    frac = parts[1] if len(parts) > 1 else ""
-    if len(frac) > 6:
-        frac = frac[:6]
-    frac = frac.ljust(6, "0")
-    if not whole.isdigit() or not frac.isdigit():
-        return 0
-    return int(whole) * UNIT + int(frac)
+# Legacy tgwt_nonces rows are audit history only. Active actions use their own
+# proof/session/withdraw idempotency keys, never this cross-action nonce table.
 
 
 def _tgwt_award_pending_from_pool(conn, user_id: str, amount_u: int, kind: str, meta: Optional[Dict[str, Any]] = None) -> bool:
-    """Pool'dan harcayarak kullanıcıya pending TGWT ekler (earned+pending)."""
-    amount_u = int(amount_u)
-    if amount_u <= 0:
-        return False
-    _tgwt_touch(conn, user_id)
-    if not _pool_can_spend(conn, amount_u):
-        return False
-
-    # Pool dağıtım sayacı: token ödülü verildiği anda artar (withdraw sırasında tekrar saymayız)
-    _pool_spend(conn, amount_u)
-
-    conn.execute(
-        """
-        UPDATE tgwt_state
-        SET earned_u = earned_u + ?,
-            pending_u = pending_u + ?
-        WHERE user_id=?
-        """,
-        (amount_u, amount_u, user_id),
-    )
-    _tgwt_bump_rev(conn, user_id)
-    _tgwt_event(conn, user_id, kind, amount_u, meta)
-    return True
+    # Retired: no runtime caller may manufacture reward entitlement from amount/nonce.
+    return False
 
 
 def _tgwt_move_pending_to_verified(conn, user_id: str, move_u: int) -> int:
-    move_u = int(move_u)
-    if move_u <= 0:
-        return 0
-    st = _tgwt_get(conn, user_id)
-    move_u = min(move_u, int(st["pending_u"]))
-    if move_u <= 0:
-        return 0
-    conn.execute(
-        """
-        UPDATE tgwt_state
-        SET pending_u = pending_u - ?,
-            verified_u = verified_u + ?
-        WHERE user_id=?
-        """,
-        (move_u, move_u, user_id),
-    )
-    _tgwt_bump_rev(conn, user_id)
-    _tgwt_event(conn, user_id, "VERIFY", move_u, {})
-    return move_u
+    # Historical unproven pending balances are never silently promoted.
+    return 0
 
 
 def _online_now(conn) -> int:
@@ -1644,27 +1454,24 @@ def _total_players(conn) -> int:
     return int(cur.fetchone()[0])
 
 
-def _total_qc_all(conn) -> float:
-    cur = conn.execute("SELECT COALESCE(SUM(total_qc), 0) FROM players")
-    return float(cur.fetchone()[0] or 0.0)
+def _total_qc_all(conn):
+    # Sum in Python so SQLite cannot overflow or promote to REAL.
+    return exact_numbers.format_qc(sum(row[0] for row in conn.execute("SELECT qc_atoms FROM players")))
 
 
-def _get_player_totals(conn, pid: str) -> Dict[str, float]:
-    cur = conn.execute("SELECT total_qc, total_xp FROM players WHERE player_id=?", (pid,))
-    row = cur.fetchone()
-    if not row:
-        return {"qc": 0.0, "xp": 0.0}
-    return {"qc": float(row[0] or 0.0), "xp": float(row[1] or 0.0)}
+def _get_player_totals(conn, pid):
+    row = conn.execute("SELECT qc_atoms,xp_units,total_qc,total_xp FROM players WHERE player_id=?", (pid,)).fetchone()
+    atoms, xp = (exact_numbers.integer(row[0]), exact_numbers.integer(row[1])) if row else (0, 0)
+    return {"qc": exact_numbers.format_qc(atoms), "qcAtoms": str(atoms), "xp": xp,
+            "legacyNumericReviewRequired": bool(row and (row[2] != 0 or row[3] != 0))}
 
 
-def _rank_for(conn, pid: str) -> int:
-    my_qc = _get_player_totals(conn, pid)["qc"]
-    cur = conn.execute("SELECT COUNT(*) FROM players WHERE total_qc > ?", (my_qc,))
-    better = int(cur.fetchone()[0])
-    return better + 1
+def _rank_for(conn, pid):
+    atoms = int(_get_player_totals(conn, pid)["qcAtoms"])
+    return 1 + conn.execute("SELECT COUNT(*) FROM players WHERE qc_atoms > ?", (atoms,)).fetchone()[0]
 
 
-def _xp_to_level(total_xp: float) -> Dict[str, Any]:
+def _xp_to_level(total_xp: int) -> Dict[str, Any]:
     if total_xp < 0:
         total_xp = 0
     level = int(total_xp // 100) + 1
@@ -1716,6 +1523,10 @@ def _wallet_payload(conn, pid: str) -> Dict[str, Any]:
         "playerId": pid,
         "address": f"QC_{pid[:10]}_DEV",
         "qc_balance": totals["qc"],
+        "qc_atoms": totals["qcAtoms"],
+        "atomsPerQc": str(exact_numbers.ATOMS_PER_QC),
+        "xpTotal": totals["xp"],
+        "legacyNumericReviewRequired": totals["legacyNumericReviewRequired"],
         "tgwt_balance": 0,
         "level": xpinfo["level"],
         "xp": xpinfo["xp"],
@@ -1723,24 +1534,9 @@ def _wallet_payload(conn, pid: str) -> Dict[str, Any]:
     }
 
 
-def _compute_rewards(duration_sec: float) -> Dict[str, float]:
-    if duration_sec < 0:
-        duration_sec = 0
-    qc = min(50.0, round(duration_sec * 0.5, 2))
-    xp = min(100.0, round(duration_sec * 1.0, 2))
-    return {"qc": qc, "xp": xp}
-
-
-def _txhash_dummy() -> str:
-    return "0x" + secrets.token_hex(32)
-
-
-
-
-
-
-
-
+def _compute_rewards(duration_sec: int):
+    # Duration comes exclusively from the persisted server run.
+    return {"qc": 0, "xp": min(100, exact_numbers.integer(duration_sec))}
 
 
 # QC_WITHDRAW_PAYOUT_META_V1
@@ -1792,7 +1588,7 @@ def _ensure_withdraw_batch_tables(conn):
 
 
 # QC_GAME_MINER_50QC_CHAIN_REWARD_V1
-QC_GAME_MINER_BLOCK_REWARD = 50.0
+QC_GAME_MINER_BLOCK_REWARD = 0  # Compatibility only: QC reward is recorded solely by the chain.
 QC_GAME_MINER_CLIENT_TYPE = "GAME_MINER"
 QC_GAME_MINER_REWARD_MODE = "NETWORK_BLOCK_REWARD"
 # QC_GAME_MINING_MODE_V1
@@ -1844,10 +1640,11 @@ def _fetch_qc_node_health_sync(timeout: float = 2.5) -> Dict[str, Any]:
     mine_finish sync endpoint olduğu için burada async helper kullanmıyoruz.
     """
     try:
-        from telegram_game.config import get_api_base
+        from telegram_game.utils.qc_api import get_api_base, node_urlopen
         base = get_api_base().rstrip("/")
         url = f"{base}/api/health"
-        with urllib.request.urlopen(url, timeout=timeout) as resp:
+        request = urllib.request.Request(url, headers={"X-QC-API-KEY": os.getenv("QC_API_TOKEN", "")})
+        with node_urlopen(request, timeout=timeout) as resp:
             raw = resp.read().decode("utf-8", errors="replace")
         data = json.loads(raw)
         if isinstance(data, dict):
@@ -1915,15 +1712,20 @@ def _reward_record_insert(
     source: str,
     zone_id: str,
     site_id: int,
-    amount: float,
-    xp_amount: float,
+    amount: int,
+    xp_amount: int,
     meta: Optional[Dict[str, Any]] = None,
     chain_height: int = 0,
-    block_reward: float = 0.0,
+    block_reward: int = 0,
     mining_client_type: str = "",
     network_reward_mode: str = "",
 ) -> str:
-    # QC_REWARD_RECORDS_V1 + QC_REWARD_SETTLEMENT_READY_V1 + QC_REWARD_CHAIN_FIELDS_V1
+    exact_numbers.integer(amount)
+    exact_numbers.integer(block_reward)
+    if amount != 0 or block_reward != 0:
+        raise ValueError("game_cannot_issue_secondary_qc_reward")
+    exact_numbers.integer(xp_amount)
+    # Compatibility REAL columns receive zero only; new authority is INTEGER.
     _ensure_reward_settlement_columns(conn)
     _ensure_reward_chain_columns(conn)
 
@@ -1958,7 +1760,7 @@ def _reward_record_insert(
             int(site_id or 1),
             "QC",
             float(amount or 0.0),
-            float(xp_amount or 0.0),
+            0,
             "DEV_CONFIRMED",
             settlement_status,
             None,
@@ -1974,35 +1776,8 @@ def _reward_record_insert(
             (network_reward_mode or "").strip(),
         ),
     )
+    conn.execute("UPDATE reward_records SET amount_atoms=0,xp_units=?,block_reward_atoms=0,numeric_version=1 WHERE reward_id=?", (xp_amount, reward_id))
     return reward_id
-
-
-def _dev_autoconfirm_withdraw(req_id: str, delay_sec: float = 1.5):
-    def _worker():
-        time.sleep(delay_sec)
-        with _lock:
-            conn = _db()
-            cur = conn.execute("SELECT status FROM withdraw_requests WHERE id=?", (req_id,))
-            row = cur.fetchone()
-            if not row:
-                conn.close()
-                return
-            if row[0] != "QUEUED":
-                conn.close()
-                return
-
-            conn.execute(
-                """
-                UPDATE withdraw_requests
-                SET status=?, tx_hash=?, updated_at=?
-                WHERE id=?
-                """,
-                ("CONFIRMED", _txhash_dummy(), _now(), req_id),
-            )
-            conn.commit()
-            conn.close()
-
-    threading.Thread(target=_worker, daemon=True).start()
 
 
 def _store_bonus_u(ship_id: str) -> int:
@@ -2022,7 +1797,7 @@ def _store_bonus_u(ship_id: str) -> int:
 
 # ------------------- Core endpoints -------------------
 
-@app.get("/health")
+@app.get("/health", response_model=HealthResponse)
 def health():
     return {"ok": True, "ts": _now()}
 
@@ -2059,27 +1834,7 @@ def session_complete(inp: SessionCompleteIn):
 
 @app.post("/api/social/claim")
 def social_claim(inp: SocialClaimIn):
-    user_id = inp.playerId
-    if not _rl_hit(user_id, "social_claim", limit=10, window_sec=60):
-        return {"ok": False, "error": "rate_limited"}
-
-    with _lock:
-        conn = _db()
-        _tgwt_touch(conn, user_id)
-        if not _nonce_once(conn, user_id, inp.nonce):
-            conn.close()
-            return {"ok": False, "error": "dup_nonce"}
-
-        ok = _tgwt_award_pending_from_pool(conn, user_id, 1 * UNIT, "SOCIAL_FOLLOW", {"platform": inp.platform})
-        if not ok:
-            conn.close()
-            return {"ok": False, "error": "pool_exhausted"}
-
-        st = _tgwt_get(conn, user_id)
-        conn.commit()
-        conn.close()
-
-    return {"ok": True, "userId": user_id, "rev": st["rev"], "balances": st}
+    return _verified_task_reward(inp, {"SOCIAL_FOLLOW", "SOCIAL_LIKE", "SOCIAL_JOIN", "SOCIAL_SUBSCRIBE"})
 
 
 @app.get("/api/stats/global")
@@ -2114,9 +1869,9 @@ def leaderboard_top(limit: int = 10):
         conn = _db()
         cur = conn.execute(
             """
-            SELECT player_id, COALESCE(display_name, '') as name, total_qc, sessions, last_seen
+            SELECT player_id, COALESCE(display_name, '') as name, qc_atoms, sessions, last_seen
             FROM players
-            ORDER BY total_qc DESC, sessions DESC, last_seen DESC
+            ORDER BY qc_atoms DESC, sessions DESC, last_seen DESC
             LIMIT ?
             """,
             (limit,),
@@ -2132,7 +1887,8 @@ def leaderboard_top(limit: int = 10):
             "playerId": pid,
             "name": safe_name,
             "displayName": safe_name,
-            "qc": float(total_qc),
+            "qc": exact_numbers.format_qc(total_qc),
+            "qcAtoms": str(total_qc),
             "sessions": int(sessions),
             "lastSeen": int(last_seen),
             "lastSeenSecAgo": int(max(0, now_ts - int(last_seen))),
@@ -2211,9 +1967,10 @@ async def wallet(playerId: str):
     payload["real_qc_height"] = None
     payload["real_qc_ok"] = False
 
-    payload["withdrawableQc"] = float((withdrawable_row[1] if withdrawable_row else 0) or 0)
+    payload["withdrawableQc"] = "0"
+    payload["legacyQcSettlementExecutable"] = False
     payload["withdrawableRewardCount"] = int((withdrawable_row[0] if withdrawable_row else 0) or 0)
-    payload["requestedWithdrawQc"] = float((requested_row[1] if requested_row else 0) or 0)
+    payload["requestedWithdrawQc"] = "0"
     payload["requestedWithdrawCount"] = int((requested_row[0] if requested_row else 0) or 0)
     payload["minWithdrawAmount"] = QC_MIN_WITHDRAW_AMOUNT
     payload["latestWithdrawBatch"] = None
@@ -2221,7 +1978,8 @@ async def wallet(playerId: str):
     if latest_batch:
         payload["latestWithdrawBatch"] = {
             "batchId": latest_batch[0],
-            "amount": float(latest_batch[1] or 0),
+            "legacyAmountUnverified": str(latest_batch[1]),
+            "executable": False,
             "rewardCount": int(latest_batch[2] or 0),
             "status": latest_batch[3],
             "txHash": latest_batch[4],
@@ -2235,9 +1993,11 @@ async def wallet(playerId: str):
     if qc_address:
         real = await qc_fetch_address_balance(qc_address)
         payload["real_qc"] = real
-        payload["real_qc_ok"] = bool(real.get("ok"))
-        payload["real_qc_balance"] = real.get("balance")
-        payload["real_qc_spendable"] = real.get("spendable")
+        payload["real_qc_ok"] = bool(real.get("ok")) and real.get("atomsPerQc") == "1000000"
+        payload["real_qc_balance"] = real.get("balanceQc")
+        payload["real_qc_spendable"] = real.get("spendableQc")
+        payload["real_qc_atoms"] = real.get("balanceAtoms")
+        payload["real_qc_spendable_atoms"] = real.get("spendableAtoms")
         payload["real_qc_height"] = real.get("height")
     else:
         payload["real_qc"] = {
@@ -2259,38 +2019,7 @@ def store():
 
 @app.post("/api/store/buy")
 def store_buy(inp: StoreBuyIn):
-    user_id = inp.playerId
-    if not _rl_hit(user_id, "store_buy", limit=20, window_sec=60):
-        return {"ok": False, "error": "rate_limited"}
-
-    bonus_u = _store_bonus_u(inp.shipId)
-    if bonus_u <= 0:
-        return {"ok": True, "bonus": "0", "bonus_u": 0}
-
-    with _lock:
-        conn = _db()
-        _tgwt_touch(conn, user_id)
-
-        if not _nonce_once(conn, user_id, inp.nonce):
-            conn.close()
-            return {"ok": False, "error": "dup_nonce"}
-
-        ok = _tgwt_award_pending_from_pool(conn, user_id, bonus_u, "STORE_BONUS", {"shipId": inp.shipId})
-        if not ok:
-            conn.close()
-            return {"ok": False, "error": "pool_exhausted"}
-
-        st = _tgwt_get(conn, user_id)
-        conn.commit()
-        conn.close()
-
-    return {
-        "ok": True,
-        "bonus": str(bonus_u / UNIT),
-        "bonus_u": bonus_u,
-        "rev": st["rev"],
-        "balances": st,
-    }
+    return _verified_task_reward(inp, {"STORE_PURCHASE"})
 
 
 @app.get("/api/social/links")
@@ -2346,7 +2075,7 @@ def save_settings(inp: SettingsIn):
 
 
 # TG_WEBAPP_IDENTITY_V1
-@app.get("/api/telegram/identity/status")
+@app.get("/api/telegram/identity/status", response_model=IdentityStatusResponse)
 def telegram_identity_status():
     token_configured = bool(_telegram_bot_token())
     auth_required = bool(_telegram_auth_required())
@@ -2356,7 +2085,7 @@ def telegram_identity_status():
         "tokenConfigured": token_configured,
         "authRequired": auth_required,
         "devFallbackAllowed": not auth_required,
-        "playerIdSource": "telegram_initData_when_verified",
+        "playerIdSource": "server_verified_telegram_session",
         "safeBoundary": {
             "readOnly": True,
             "changesDb": False,
@@ -2367,21 +2096,31 @@ def telegram_identity_status():
     }
 
 
-@app.post("/api/telegram/identity/verify")
-def telegram_identity_verify(inp: TelegramIdentityVerifyIn):
-    result = _validate_telegram_webapp_init_data(inp.initData)
-    return {
-        "ok": bool(result.get("ok")),
-        "diagnosticVersion": "TG_WEBAPP_IDENTITY_V1",
-        **result,
-        "safeBoundary": {
-            "readOnly": True,
-            "changesDb": False,
-            "changesBalances": False,
-            "startsMining": False,
-            "changesChain": False,
-        },
-    }
+@app.post("/api/telegram/identity/verify", response_model=IdentityVerificationResponse,
+          responses={401: {"model": RouteError}, 503: {"model": RouteError}})
+def telegram_identity_verify(inp: TelegramIdentityVerifyIn, response: Response):
+    from .player_auth import issue_session
+    result = _validate_telegram_webapp_init_data(inp.initData, max_age_sec=900)
+    if not result.get("ok"):
+        status = 503 if not _telegram_bot_token() else 401
+        return JSONResponse(status_code=status, content={"ok": False, "error": result.get("error", "telegram_identity_invalid")})
+    credentials = issue_session(_db, result["playerId"], _telegram_bot_token(), _now())
+    response.headers["Cache-Control"] = "no-store"
+    return {**result, **credentials,
+        "safeBoundary": {"readOnly": False, "changesDb": True, "changesBalances": False,
+                         "startsMining": False, "changesChain": False}}
+
+
+@app.post("/api/telegram/identity/logout", response_model=RouteOK)
+def telegram_identity_logout():
+    from .player_auth import SESSION_HASH
+    conn = _db()
+    try:
+        conn.execute("DELETE FROM player_auth_sessions_v1 WHERE token_hash=?", (SESSION_HASH.get(),))
+        conn.commit()
+    finally:
+        conn.close()
+    return {"ok": True}
 
 
 # QC_GAME_CHAIN_BRIDGE_STATUS_V1
@@ -2389,7 +2128,8 @@ def telegram_identity_verify(inp: TelegramIdentityVerifyIn):
 # This endpoint does not mine, transfer, mint, or change balances.
 @app.get("/api/bridge/status")
 async def bridge_status(playerId: str = "dev_user"):
-    player_id = (playerId or "").strip() or "dev_user"
+    from .player_auth import ACTOR
+    player_id = ACTOR.get() or (playerId or "").strip()
 
     try:
         from telegram_game.config import get_api_base
@@ -2408,7 +2148,7 @@ async def bridge_status(playerId: str = "dev_user"):
         conn.commit()
         conn.close()
 
-    qc_health = _fetch_qc_node_health_sync()
+    qc_health = await asyncio.to_thread(_fetch_qc_node_health_sync)
     real_qc = {
         "ok": False,
         "linked": bool(target_qc_address),
@@ -2459,6 +2199,9 @@ def mining_mode_status():
         "diagnosticVersion": "QC_GAME_MINING_MODE_STATUS_V1",
         "miningMode": mode,
         "realChainMining": mode == QC_GAME_MINING_MODE_REAL_CHAIN,
+        "clientPoWRequired": mode == QC_GAME_MINING_MODE_REAL_CHAIN,
+        "serverMinesForPlayer": False,
+        "secondaryGameQCPayment": False,
         "testnetSimulated": mode == QC_GAME_MINING_MODE_TESTNET_SIMULATED,
         "disabled": mode == QC_GAME_MINING_MODE_DISABLED,
         "safeBoundary": {
@@ -2507,229 +2250,76 @@ def _nft_record_game_start_action_v1(conn, player_id, init_data, session_id):
 @app.post("/api/mine/start")
 def mine_start(inp: MineStartIn):
     with _lock:
-        conn = _db()
-        _touch_player(conn, inp.playerId, inp.displayName)
-        _ensure_qc_address_column(conn)
+        with closing(_db()) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            _touch_player(conn, inp.playerId, inp.displayName)
+            _ensure_qc_address_column(conn)
 
-        # QC_USER_LOCK_MINE_START_REQUIRES_LINKED_ADDRESS_V1
-        # A player without a linked QC address cannot even open a mining session.
-        target_qc_address = _get_player_qc_address(conn, inp.playerId)
-        if not target_qc_address:
-            conn.execute("DELETE FROM mining_sessions WHERE player_id=?", (inp.playerId,))
-            conn.commit()
-            conn.close()
-            return {
-                "ok": False,
-                "error": "qc_address_not_linked",
-                "message": "Link or create a QC wallet address before starting game mining.",
-                "playerId": inp.playerId,
-            }
-
-        conn.execute(
-            """
-            INSERT INTO mining_sessions(player_id, site_id, started_at)
-            VALUES(?,?,?)
-            ON CONFLICT(player_id) DO UPDATE SET
-                site_id=excluded.site_id,
-                started_at=excluded.started_at
-            """,
-            (inp.playerId, int(inp.siteId), _now()),
-        )
-        conn.commit()
-        if inp.initData and inp.nftSessionId:
-            try:
-                _nft_record_game_start_action_v1(
-                    conn, inp.playerId, inp.initData, inp.nftSessionId
-                )
+            # QC_USER_LOCK_MINE_START_REQUIRES_LINKED_ADDRESS_V1
+            # A player without a linked QC address cannot even open a mining session.
+            target_qc_address = _get_player_qc_address(conn, inp.playerId)
+            if not target_qc_address:
+                conn.execute("DELETE FROM mining_sessions WHERE player_id=?", (inp.playerId,))
                 conn.commit()
-            except sqlite3.Error:
-                # NFT evidence fails closed without undoing the accepted game start.
-                conn.rollback()
-        payload = _wallet_payload(conn, inp.playerId)
-        conn.close()
+                conn.close()
+                return {
+                    "ok": False,
+                    "error": "qc_address_not_linked",
+                    "message": "Link or create a QC wallet address before starting game mining.",
+                    "playerId": inp.playerId,
+                }
 
-    return {"ok": True, "started": True, "siteId": int(inp.siteId), "wallet": payload}
+            from .mining_sessions import open_run
+            run = open_run(conn, inp.playerId, int(inp.siteId), _now())
+            if not run.get("ok"):
+                conn.rollback()
+                conn.close()
+                return run
+            conn.commit()
+            if inp.initData and inp.nftSessionId:
+                try:
+                    _nft_record_game_start_action_v1(
+                        conn, inp.playerId, inp.initData, inp.nftSessionId
+                    )
+                    conn.commit()
+                except sqlite3.Error:
+                    # NFT evidence fails closed without undoing the accepted game start.
+                    conn.rollback()
+            payload = _wallet_payload(conn, inp.playerId)
+            conn.close()
+
+    return {**run, "started": True, "siteId": int(inp.siteId), "wallet": payload, "miningMode":_get_game_mining_mode()}
 
 
 @app.post("/api/mine/finish")
 def mine_finish(inp: MineFinishIn):
-    with _lock:
-        conn = _db()
-        _touch_player(conn, inp.playerId, inp.displayName)
-
-        cur = conn.execute("SELECT started_at FROM mining_sessions WHERE player_id=?", (inp.playerId,))
-        row = cur.fetchone()
-        started_at = int(row[0]) if row and row[0] else 0
-
-        duration = float(inp.durationSec or 0.0)
-        if duration <= 0 and started_at > 0:
-            duration = float(max(0, _now() - started_at))
-
-        target_qc_address = _get_player_qc_address(conn, inp.playerId)
-
-        if not target_qc_address:
-            # QC_USER_LOCK_MINE_FINISH_CLEARS_UNLINKED_SESSION_V1
-            # Defensive cleanup: no stale mining session may remain for an unlinked player.
-            conn.execute("DELETE FROM mining_sessions WHERE player_id=?", (inp.playerId,))
-            conn.commit()
-            conn.close()
-            return {
-                "ok": False,
-                "error": "qc_address_not_linked",
-                "message": "Link or create a QC wallet address before real game mining.",
-                "playerId": inp.playerId,
-            }
-
-        mining_mode = _get_game_mining_mode()
-
-        if mining_mode == QC_GAME_MINING_MODE_DISABLED:
-            conn.close()
-            return {
-                "ok": False,
-                "error": "game_mining_disabled",
-                "playerId": inp.playerId,
-                "targetQcAddress": target_qc_address,
-                "miningMode": mining_mode,
-                "message": "Telegram Game mining is disabled by server policy.",
-            }
-
-        # QC_REAL_GAME_MINE_BRIDGE_V1 + QC_GAME_MINING_MODE_V1
-        # REAL_CHAIN calls QuantumCoin node /api/mine.
-        # TESTNET_SIMULATED does not call chain /api/mine.
-        if mining_mode == QC_GAME_MINING_MODE_TESTNET_SIMULATED:
-            qc_health = _fetch_qc_node_health_sync()
-            qc_mine_result = _simulated_game_mine_result(target_qc_address, qc_health)
-        else:
-            try:
-                qc_mine_result = asyncio.run(qc_fetch_mine_block(target_qc_address))
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                try:
-                    qc_mine_result = loop.run_until_complete(qc_fetch_mine_block(target_qc_address))
-                finally:
-                    loop.close()
-
-            if not bool(qc_mine_result.get("success") or qc_mine_result.get("ok")):
-                conn.close()
-                return {
-                    "ok": False,
-                    "error": "qc_real_mine_failed",
-                    "playerId": inp.playerId,
-                    "targetQcAddress": target_qc_address,
-                    "miningMode": mining_mode,
-                    "qcMineResult": qc_mine_result,
-                }
-
-            qc_health = _fetch_qc_node_health_sync()
-
-        chain_height = int(qc_mine_result.get("height") or _current_chain_height_from_qc_health(qc_health) or 0)
-        block_hash = str(qc_mine_result.get("block_hash") or qc_mine_result.get("blockHash") or "")
-        qc = float(qc_mine_result.get("reward") or QC_GAME_MINER_BLOCK_REWARD)
-
-        if inp.xpEarned is None:
-            rw = _compute_rewards(duration)
-            xp = float(rw["xp"])
-        else:
-            xp = float(inp.xpEarned or 0.0)
-
-        if mining_mode == QC_GAME_MINING_MODE_TESTNET_SIMULATED:
-            block_reward = 0.0
-            mining_client_type = QC_GAME_MINER_TESTNET_CLIENT_TYPE
-            network_reward_mode = QC_GAME_MINER_TESTNET_REWARD_MODE
-        else:
-            block_reward = QC_GAME_MINER_BLOCK_REWARD
-            mining_client_type = QC_GAME_MINER_CLIENT_TYPE
-            network_reward_mode = QC_GAME_MINER_REWARD_MODE
-
-        conn.execute(
-            """
-            UPDATE players
-            SET total_qc = total_qc + ?,
-                total_xp = total_xp + ?,
-                sessions = sessions + 1
-            WHERE player_id = ?
-            """,
-            (qc, xp, inp.playerId),
-        )
-
-        reward_id = _reward_record_insert(
-            conn,
-            player_id=inp.playerId,
-            source="MINING_SESSION",
-            zone_id=f"LUNA-{int(inp.siteId):02d}",
-            site_id=int(inp.siteId),
-            amount=qc,
-            xp_amount=xp,
-            meta={
-                "durationSec": duration,
-                "startedAt": started_at,
-                "mode": "GAME_MINER_NETWORK_REWARD" if mining_mode == QC_GAME_MINING_MODE_REAL_CHAIN else "GAME_MINER_TESTNET_SIMULATED",
-                "miningMode": mining_mode,
-                "simulated": bool(qc_mine_result.get("simulated")),
-                "qcNodeHealth": qc_health,
-                "qcMineResult": qc_mine_result,
-                "blockHash": block_hash,
-                "targetQcAddress": target_qc_address,
-            },
-            chain_height=chain_height,
-            block_reward=block_reward,
-            mining_client_type=mining_client_type,
-            network_reward_mode=network_reward_mode,
-        )
-
-        if mining_mode == QC_GAME_MINING_MODE_TESTNET_SIMULATED:
-            conn.execute(
-                """
-                UPDATE reward_records
-                SET settlement_status='TESTNET_SIMULATED',
-                    settlement_note='TESTNET_SIMULATED_NO_CHAIN_BLOCK: no real chain settlement; /api/mine was not called.',
-                    block_reward=0,
-                    mining_client_type=?,
-                    network_reward_mode=?
-                WHERE reward_id=?
-                """,
-                (QC_GAME_MINER_TESTNET_CLIENT_TYPE, QC_GAME_MINER_TESTNET_REWARD_MODE, reward_id),
-            )
-        conn.execute("DELETE FROM mining_sessions WHERE player_id=?", (inp.playerId,))
-
-        settlement_row = conn.execute(
-            "SELECT settlement_status FROM reward_records WHERE reward_id=?",
-            (reward_id,),
-        ).fetchone()
-        settlement_status = settlement_row[0] if settlement_row else "UNKNOWN"
-
-        # TGWT random drop (backend decides)
-        if random.random() < DROP_CHANCE:
-            _tgwt_award_pending_from_pool(conn, inp.playerId, DROP_AMOUNT_U, "RANDOM_DROP", {"siteId": int(inp.siteId)})
-
-        conn.commit()
-
-        online = _online_now(conn)
-        total = _total_players(conn)
-        rank = _rank_for(conn, inp.playerId)
-        my_total = _get_player_totals(conn, inp.playerId)["qc"]
-        wallet_payload = _wallet_payload(conn, inp.playerId)
-        conn.close()
-
-    return {
-        "ok": True,
-        "durationSec": duration,
-        "qcEarned": qc,
-        "xpEarned": xp,
-        "totalPlayers": total,
-        "onlineNow": online,
-        "yourRank": rank,
-        "yourTotalEarnedQC": my_total,
-        "wallet": wallet_payload,
-        "rewardId": reward_id,
-        "settlementStatus": settlement_status,
-        "chainHeight": chain_height,
-        "blockReward": block_reward,
-        "blockHash": block_hash,
-        "miningClientType": mining_client_type,
-        "networkRewardMode": network_reward_mode,
-        "miningMode": mining_mode,
-    }
+    from .mining_sessions import reserve_run
+    mode = _get_game_mining_mode()
+    if mode == QC_GAME_MINING_MODE_DISABLED:
+        return {"ok": False, "error": "game_mining_disabled"}
+    real = mode == QC_GAME_MINING_MODE_REAL_CHAIN
+    run = reserve_run(_db, inp.playerId, int(inp.siteId), inp.sessionId, _now(), require_pow=real)
+    if not run.get("ok"):
+        return run
+    proof = run.get("powReceipt") or {}
+    duration = run["durationSec"]
+    xp = _compute_rewards(duration)["xp"]
+    with closing(_db()) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        exact_numbers.add_xp(conn, inp.playerId, xp)
+        reward_id = _reward_record_insert(conn,player_id=inp.playerId,source="MINING_SESSION",zone_id=f"LUNA-{int(inp.siteId):02d}",
+            site_id=int(inp.siteId),amount=0,xp_amount=xp,
+            meta={"durationSec":duration,"startedAt":run["startedAt"],"miningMode":mode,"clientPoW":proof,"rewardPaidByChain":real},
+            chain_height=int(proof.get("height") or 0),block_reward=0,
+            mining_client_type="GAME_CLIENT_POW" if real else "GAME_MINER_TESTNET",network_reward_mode="COINBASE_ALREADY_ON_CHAIN" if real else "TESTNET_SIMULATED_NO_CHAIN_BLOCK")
+        status = "CHAIN_REWARD_ALREADY_PAID" if real else "TESTNET_SIMULATED"
+        conn.execute("UPDATE reward_records SET settlement_status=?,settlement_note=? WHERE reward_id=?",(status,"No secondary QC or TGWT payment; real block rewards belong to the linked chain wallet.",reward_id))
+        conn.execute("DELETE FROM mining_sessions WHERE player_id=?",(inp.playerId,))
+        conn.execute("UPDATE game_mining_runs_v1 SET status='COMPLETED',reward_id=? WHERE session_id=? AND status='PROCESSING'",(reward_id,inp.sessionId))
+        payload = _wallet_payload(conn,inp.playerId)
+    return {"ok":True,"durationSec":duration,"qcEarned":0,"xpEarned":xp,"rewardId":reward_id,"settlementStatus":status,
+            "blockHash":proof.get("hash",""),"chainHeight":proof.get("height",0),"miningMode":mode,"wallet":payload,
+            "rewardPaidByChain":real,"tgwtReward":0}
 
 
 # TGWT_WITHDRAW_ADMIN_REVIEW_V1
@@ -2763,7 +2353,7 @@ def tgwt_ledger(user_id: str, limit: int = 20):
         events.append({
             "id": r[0],
             "kind": r[1],
-            "amount": str((int(r[2] or 0) / UNIT)),
+            "amount": exact_numbers.format_qc(int(r[2] or 0)),
             "amount_u": int(r[2] or 0),
             "meta": json.loads(r[3] or "{}"),
             "createdAt": int(r[4] or 0),
@@ -2772,7 +2362,7 @@ def tgwt_ledger(user_id: str, limit: int = 20):
     return {
         "ok": True,
         "userId": user_id,
-        "pool": {"total": str(pool["total_u"] / UNIT), "distributed": str(pool["distributed_u"] / UNIT)},
+        "pool": {"total": exact_numbers.format_qc(pool["total_u"]), "distributed": exact_numbers.format_qc(pool["distributed_u"])},
         "rev": st["rev"],
         "balances": st,
         "events": events,
@@ -2782,152 +2372,69 @@ def tgwt_ledger(user_id: str, limit: int = 20):
 
 @app.post("/api/v1/tgwt/earn")
 def tgwt_earn(inp: TGWTEarnIn):
-    amt_u = _parse_amount_to_micro(inp.amount)
-    if amt_u <= 0:
-        return {"ok": False, "error": "invalid_amount"}
-
-    user_id = inp.userId
-    if not _rl_hit(user_id, "tgwt_earn", limit=120, window_sec=60):
-        return {"ok": False, "error": "rate_limited"}
-
-    with _lock:
-        conn = _db()
-        _tgwt_touch(conn, user_id)
-        if not _nonce_once(conn, user_id, inp.nonce):
-            conn.close()
-            return {"ok": False, "error": "dup_nonce"}
-
-        ok = _tgwt_award_pending_from_pool(conn, user_id, amt_u, "EARN", inp.meta or {})
-        if not ok:
-            conn.close()
-            return {"ok": False, "error": "pool_exhausted"}
-
-        st = _tgwt_get(conn, user_id)
-        conn.commit()
-        conn.close()
-
-    return {"ok": True, "rev": st["rev"], "balances": st}
+    return JSONResponse(status_code=410, content={"ok": False, "error": "legacy_unproven_reward_retired"})
 
 
 @app.post("/api/v1/tgwt/verify")
 def tgwt_verify(inp: TGWTVerifyIn):
-    user_id = inp.userId
-    if not _rl_hit(user_id, "tgwt_verify", limit=20, window_sec=60):
-        return {"ok": False, "error": "rate_limited"}
-
-    with _lock:
-        conn = _db()
-        _tgwt_touch(conn, user_id)
-        if not _nonce_once(conn, user_id, inp.nonce):
-            conn.close()
-            return {"ok": False, "error": "dup_nonce"}
-
-        st = _tgwt_get(conn, user_id)
-        if inp.amount is None:
-            want_u = int(st["pending_u"])
-        else:
-            want_u = _parse_amount_to_micro(inp.amount)
-            if want_u <= 0:
-                conn.close()
-                return {"ok": False, "error": "invalid_amount"}
-
-        moved_u = _tgwt_move_pending_to_verified(conn, user_id, want_u)
-        st2 = _tgwt_get(conn, user_id)
-        conn.commit()
-        conn.close()
-
-    return {"ok": True, "moved_u": moved_u, "rev": st2["rev"], "balances": st2}
+    return JSONResponse(status_code=410, content={"ok": False, "error": "legacy_unproven_reward_retired"})
 
 
 @app.post("/api/v1/withdraw/request")
 def withdraw_request(inp: WithdrawRequestIn):
-    asset = (inp.asset or "").upper().strip()
-    if asset != "TGWT":
+    from . import withdraw_ledger
+    from .player_auth import ACTOR
+    actor = ACTOR.get()
+    if not actor or actor != inp.userId:
+        return {"ok": False, "error": "telegram_session_required"}
+    if inp.asset.upper() != "TGWT":
         return {"ok": False, "error": "unsupported_asset"}
-
-    user_id = inp.userId
-    if not _rl_hit(user_id, "withdraw_request", limit=10, window_sec=60):
+    if not _rl_hit(actor, "withdraw_request", limit=10, window_sec=60):
         return {"ok": False, "error": "rate_limited"}
-
-    to = (inp.toAddress or "").strip()
-    if not (len(to) == 42 and to.startswith("0x")):
-        return {"ok": False, "error": "invalid_to_address"}
-
-    if inp.amount is None or inp.amount <= 0:
-        return {"ok": False, "error": "invalid_amount"}
-
-    amount_u = int(round(float(inp.amount) * UNIT))
-    if amount_u <= 0:
-        return {"ok": False, "error": "invalid_amount"}
-
-    fee_u = _fee_u(amount_u)
-    total_u = amount_u + fee_u
-    req_id = secrets.token_hex(8)
-
-    with _lock:
-        conn = _db()
-        _tgwt_touch(conn, user_id)
-
-        if not _nonce_once(conn, user_id, inp.nonce):
-            conn.close()
-            return {"ok": False, "error": "dup_nonce"}
-
-        st = _tgwt_get(conn, user_id)
-        if total_u > st["verified_u"]:
-            conn.close()
-            return {"ok": False, "error": "insufficient_verified"}
-
-        # verified -> withdrawn (fee düş)
-        conn.execute(
-            """
-            UPDATE tgwt_state
-            SET verified_u = verified_u - ?,
-                withdrawn_u = withdrawn_u + ?
-            WHERE user_id=?
-            """,
-            (total_u, amount_u, user_id),
-        )
-        _tgwt_bump_rev(conn, user_id)
-
-        # request kaydı
-        conn.execute(
-            """
-            INSERT INTO withdraw_requests(id, user_id, asset, amount_u, to_address, status, created_at, updated_at)
-            VALUES(?,?,?,?,?,?,?,?)
-            """,
-            (req_id, user_id, asset, amount_u, to, "ADMIN_REVIEW", _now(), _now()),
-        )
-
-        _tgwt_event(conn, user_id, "WITHDRAW_REQUEST", amount_u, {"to": to, "fee_u": fee_u})
-
-        st2 = _tgwt_get(conn, user_id)
-        conn.commit()
-        conn.close()
-
-    # TGWT_WITHDRAW_ADMIN_REVIEW_V1:
-    # No automatic BSC transfer and no dev auto-confirm here.
-    # Final/testnet phase will process this request through treasury/BEP-20 payout.
-    return {
-        "ok": True,
-        "requestId": req_id,
-        "status": "ADMIN_REVIEW",
-        "message": "TGWT withdrawal request created. Real BSC payout will be processed after admin review in the final/testnet payout module.",
-        "fee": str(fee_u / UNIT),
-        "rev": st2["rev"],
-        "balances": st2,
-    }
+    return withdraw_ledger.reserve(_db,actor,inp.toAddress,inp.amount,inp.nonce,_now())
 
 
-@app.get("/api/v1/withdraw/status")
+class WithdrawTransitionIn(BaseModel):
+    requestId: str
+    model_config = {"extra":"forbid"}
+
+
+@app.post("/api/v1/withdraw/cancel")
+def withdraw_cancel(inp: WithdrawTransitionIn):
+    from . import withdraw_ledger
+    from .player_auth import ACTOR
+    return withdraw_ledger.release(_db,inp.requestId,ACTOR.get(),_now())
+
+
+@app.post("/api/admin/tgwt/withdraw/reject")
+def withdraw_reject(inp: WithdrawTransitionIn):
+    from . import withdraw_ledger
+    return withdraw_ledger.release(_db,inp.requestId,None,_now(),operator=True,reject=True)
+
+
+@app.post("/api/admin/tgwt/withdraw/confirm")
+def withdraw_confirm_unavailable(inp: WithdrawTransitionIn):
+    # TODO(mainnet-final): User deferred real BSC payment/receipt verification
+    # to the final mainnet phase (2026-11-04). Keep this endpoint disabled until then.
+    # An operator click or body txHash is not a BSC receipt. No payout adapter
+    # is enabled before a deployed, request-bound user-paid claim is verified.
+    return JSONResponse(status_code=503,content={"ok":False,"error":"verified_bsc_claim_adapter_not_deployed"})
+
+
+@app.get("/api/v1/withdraw/status", response_model=WithdrawStatusResponse | RouteError)
 def withdraw_status(id: str):
+    from .player_auth import ACTOR
+    actor = ACTOR.get()
+    if not actor:
+        return {"ok": False, "error": "telegram_session_required"}
     with _lock:
         conn = _db()
         cur = conn.execute(
             """
             SELECT id, user_id, asset, amount_u, to_address, status, tx_hash, created_at, updated_at
-            FROM withdraw_requests WHERE id=?
+            FROM withdraw_requests WHERE id=? AND user_id=?
             """,
-            (id,),
+            (id, actor),
         )
         row = cur.fetchone()
         conn.close()
@@ -2937,7 +2444,7 @@ def withdraw_status(id: str):
         "id": row[0],
         "userId": row[1],
         "asset": row[2],
-        "amount": str((int(row[3] or 0) / UNIT)),
+        "amount": exact_numbers.format_qc(int(row[3] or 0)),
         "amount_u": int(row[3] or 0),
         "toAddress": row[4],
         "status": row[5],
@@ -2970,7 +2477,7 @@ def withdraw_list(user_id: str, limit: int = 10):
         items.append({
             "id": r[0],
             "asset": r[1],
-            "amount": str((int(r[2] or 0) / UNIT)),
+            "amount": exact_numbers.format_qc(int(r[2] or 0)),
             "amount_u": int(r[2] or 0),
             "toAddress": r[3],
             "status": r[4],
@@ -2994,7 +2501,8 @@ def rewards_history(playerId: str, limit: int = 20):
             """
             SELECT reward_id, source, zone_id, site_id, asset, amount, xp_amount,
                    status, settlement_status, tx_hash, created_at, confirmed_at,
-                   chain_height, block_reward, mining_client_type, network_reward_mode
+                   chain_height, block_reward, mining_client_type, network_reward_mode,
+                   amount_atoms,xp_units,block_reward_atoms,numeric_version
             FROM reward_records
             WHERE player_id=?
             ORDER BY created_at DESC
@@ -3016,15 +2524,19 @@ def rewards_history(playerId: str, limit: int = 20):
                 "zoneId": r[2],
                 "siteId": int(r[3] or 0),
                 "asset": r[4],
-                "amount": float(r[5] or 0),
-                "xpAmount": float(r[6] or 0),
+                "amount": exact_numbers.format_qc(r[16]),
+                "amountAtoms": str(r[16]),
+                "numericVersion": r[19],
+                "legacyNumericReviewRequired": r[19] == 0,
+                "legacyAmountUnverified": str(r[5]) if r[19] == 0 else None,
+                "xpAmount": int(r[17]),
                 "status": r[7],
                 "settlementStatus": r[8],
                 "txHash": r[9],
                 "createdAt": int(r[10] or 0),
                 "confirmedAt": int(r[11] or 0),
                 "chainHeight": int(r[12] or 0),
-                "blockReward": float(r[13] or 0),
+                "blockReward": exact_numbers.format_qc(r[18]),
                 "miningClientType": r[14] or "",
                 "networkRewardMode": r[15] or "",
             }
@@ -3086,111 +2598,10 @@ def _safe_int(v, default=0):
         return default
 
 
-def _save_qc_tx_record(
-    player_id,
-    txid,
-    from_address,
-    to_address,
-    amount,
-    created_height,
-    from_balance_before,
-    to_balance_before,
-    direct_json,
-):
-    if not txid:
-        return
-
-    with _lock:
-        conn = _db()
-        _ensure_qc_tx_records_table(conn)
-        now_ts = _now()
-        conn.execute(
-            """
-            INSERT OR REPLACE INTO qc_tx_records(
-                txid, player_id, from_address, to_address, amount,
-                status, created_height, confirmed_height,
-                from_balance_before, to_balance_before,
-                created_at, checked_at, note, direct_json
-            )
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            """,
-            (
-                txid,
-                player_id or "",
-                from_address or "",
-                to_address or "",
-                _safe_float(amount),
-                "PENDING_CHAIN",
-                _safe_int(created_height),
-                0,
-                _safe_float(from_balance_before),
-                _safe_float(to_balance_before),
-                now_ts,
-                now_ts,
-                "Created by Telegram Game /api/wallet/send-qc; waiting for block confirmation.",
-                direct_json or "",
-            ),
-        )
-        conn.commit()
-        conn.close()
 
 
-def _get_qc_tx_record(txid):
-    with _lock:
-        conn = _db()
-        _ensure_qc_tx_records_table(conn)
-        row = conn.execute(
-            """
-            SELECT txid, player_id, from_address, to_address, amount,
-                   status, created_height, confirmed_height,
-                   from_balance_before, to_balance_before,
-                   created_at, checked_at, note, direct_json
-            FROM qc_tx_records
-            WHERE txid=?
-            """,
-            ((txid or "").strip(),),
-        ).fetchone()
-        conn.commit()
-        conn.close()
-
-    if not row:
-        return None
-
-    return {
-        "txid": row[0],
-        "playerId": row[1],
-        "fromAddress": row[2],
-        "toAddress": row[3],
-        "amount": _safe_float(row[4]),
-        "status": row[5],
-        "createdHeight": _safe_int(row[6]),
-        "confirmedHeight": _safe_int(row[7]),
-        "fromBalanceBefore": _safe_float(row[8]),
-        "toBalanceBefore": _safe_float(row[9]),
-        "createdAt": _safe_int(row[10]),
-        "checkedAt": _safe_int(row[11]),
-        "note": row[12] or "",
-        "directJson": row[13] or "",
-    }
 
 
-def _mark_qc_tx_record_confirmed(txid, confirmed_height, note):
-    with _lock:
-        conn = _db()
-        _ensure_qc_tx_records_table(conn)
-        conn.execute(
-            """
-            UPDATE qc_tx_records
-            SET status='CONFIRMED_CHAIN_LOCAL',
-                confirmed_height=?,
-                checked_at=?,
-                note=?
-            WHERE txid=?
-            """,
-            (_safe_int(confirmed_height), _now(), note or "Confirmed by local balance/height fallback.", txid),
-        )
-        conn.commit()
-        conn.close()
 
 
 @app.get("/api/qc/tx/status")
@@ -3213,62 +2624,8 @@ async def qc_tx_status(txid: str):
             "qcNode": direct,
         }
 
-    # Fallback for old release quantumcoin.exe where /api/tx/status returns HTML.
-    rec = _get_qc_tx_record(txid_clean)
-    if not rec:
-        return {
-            "ok": False,
-            "txid": txid_clean,
-            "source": "local_fallback",
-            "status": "NOT_TRACKED",
-            "confirmed": False,
-            "error": "tx_not_tracked_locally",
-            "qcNode": direct,
-        }
-
-    to_balance = await qc_fetch_address_balance(rec["toAddress"])
-    from_balance = await qc_fetch_address_balance(rec["fromAddress"])
-
-    current_height = _safe_int(
-        (to_balance or {}).get("height")
-        or (from_balance or {}).get("height")
-        or 0
-    )
-
-    current_to_balance = _safe_float((to_balance or {}).get("balance"), rec["toBalanceBefore"])
-    expected_to_balance = _safe_float(rec["toBalanceBefore"]) + _safe_float(rec["amount"])
-
-    confirmed_local = (
-        bool((to_balance or {}).get("ok", True))
-        and current_height > _safe_int(rec["createdHeight"])
-        and current_to_balance + 0.00000001 >= expected_to_balance
-    )
-
-    if confirmed_local and rec["status"] != "CONFIRMED_CHAIN_LOCAL":
-        _mark_qc_tx_record_confirmed(
-            txid_clean,
-            current_height,
-            "Confirmed by fallback: recipient balance increased and chain height advanced.",
-        )
-        rec = _get_qc_tx_record(txid_clean) or rec
-
-    return {
-        "ok": True,
-        "txid": txid_clean,
-        "source": "local_fallback",
-        "status": "CONFIRMED_CHAIN_LOCAL" if confirmed_local else rec["status"],
-        "confirmed": bool(confirmed_local),
-        "createdHeight": rec["createdHeight"],
-        "confirmedHeight": current_height if confirmed_local else rec["confirmedHeight"],
-        "fromAddress": rec["fromAddress"],
-        "toAddress": rec["toAddress"],
-        "amount": rec["amount"],
-        "toBalanceBefore": rec["toBalanceBefore"],
-        "toBalanceNow": current_to_balance,
-        "expectedToBalance": expected_to_balance,
-        "qcNode": direct,
-        "note": "Fallback used because old release /api/tx/status did not return JSON.",
-    }
+    return {"ok": False, "txid": txid_clean, "confirmed": False,
+            "status": "UNKNOWN", "error": "node_transaction_receipt_required"}
 
 
 @app.get("/api/wallet/tx-history")
@@ -3322,71 +2679,44 @@ def wallet_tx_history(playerId: str, limit: int = 20):
 class LinkQCAddressIn(BaseModel):
     playerId: str
     address: str
+    nonce: str = ""
+    publicKey: str = ""
+    signature: str = ""
+    model_config = {"extra":"forbid"}
 
 
 # QC_WALLET_SEND_QC_V1
 class WalletSendQCIn(BaseModel):
     playerId: str
-    toAddress: str
-    amount: str
-    privHex: str
+    initData: str = ""
+    transaction: str
+    model_config = {"extra": "forbid"}
 
 
-@app.post("/api/wallet/link-qc-address")
+
+@app.post("/api/wallet/link-qc-address", response_model=WalletLinkResponse | RouteError)
 async def link_qc_address(inp: LinkQCAddressIn):
-    # QC_ADDRESS_UNIQUE_GUARD_V1
-    player_id = (inp.playerId or "").strip()
-    address = (inp.address or "").strip()
-
-    if not player_id:
-        return {"ok": False, "error": "empty playerId"}
-
-    if not address:
-        return {"ok": False, "error": "empty address"}
-
-    # Önce QC node üzerinden adres okunabiliyor mu kontrol et.
-    balance = await qc_fetch_address_balance(address)
-
-    if not balance.get("ok"):
-        return {
-            "ok": False,
-            "playerId": player_id,
-            "address": address,
-            "error": "qc_address_not_readable",
-            "qcNode": balance,
-        }
-
-    with _lock:
-        conn = _db()
-        _touch_player(conn, player_id, None)
+    from . import wallet_link
+    from .player_auth import ACTOR
+    actor = ACTOR.get()
+    if not actor or actor != inp.playerId:
+        return {"ok":False,"error":"telegram_session_required"}
+    if not inp.nonce or not inp.publicKey or not inp.signature:
+        return {"ok":False,"error":"wallet_ownership_proof_required"}
+    with closing(_db()) as conn, conn:
+        _touch_player(conn,actor,None)
         _ensure_qc_address_column(conn)
-        _ensure_unique_qc_address_index(conn)
+    return wallet_link.consume(_db,actor,inp.address,inp.nonce,inp.publicKey,inp.signature,_now())
 
-        existing_owner = _find_qc_address_owner(conn, address)
-        if existing_owner and existing_owner != player_id:
-            conn.close()
-            return {
-                "ok": False,
-                "playerId": player_id,
-                "address": address,
-                "ownerPlayerId": existing_owner,
-                "error": "qc_address_already_linked",
-                "message": "This QC address is already linked to another Telegram Game player.",
-            }
 
-        conn.execute(
-            "UPDATE players SET qc_address=?, last_seen=? WHERE player_id=?",
-            (address, _now(), player_id),
-        )
-        conn.commit()
-        conn.close()
-
-    return {
-        "ok": True,
-        "playerId": player_id,
-        "qcAddress": address,
-        "realBalance": balance,
-    }
+@app.post("/api/wallet/link-challenge", response_model=WalletChallengeResponse | RouteError)
+def wallet_link_challenge(inp: LinkQCAddressIn):
+    from . import wallet_link
+    from .player_auth import ACTOR
+    actor = ACTOR.get()
+    if not actor or actor != inp.playerId:
+        return {"ok":False,"error":"telegram_session_required"}
+    return wallet_link.issue(_db,actor,inp.address,_now())
 
 
 @app.get("/api/wallet/real-balance")
@@ -3431,110 +2761,29 @@ async def wallet_real_balance(playerId: str):
 # QC_WALLET_SEND_QC_V1
 @app.post("/api/wallet/send-qc")
 async def wallet_send_qc(inp: WalletSendQCIn):
-    player_id = (inp.playerId or "").strip()
-    to_address = (inp.toAddress or "").strip()
-    amount_str = str(inp.amount or "").strip()
-    priv_hex = (inp.privHex or "").strip()
-
+    player_id = _nft_verified_player_id_v1(inp.initData, inp.playerId)
     if not player_id:
-        return {"ok": False, "error": "empty playerId"}
-    if not to_address:
-        return {"ok": False, "error": "empty toAddress"}
-    if not amount_str:
-        return {"ok": False, "error": "empty amount"}
-    if not priv_hex:
-        return {"ok": False, "error": "empty privHex"}
-
-    try:
-        amount_val = float(amount_str)
-    except Exception:
-        return {"ok": False, "error": "invalid_amount"}
-
-    if amount_val <= 0:
-        return {"ok": False, "error": "invalid_amount"}
-
+        return {"ok": False, "error": "telegram_identity_required"}
     with _lock:
         conn = _db()
-        _touch_player(conn, player_id, None)
-        _ensure_qc_address_column(conn)
-        qc_address = _get_player_qc_address(conn, player_id)
-        conn.commit()
-        conn.close()
-
-    if not qc_address:
-        return {
-            "ok": False,
-            "error": "qc_address_not_linked",
-            "playerId": player_id,
-        }
-
-    from_before = await qc_fetch_address_balance(qc_address)
-    to_before = await qc_fetch_address_balance(to_address)
-
-    created_height = _safe_int(
-        (from_before or {}).get("height")
-        or (to_before or {}).get("height")
-        or 0
-    )
-    from_balance_before = _safe_float((from_before or {}).get("balance"), 0.0)
-    to_balance_before = _safe_float((to_before or {}).get("balance"), 0.0)
-
-    send_result = await qc_fetch_send_tx(
-        from_address=qc_address,
-        to_address=to_address,
-        amount=amount_str,
-        priv_hex=priv_hex,
-    )
-
-    if not bool(send_result.get("success") or send_result.get("ok")):
-        return {
-            "ok": False,
-            "error": "qc_send_failed",
-            "playerId": player_id,
-            "fromAddress": qc_address,
-            "toAddress": to_address,
-            "amount": amount_str,
-            "qcSendResult": send_result,
-        }
-
-    txid = (
-        send_result.get("txid")
-        or send_result.get("tx_hash")
-        or send_result.get("txHash")
-        or ""
-    )
-
+        try:
+            qc_address = _get_player_qc_address(conn, player_id)
+        finally:
+            conn.close()
     try:
-        _save_qc_tx_record(
-            player_id=player_id,
-            txid=txid,
-            from_address=qc_address,
-            to_address=to_address,
-            amount=amount_str,
-            created_height=created_height,
-            from_balance_before=from_balance_before,
-            to_balance_before=to_balance_before,
-            direct_json=json.dumps(send_result, ensure_ascii=False),
-        )
-    except Exception:
-        pass
-
-    real_balance = await qc_fetch_address_balance(qc_address)
-
-    return {
-        "ok": True,
-        "playerId": player_id,
-        "fromAddress": qc_address,
-        "toAddress": to_address,
-        "amount": amount_str,
-        "txid": txid,
-        "status": "PENDING_CHAIN",
-        "message": "QC transaction created. Mine a block to include it in chain.",
-        "qcSendResult": send_result,
-        "realBalance": real_balance,
-    }
-
-
+        if len(inp.transaction) > 1048576:
+            return {"ok": False, "error": "signed_transaction_size_limit"}
+        envelope = json.loads(inp.transaction)
+        transaction = envelope["transaction"]
+        if set(envelope) != {"transaction"} or not isinstance(transaction, dict):
+            return {"ok": False, "error": "signed_transaction_required"}
+    except (ValueError, KeyError, TypeError):
+        return {"ok": False, "error": "signed_transaction_required"}
+    if not qc_address or transaction.get("Sender") != qc_address:
+        return {"ok": False, "error": "wallet_sender_mismatch"}
+    from telegram_game.utils.qc_api import fetch_submit_signed_tx
+    result = await fetch_submit_signed_tx(transaction)
+    return {"ok": bool(result.get("success")), "txid": result.get("txid", ""), "status": "PENDING_CHAIN" if result.get("success") else "REJECTED", "qcSendResult": result}
 
 
 # QC_SETTLEMENT_QUEUE_V1
@@ -3623,121 +2872,7 @@ class SettlementMarkPendingIn(BaseModel):
 
 @app.post("/api/settlement/mark-pending")
 def settlement_mark_pending(inp: SettlementMarkPendingIn):
-    reward_id = (inp.rewardId or "").strip()
-
-    if not reward_id:
-        return {"ok": False, "error": "empty rewardId"}
-
-    if not _settlement_dev_actions_enabled():
-        return _settlement_dev_actions_error()
-
-    with _lock:
-        conn = _db()
-        _ensure_reward_settlement_columns(conn)
-
-        row = conn.execute(
-            """
-            SELECT reward_id, player_id, source, zone_id, site_id, asset,
-                   amount, xp_amount, status, settlement_status, tx_hash,
-                   target_qc_address, settlement_note, created_at, confirmed_at,
-                   settlement_updated_at, chain_height, block_reward,
-                   mining_client_type, network_reward_mode
-            FROM reward_records
-            WHERE reward_id=?
-            """,
-            (reward_id,),
-        ).fetchone()
-
-        if not row:
-            conn.close()
-            return {"ok": False, "error": "reward_not_found", "rewardId": reward_id}
-
-        current_status = row[9]
-        tx_hash = row[10]
-        target_qc_address = (row[11] or "").strip()
-
-        if current_status != "READY_FOR_CHAIN":
-            conn.close()
-            return {
-                "ok": False,
-                "error": "invalid_settlement_status",
-                "rewardId": reward_id,
-                "currentStatus": current_status,
-                "expectedStatus": "READY_FOR_CHAIN",
-            }
-
-        if tx_hash:
-            conn.close()
-            return {
-                "ok": False,
-                "error": "tx_hash_already_exists",
-                "rewardId": reward_id,
-                "txHash": tx_hash,
-            }
-
-        if not target_qc_address:
-            conn.close()
-            return {
-                "ok": False,
-                "error": "missing_target_qc_address",
-                "rewardId": reward_id,
-            }
-
-        now_ts = _now()
-
-        conn.execute(
-            """
-            UPDATE reward_records
-            SET settlement_status='PENDING_CHAIN',
-                settlement_note=?,
-                settlement_updated_at=?
-            WHERE reward_id=?
-            """,
-            (
-                "Marked as PENDING_CHAIN. Waiting for future QC node settlement transaction.",
-                now_ts,
-                reward_id,
-            ),
-        )
-
-        conn.commit()
-
-        updated = conn.execute(
-            """
-            SELECT reward_id, player_id, source, zone_id, site_id, asset,
-                   amount, xp_amount, status, settlement_status, tx_hash,
-                   target_qc_address, settlement_note, created_at, confirmed_at,
-                   settlement_updated_at, chain_height, block_reward,
-                   mining_client_type, network_reward_mode
-            FROM reward_records
-            WHERE reward_id=?
-            """,
-            (reward_id,),
-        ).fetchone()
-
-        conn.close()
-
-    return {
-        "ok": True,
-        "reward": {
-            "rewardId": updated[0],
-            "playerId": updated[1],
-            "source": updated[2],
-            "zoneId": updated[3],
-            "siteId": int(updated[4] or 0),
-            "asset": updated[5],
-            "amount": float(updated[6] or 0),
-            "xpAmount": float(updated[7] or 0),
-            "status": updated[8],
-            "settlementStatus": updated[9],
-            "txHash": updated[10],
-            "targetQcAddress": updated[11],
-            "settlementNote": updated[12],
-            "createdAt": int(updated[13] or 0),
-            "confirmedAt": int(updated[14] or 0),
-            "settlementUpdatedAt": int(updated[15] or 0),
-        }
-    }
+    return JSONResponse(status_code=410, content={"ok":False,"error":"legacy_float_qc_settlement_retired","note":"Historical records retained for audit; QC mining is paid directly by the node."})
 
 
 
@@ -3813,124 +2948,7 @@ class SettlementMockConfirmIn(BaseModel):
 
 @app.post("/api/settlement/mock-confirm")
 def settlement_mock_confirm(inp: SettlementMockConfirmIn):
-    reward_id = (inp.rewardId or "").strip()
-    provided_tx = (inp.txHash or "").strip()
-
-    if not reward_id:
-        return {"ok": False, "error": "empty rewardId"}
-
-    if not _settlement_dev_actions_enabled():
-        return _settlement_dev_actions_error()
-
-    with _lock:
-        conn = _db()
-        _ensure_reward_settlement_columns(conn)
-
-        row = conn.execute(
-            """
-            SELECT reward_id, player_id, source, zone_id, site_id, asset,
-                   amount, xp_amount, status, settlement_status, tx_hash,
-                   target_qc_address, settlement_note, created_at, confirmed_at,
-                   settlement_updated_at
-            FROM reward_records
-            WHERE reward_id=?
-            """,
-            (reward_id,),
-        ).fetchone()
-
-        if not row:
-            conn.close()
-            return {"ok": False, "error": "reward_not_found", "rewardId": reward_id}
-
-        current_status = row[9]
-        current_tx = row[10]
-        target_qc_address = (row[11] or "").strip()
-
-        if current_status != "PENDING_CHAIN":
-            conn.close()
-            return {
-                "ok": False,
-                "error": "invalid_settlement_status",
-                "rewardId": reward_id,
-                "currentStatus": current_status,
-                "expectedStatus": "PENDING_CHAIN",
-            }
-
-        if current_tx:
-            conn.close()
-            return {
-                "ok": False,
-                "error": "tx_hash_already_exists",
-                "rewardId": reward_id,
-                "txHash": current_tx,
-            }
-
-        if not target_qc_address:
-            conn.close()
-            return {
-                "ok": False,
-                "error": "missing_target_qc_address",
-                "rewardId": reward_id,
-            }
-
-        now_ts = _now()
-        tx_hash = provided_tx or ("mock_tx_" + secrets.token_hex(16))
-
-        conn.execute(
-            """
-            UPDATE reward_records
-            SET settlement_status='CONFIRMED_CHAIN',
-                tx_hash=?,
-                settlement_note=?,
-                settlement_updated_at=?
-            WHERE reward_id=?
-            """,
-            (
-                tx_hash,
-                "Mock confirmed. Replace this with real QC node transaction confirmation later.",
-                now_ts,
-                reward_id,
-            ),
-        )
-
-        conn.commit()
-
-        updated = conn.execute(
-            """
-            SELECT reward_id, player_id, source, zone_id, site_id, asset,
-                   amount, xp_amount, status, settlement_status, tx_hash,
-                   target_qc_address, settlement_note, created_at, confirmed_at,
-                   settlement_updated_at
-            FROM reward_records
-            WHERE reward_id=?
-            """,
-            (reward_id,),
-        ).fetchone()
-
-        conn.close()
-
-    return {
-        "ok": True,
-        "mock": True,
-        "reward": {
-            "rewardId": updated[0],
-            "playerId": updated[1],
-            "source": updated[2],
-            "zoneId": updated[3],
-            "siteId": int(updated[4] or 0),
-            "asset": updated[5],
-            "amount": float(updated[6] or 0),
-            "xpAmount": float(updated[7] or 0),
-            "status": updated[8],
-            "settlementStatus": updated[9],
-            "txHash": updated[10],
-            "targetQcAddress": updated[11],
-            "settlementNote": updated[12],
-            "createdAt": int(updated[13] or 0),
-            "confirmedAt": int(updated[14] or 0),
-            "settlementUpdatedAt": int(updated[15] or 0),
-        }
-    }
+    return JSONResponse(status_code=410, content={"ok":False,"error":"legacy_float_qc_settlement_retired","note":"Historical records retained for audit; QC mining is paid directly by the node."})
 
 
 
@@ -4008,136 +3026,7 @@ class QCWithdrawRequestIn(BaseModel):
 
 @app.post("/api/withdraw/request")
 def qc_withdraw_request(inp: QCWithdrawRequestIn):
-    player_id = (inp.playerId or "").strip()
-
-    if not player_id:
-        return {"ok": False, "error": "empty playerId"}
-
-    with _lock:
-        conn = _db()
-        _touch_player(conn, player_id, None)
-        _ensure_qc_address_column(conn)
-        _ensure_reward_settlement_columns(conn)
-        _ensure_reward_chain_columns(conn)
-        _ensure_withdraw_batch_tables(conn)
-        _ensure_withdraw_payout_meta_columns(conn)
-
-        target_qc_address = _get_player_qc_address(conn, player_id)
-
-        if not target_qc_address:
-            conn.close()
-            return {
-                "ok": False,
-                "error": "qc_address_not_linked",
-                "message": "Link or create a QC wallet address before requesting withdraw.",
-            }
-
-        rows = conn.execute(
-            """
-            SELECT reward_id, amount, chain_height
-            FROM reward_records
-            WHERE player_id=?
-              AND settlement_status='READY_FOR_CHAIN'
-              AND tx_hash IS NULL
-              AND COALESCE(target_qc_address, '') != ''
-              AND COALESCE(withdraw_batch_id, '') = ''
-            ORDER BY created_at ASC
-            """,
-            (player_id,),
-        ).fetchall()
-
-        if not rows:
-            conn.close()
-            return {
-                "ok": False,
-                "error": "no_withdrawable_rewards",
-                "playerId": player_id,
-                "minWithdrawAmount": QC_MIN_WITHDRAW_AMOUNT,
-            }
-
-        reward_ids = [r[0] for r in rows]
-        amount = float(sum(float(r[1] or 0) for r in rows))
-        reward_count = len(rows)
-
-        chain_heights = [int(r[2] or 0) for r in rows if int(r[2] or 0) > 0]
-        min_chain_height = min(chain_heights) if chain_heights else 0
-        max_chain_height = max(chain_heights) if chain_heights else 0
-
-        if amount < QC_MIN_WITHDRAW_AMOUNT:
-            conn.close()
-            return {
-                "ok": False,
-                "error": "below_min_withdraw_amount",
-                "playerId": player_id,
-                "withdrawableAmount": amount,
-                "minWithdrawAmount": QC_MIN_WITHDRAW_AMOUNT,
-                "rewardCount": reward_count,
-            }
-
-        batch_id = "wdb_" + secrets.token_hex(16)
-        ts = _now()
-
-        conn.execute(
-            """
-            INSERT INTO withdraw_batches(
-                batch_id, player_id, target_qc_address, amount, reward_count,
-                status, tx_hash, reward_ids_json, note,
-                min_chain_height, max_chain_height, created_at, updated_at,
-                payout_mode, payout_type, tx_check_note
-            )
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            """,
-            (
-                batch_id,
-                player_id,
-                target_qc_address,
-                amount,
-                reward_count,
-                "REQUESTED",
-                None,
-                json.dumps(reward_ids, ensure_ascii=False),
-                "User requested QC withdraw. Ready for admin/future payout processing.",
-                min_chain_height,
-                max_chain_height,
-                ts,
-                ts,
-                "REAL_PAYOUT_PREP",
-                "ADMIN_REVIEW",
-                "QC_WITHDRAW_REAL_PREP_V1: Prepared for real payout precheck only. No private key accepted and no QC transfer sent.",
-            ),
-        )
-
-        placeholders = ",".join(["?"] * len(reward_ids))
-        conn.execute(
-            f"""
-            UPDATE reward_records
-            SET
-                withdraw_batch_id=?,
-                settlement_note='Withdraw batch requested. Waiting for payout processing.',
-                settlement_updated_at=?
-            WHERE reward_id IN ({placeholders})
-            """,
-            [batch_id, ts] + reward_ids,
-        )
-
-        conn.commit()
-        conn.close()
-
-    return {
-        "ok": True,
-        "batch": {
-            "batchId": batch_id,
-            "playerId": player_id,
-            "targetQcAddress": target_qc_address,
-            "amount": amount,
-            "rewardCount": reward_count,
-            "status": "REQUESTED",
-            "rewardIds": reward_ids,
-            "minChainHeight": min_chain_height,
-            "maxChainHeight": max_chain_height,
-            "minWithdrawAmount": QC_MIN_WITHDRAW_AMOUNT,
-        },
-    }
+    return JSONResponse(status_code=410, content={"ok":False,"error":"legacy_float_qc_settlement_retired","note":"Historical records retained for audit; QC mining is paid directly by the node."})
 
 
 # QC_WITHDRAW_STATUS_PAYOUT_META_V1
@@ -4217,210 +3106,12 @@ class QCWithdrawBatchIn(BaseModel):
 
 @app.post("/api/withdraw/mark-pending")
 def qc_withdraw_mark_pending(inp: QCWithdrawBatchIn):
-    batch_id = (inp.batchId or "").strip()
-
-    if not batch_id:
-        return {"ok": False, "error": "empty batchId"}
-
-    if not _settlement_dev_actions_enabled():
-        return _settlement_dev_actions_error()
-
-    with _lock:
-        conn = _db()
-        _ensure_withdraw_batch_tables(conn)
-        _ensure_withdraw_payout_meta_columns(conn)
-        _ensure_reward_settlement_columns(conn)
-
-        row = conn.execute(
-            """
-            SELECT batch_id, player_id, amount, reward_count, status, tx_hash,
-                   target_qc_address, min_chain_height, max_chain_height
-            FROM withdraw_batches
-            WHERE batch_id=?
-            """,
-            (batch_id,),
-        ).fetchone()
-
-        if not row:
-            conn.close()
-            return {"ok": False, "error": "batch_not_found", "batchId": batch_id}
-
-        status = row[4] or ""
-        if status != "REQUESTED":
-            conn.close()
-            return {
-                "ok": False,
-                "error": "invalid_batch_status",
-                "batchId": batch_id,
-                "status": status,
-                "expected": "REQUESTED",
-            }
-
-        ts = _now()
-
-        conn.execute(
-            """
-            UPDATE withdraw_batches
-            SET
-                status='PENDING_CHAIN',
-                note='Marked as PENDING_CHAIN. Waiting for QC node payout transaction.',
-                updated_at=?
-            WHERE batch_id=?
-            """,
-            (ts, batch_id),
-        )
-
-        conn.execute(
-            """
-            UPDATE reward_records
-            SET
-                settlement_status='PENDING_CHAIN',
-                settlement_note='Withdraw batch marked as PENDING_CHAIN. Waiting for payout transaction.',
-                settlement_updated_at=?
-            WHERE withdraw_batch_id=?
-              AND settlement_status='READY_FOR_CHAIN'
-              AND tx_hash IS NULL
-            """,
-            (ts, batch_id),
-        )
-
-        updated = conn.execute(
-            """
-            SELECT batch_id, player_id, target_qc_address, amount, reward_count,
-                   status, tx_hash, note, min_chain_height, max_chain_height,
-                   created_at, updated_at, payout_mode, payout_type,
-                   tx_confirmed_height, tx_checked_at, tx_check_note
-            FROM withdraw_batches
-            WHERE batch_id=?
-            """,
-            (batch_id,),
-        ).fetchone()
-
-        conn.commit()
-        conn.close()
-
-    return {
-        "ok": True,
-        "batch": {
-            "batchId": updated[0],
-            "playerId": updated[1],
-            "targetQcAddress": updated[2],
-            "amount": float(updated[3] or 0),
-            "rewardCount": int(updated[4] or 0),
-            "status": updated[5],
-            "txHash": updated[6],
-            "note": updated[7],
-            "minChainHeight": int(updated[8] or 0),
-            "maxChainHeight": int(updated[9] or 0),
-            "createdAt": int(updated[10] or 0),
-            "updatedAt": int(updated[11] or 0),
-        },
-    }
+    return JSONResponse(status_code=410, content={"ok":False,"error":"legacy_float_qc_settlement_retired","note":"Historical records retained for audit; QC mining is paid directly by the node."})
 
 
 @app.post("/api/withdraw/mock-confirm")
 def qc_withdraw_mock_confirm(inp: QCWithdrawBatchIn):
-    batch_id = (inp.batchId or "").strip()
-    provided_tx = (inp.txHash or "").strip()
-
-    if not batch_id:
-        return {"ok": False, "error": "empty batchId"}
-
-    if not _settlement_dev_actions_enabled():
-        return _settlement_dev_actions_error()
-
-    with _lock:
-        conn = _db()
-        _ensure_withdraw_batch_tables(conn)
-        _ensure_withdraw_payout_meta_columns(conn)
-        _ensure_reward_settlement_columns(conn)
-
-        row = conn.execute(
-            """
-            SELECT batch_id, player_id, amount, reward_count, status, tx_hash,
-                   target_qc_address, min_chain_height, max_chain_height
-            FROM withdraw_batches
-            WHERE batch_id=?
-            """,
-            (batch_id,),
-        ).fetchone()
-
-        if not row:
-            conn.close()
-            return {"ok": False, "error": "batch_not_found", "batchId": batch_id}
-
-        status = row[4] or ""
-        if status != "PENDING_CHAIN":
-            conn.close()
-            return {
-                "ok": False,
-                "error": "invalid_batch_status",
-                "batchId": batch_id,
-                "status": status,
-                "expected": "PENDING_CHAIN",
-            }
-
-        tx_hash = provided_tx or ("mock_wdb_tx_" + secrets.token_hex(16))
-        ts = _now()
-
-        conn.execute(
-            """
-            UPDATE withdraw_batches
-            SET
-                status='CONFIRMED_CHAIN',
-                tx_hash=?,
-                note='Mock confirmed withdraw batch. Replace with real QC payout tx confirmation later.',
-                updated_at=?
-            WHERE batch_id=?
-            """,
-            (tx_hash, ts, batch_id),
-        )
-
-        conn.execute(
-            """
-            UPDATE reward_records
-            SET
-                settlement_status='CONFIRMED_CHAIN',
-                tx_hash=?,
-                settlement_note='Withdraw batch mock confirmed. Replace with real QC payout tx confirmation later.',
-                settlement_updated_at=?
-            WHERE withdraw_batch_id=?
-              AND settlement_status='PENDING_CHAIN'
-            """,
-            (tx_hash, ts, batch_id),
-        )
-
-        updated = conn.execute(
-            """
-            SELECT batch_id, player_id, target_qc_address, amount, reward_count,
-                   status, tx_hash, note, min_chain_height, max_chain_height,
-                   created_at, updated_at
-            FROM withdraw_batches
-            WHERE batch_id=?
-            """,
-            (batch_id,),
-        ).fetchone()
-
-        conn.commit()
-        conn.close()
-
-    return {
-        "ok": True,
-        "batch": {
-            "batchId": updated[0],
-            "playerId": updated[1],
-            "targetQcAddress": updated[2],
-            "amount": float(updated[3] or 0),
-            "rewardCount": int(updated[4] or 0),
-            "status": updated[5],
-            "txHash": updated[6],
-            "note": updated[7],
-            "minChainHeight": int(updated[8] or 0),
-            "maxChainHeight": int(updated[9] or 0),
-            "createdAt": int(updated[10] or 0),
-            "updatedAt": int(updated[11] or 0),
-        },
-    }
+    return JSONResponse(status_code=410, content={"ok":False,"error":"legacy_float_qc_settlement_retired","note":"Historical records retained for audit; QC mining is paid directly by the node."})
 
 
 
@@ -4429,7 +3120,8 @@ def qc_withdraw_mock_confirm(inp: QCWithdrawBatchIn):
 
 # QC_REAL_PAYOUT_TXSTATUS_READY_V1
 async def qc_check_tx_status_endpoint_ready():
-    base = (__import__("telegram_game.config", fromlist=["get_api_base"]).get_api_base()).rstrip("/")
+    from telegram_game.utils.qc_api import get_api_base, node_urlopen
+    base = get_api_base().rstrip("/")
     url = base + "/api/tx/status?id=__precheck__"
 
     try:
@@ -4439,10 +3131,10 @@ async def qc_check_tx_status_endpoint_ready():
         def _fetch():
             req = urllib.request.Request(
                 url,
-                headers={"Accept": "application/json"},
+                headers={"Accept": "application/json", "X-QC-API-KEY": os.getenv("QC_API_TOKEN", "")},
                 method="GET",
             )
-            with urllib.request.urlopen(req, timeout=5) as resp:
+            with node_urlopen(req, timeout=5) as resp:
                 raw = resp.read().decode("utf-8", errors="replace")
                 return resp.status, raw
 
@@ -4498,129 +3190,7 @@ class QCRealPayoutPrecheckIn(BaseModel):
 
 @app.post("/api/withdraw/real-payout-precheck")
 async def qc_withdraw_real_payout_precheck(inp: QCRealPayoutPrecheckIn):
-    batch_id = (inp.batchId or "").strip()
-
-    if not batch_id:
-        return {"ok": False, "ready": False, "error": "empty batchId"}
-
-    treasury_address = (os.environ.get("QC_TREASURY_ADDRESS") or "").strip()
-
-    checks = {
-        "batchExists": False,
-        "batchStatusAllowed": False,
-        "targetAddressPresent": False,
-        "treasuryAddressConfigured": bool(treasury_address),
-        "qcNodeReachable": False,
-        "treasuryBalanceReadable": False,
-        "treasurySpendableEnough": False,
-        "realSendEndpointKnown": True,
-        "txStatusEndpointReady": False,
-        "privateKeyProvided": False,
-    }
-
-    with _lock:
-        conn = _db()
-        _ensure_withdraw_batch_tables(conn)
-        _ensure_withdraw_payout_meta_columns(conn)
-
-        row = conn.execute(
-            """
-            SELECT batch_id, player_id, target_qc_address, amount, reward_count,
-                   status, tx_hash, note, min_chain_height, max_chain_height,
-                   created_at, updated_at, payout_mode, payout_type,
-                   tx_confirmed_height, tx_checked_at, tx_check_note
-            FROM withdraw_batches
-            WHERE batch_id=?
-            """,
-            (batch_id,),
-        ).fetchone()
-
-        conn.commit()
-        conn.close()
-
-    if not row:
-        return {
-            "ok": False,
-            "ready": False,
-            "error": "batch_not_found",
-            "batchId": batch_id,
-            "checks": checks,
-        }
-
-    checks["batchExists"] = True
-
-    batch = {
-        "batchId": row[0],
-        "playerId": row[1],
-        "targetQcAddress": row[2],
-        "amount": float(row[3] or 0),
-        "rewardCount": int(row[4] or 0),
-        "status": row[5],
-        "txHash": row[6],
-        "note": row[7],
-        "minChainHeight": int(row[8] or 0),
-        "maxChainHeight": int(row[9] or 0),
-        "createdAt": int(row[10] or 0),
-        "updatedAt": int(row[11] or 0),
-        "payoutMode": row[12] or "",
-        "payoutType": row[13] or "",
-        "txConfirmedHeight": int(row[14] or 0),
-        "txCheckedAt": int(row[15] or 0),
-        "txCheckNote": row[16] or "",
-    }
-
-    # For real payout, a batch should normally be REQUESTED or PENDING_CHAIN.
-    # CONFIRMED_CHAIN is already completed and should not be sent again.
-    allowed_statuses = {"REQUESTED", "PENDING_CHAIN"}
-    checks["batchStatusAllowed"] = batch["status"] in allowed_statuses
-    checks["targetAddressPresent"] = bool(batch["targetQcAddress"])
-
-    qc_health = await qc_fetch_health()
-    checks["qcNodeReachable"] = bool(qc_health.get("ok"))
-
-    treasury_balance = None
-    if treasury_address:
-        treasury_balance = await qc_fetch_address_balance(treasury_address)
-        checks["treasuryBalanceReadable"] = bool(treasury_balance.get("ok"))
-        spendable = float(treasury_balance.get("spendable") or 0)
-        checks["treasurySpendableEnough"] = spendable >= float(batch["amount"] or 0)
-
-    # Important: We intentionally do not accept or read private keys here.
-    checks["privateKeyProvided"] = False
-
-    tx_status_check = await qc_check_tx_status_endpoint_ready()
-    checks["txStatusEndpointReady"] = bool(tx_status_check.get("ready"))
-
-    ready = all([
-        checks["batchExists"],
-        checks["batchStatusAllowed"],
-        checks["targetAddressPresent"],
-        checks["treasuryAddressConfigured"],
-        checks["qcNodeReachable"],
-        checks["treasuryBalanceReadable"],
-        checks["treasurySpendableEnough"],
-        checks["realSendEndpointKnown"],
-    ])
-
-    blockers = [k for k, v in checks.items() if not v and k not in ("privateKeyProvided", "txStatusEndpointReady")]
-
-    return {
-        "ok": True,
-        "ready": bool(ready),
-        "batch": batch,
-        "treasury": {
-            "address": treasury_address,
-            "balance": treasury_balance.get("balance") if treasury_balance else None,
-            "spendable": treasury_balance.get("spendable") if treasury_balance else None,
-            "height": treasury_balance.get("height") if treasury_balance else None,
-            "ok": bool(treasury_balance.get("ok")) if treasury_balance else False,
-        },
-        "qcHealth": qc_health,
-        "txStatusCheck": tx_status_check,
-        "checks": checks,
-        "blockers": blockers,
-        "note": "Precheck only. No QC transfer is sent. Private key is not accepted here.",
-    }
+    return JSONResponse(status_code=410, content={"ok":False,"error":"legacy_float_qc_settlement_retired","note":"Historical records retained for audit; QC mining is paid directly by the node."})
 
 
 # QC_SETTLEMENT_SUMMARY_V1
@@ -5242,20 +3812,7 @@ def admin_settlement_panel():
 
 @app.post("/api/dev/reset")
 def dev_reset():
-    with _lock:
-        conn = _db()
-        conn.execute("DELETE FROM players")
-        conn.execute("DELETE FROM settings")
-        conn.execute("DELETE FROM mining_sessions")
-        conn.execute("DELETE FROM tgwt_state")
-        conn.execute("DELETE FROM tgwt_nonces")
-        conn.execute("DELETE FROM withdraw_requests")
-        conn.execute("DELETE FROM tgwt_events")
-        conn.execute("UPDATE tgwt_pool SET distributed_u=0, updated_at=? WHERE id=1", (_now(),))
-        conn.commit()
-        conn.close()
-    return {"ok": True}
-
+    return JSONResponse(status_code=410, content={"ok": False, "error": "unsafe_legacy_reset_retired"})
 
 
 # WATCH_REWARDED_AD_POLICY_V1
@@ -5265,58 +3822,13 @@ class WatchClaimIn(BaseModel):
     playerId: str
     videoId: str = "watch_demo"
     nonce: str
+    campaignId: str = ""
+    proof: Optional[dict] = None
 
 
 @app.post("/api/watch/claim")
 def watch_claim(inp: WatchClaimIn):
-    user_id = (inp.playerId or "").strip()
-    video_id = (inp.videoId or "watch_demo").strip()
-    nonce = (inp.nonce or "").strip()
-
-    if not user_id:
-        return {"ok": False, "error": "empty_playerId"}
-    if not nonce:
-        return {"ok": False, "error": "empty_nonce"}
-
-    if not _rl_hit(user_id, "watch_claim", limit=10, window_sec=60):
-        return {"ok": False, "error": "rate_limited"}
-
-    with _lock:
-        conn = _db()
-        _tgwt_touch(conn, user_id)
-
-        if not _nonce_once(conn, user_id, nonce):
-            conn.close()
-            return {"ok": False, "error": "dup_nonce"}
-
-        ok = _tgwt_award_pending_from_pool(
-            conn,
-            user_id,
-            1 * UNIT,
-            "WATCH_DEV_TEST_REWARD",
-            {"videoId": video_id, "source": "watch_claim_v1"}
-        )
-
-        if not ok:
-            conn.close()
-            return {"ok": False, "error": "pool_exhausted"}
-
-        st = _tgwt_get(conn, user_id)
-        conn.commit()
-        conn.close()
-
-    return {
-        "ok": True,
-        "userId": user_id,
-        "videoId": video_id,
-        "rewardTGWT": 1,
-        "status": "DEV_TEST_PENDING_VERIFICATION",
-        "mode": "DEV_TEST_ONLY",
-        "finalMode": "GOOGLE_REWARDED_ADS_VERIFIED_COMPLETION",
-        "rev": st["rev"],
-        "balances": st,
-        "message": "DEV TEST ONLY: +1 TGWT added as pending. Final Watch & Earn will require verified Google Rewarded Ads completion before TGWT reward."
-    }
+    return _verified_task_reward(inp, {"WATCH_COMPLETE"})
 
 
 # TG_MONTHLY_NFT_CANDIDATE_POOL_V1
@@ -6465,121 +4977,295 @@ except ModuleNotFoundError:
 def qc31_admin_backup_restore_runbook():
     return backup_restore_summary_v1()
 
-# QC_MAINNET_BEFORE_ECONOMY_CONTROL_V1_BRIDGE
-# Read-only mainnet-before economy control visibility for admin panel.
-# This does not launch mainnet, mint, transfer, change balances, change chain, change consensus, or change total supply.
-try:
-    from telegram_game.mainnet_before_economy_control_v1 import (
-        QC_MAINNET_BEFORE_ECONOMY_CONTROL_VERSION,
-        mainnet_before_economy_summary_v1,
-    )
-except ModuleNotFoundError:
-    from mainnet_before_economy_control_v1 import (
-        QC_MAINNET_BEFORE_ECONOMY_CONTROL_VERSION,
-        mainnet_before_economy_summary_v1,
-    )
+# Policy displays must observe the authenticated Go node, never Python copies.
+async def _node_policy_section(section):
+    from .utils.qc_api import fetch_runtime_policy
+    data = await fetch_runtime_policy()
+    if not data.get("ok") or section not in data.get("sections", {}):
+        return JSONResponse(status_code=503, content={"ok":False,"error":"node_runtime_policy_unavailable"})
+    return {"ok":True,"version":data["version"],"source":data["source"],
+            "context":data["context"],"policy":data["sections"][section],
+            "authority":data.get("authority", "Go declaration; activation is described in context.")}
 
 
 @app.get("/api/admin/economy/mainnet-before")
-def qc32_admin_mainnet_before_economy():
-    return mainnet_before_economy_summary_v1()
-
-# QC_BURN_SINK_CONTROL_V1_BRIDGE
-# Read-only burn/dead wallet control visibility for admin panel.
-# This does not execute burn, mint replacement QC, transfer funds, change balances, or change max supply.
-try:
-    from telegram_game.burn_sink_control_v1 import (
-        QC_BURN_SINK_CONTROL_VERSION,
-        burn_sink_summary_v1,
-    )
-except ModuleNotFoundError:
-    from burn_sink_control_v1 import (
-        QC_BURN_SINK_CONTROL_VERSION,
-        burn_sink_summary_v1,
-    )
+async def qc32_admin_mainnet_before_economy():
+    return await _node_policy_section("mainnet-before")
 
 
 @app.get("/api/admin/economy/burn-sink")
-def qc32c_admin_burn_sink_control():
-    return burn_sink_summary_v1()
-
-# QC_MINING_PERIOD_NODE_TRANSITION_V1_BRIDGE
-# Read-only mining period / node transition visibility for admin panel.
-# This does not mint, distribute remaining coins, start/stop mining, change balances, or change max supply.
-try:
-    from telegram_game.mining_node_transition_policy_v1 import (
-        QC_MINING_PERIOD_NODE_TRANSITION_VERSION,
-        mining_node_transition_summary_v1,
-    )
-except ModuleNotFoundError:
-    from mining_node_transition_policy_v1 import (
-        QC_MINING_PERIOD_NODE_TRANSITION_VERSION,
-        mining_node_transition_summary_v1,
-    )
+async def qc32c_admin_burn_sink_control():
+    return await _node_policy_section("burn-sink")
 
 
 @app.get("/api/admin/economy/mining-transition")
-def qc32d_admin_mining_node_transition():
-    return mining_node_transition_summary_v1()
-
-# QC_MINING_PERIOD_BITCOIN_STYLE_CONTINUE_V1_BRIDGE
-# Existing /api/admin/economy/mining-transition endpoint returns the updated bitcoin-style continuation policy.
-# If supply is incomplete after 10 years, Wallet+Miner continues with 2-year halving until max supply.
-# This does not mint remaining coins directly, distribute remaining coins, start/stop mining, change balances, or change max supply.
-
-# QC_NETWORK_FEE_POLICY_V1_BRIDGE
-# Read-only very-low network fee policy visibility for admin panel.
-# This does not execute fee transfer, mint, change balances, change consensus, or change max supply.
-try:
-    from telegram_game.network_fee_policy_v1 import (
-        QC_NETWORK_FEE_POLICY_VERSION,
-        network_fee_summary_v1,
-    )
-except ModuleNotFoundError:
-    from network_fee_policy_v1 import (
-        QC_NETWORK_FEE_POLICY_VERSION,
-        network_fee_summary_v1,
-    )
+async def qc32d_admin_mining_node_transition():
+    return await _node_policy_section("mining-transition")
 
 
 @app.get("/api/admin/economy/network-fee")
-def qc32e_admin_network_fee_policy():
-    return network_fee_summary_v1()
-
-# QC_FOUNDER_VESTING_POLICY_V1_BRIDGE
-# Read-only founder vesting visibility for admin panel.
-# This does not execute unlock, mint, change balances, change consensus, or change max supply.
-try:
-    from telegram_game.founder_vesting_policy_v1 import (
-        QC_FOUNDER_VESTING_POLICY_VERSION,
-        founder_vesting_summary_v1,
-    )
-except ModuleNotFoundError:
-    from founder_vesting_policy_v1 import (
-        QC_FOUNDER_VESTING_POLICY_VERSION,
-        founder_vesting_summary_v1,
-    )
+async def qc32e_admin_network_fee_policy():
+    return await _node_policy_section("network-fee")
 
 
 @app.get("/api/admin/economy/founder-vesting")
-def qc32f_admin_founder_vesting_policy():
-    return founder_vesting_summary_v1()
-
-# QC_HARDFORK_POLICY_V1_BRIDGE
-# Read-only hardfork policy visibility for admin panel.
-# This does not execute hardfork, change consensus, mint, change balances, replace chain, or change max supply.
-try:
-    from telegram_game.hardfork_policy_v1 import (
-        QC_HARDFORK_POLICY_VERSION,
-        hardfork_policy_summary_v1,
-    )
-except ModuleNotFoundError:
-    from hardfork_policy_v1 import (
-        QC_HARDFORK_POLICY_VERSION,
-        hardfork_policy_summary_v1,
-    )
+async def qc32f_admin_founder_vesting_policy():
+    return await _node_policy_section("founder-vesting")
 
 
 @app.get("/api/admin/network/hardfork-policy")
-def qc32g_admin_hardfork_policy():
-    return hardfork_policy_summary_v1()
+async def qc32g_admin_hardfork_policy():
+    return await _node_policy_section("hardfork-policy")
+
+
+def _verified_task_reward(inp, allowed_actions=None):
+    from .player_auth import ACTOR
+    from .reward_evidence import claim
+    actor = ACTOR.get()
+    if not actor or actor != inp.playerId:
+        return {"ok":False,"error":"telegram_session_required"}
+    from .social_reward_activation import is_social_campaign, social_rewards_enabled
+    if is_social_campaign(_db, inp.campaignId) and not social_rewards_enabled():
+        return {"ok":False,"error":"social_rewards_disabled_mainnet_only"}
+    result = claim(_db,actor,inp.campaignId,inp.proof,_now(),allowed_actions)
+    if result.get("ok"):
+        with closing(_db()) as conn, conn:
+            result["balances"] = _tgwt_get(conn,actor)
+            result["rev"] = result["balances"]["rev"]
+    return result
+
+
+class VerifiedRewardClaimIn(BaseModel):
+    playerId: str
+    campaignId: str
+    proof: dict
+
+
+class RewardCampaignIn(BaseModel):
+    policy: dict
+
+
+class XRewardStartIn(BaseModel):
+    playerId: str
+    campaignId: str
+
+
+class XRewardCompleteIn(BaseModel):
+    playerId: str
+    state: str
+    code: str
+
+
+class SocialProviderVerifyIn(BaseModel):
+    playerId: str
+    campaignId: str
+
+
+class YouTubeRewardCompleteIn(BaseModel):
+    playerId: str
+    state: str
+    code: str
+
+
+@app.post("/api/social/x/start")
+def start_x_reward_verification(inp: XRewardStartIn):
+    from .player_auth import ACTOR
+    from .x_reward_verifier import begin
+    actor=ACTOR.get()
+    if actor!=inp.playerId: return {"ok":False,"error":"telegram_session_required"}
+    return begin(_db,actor,inp.campaignId,_now())
+
+
+@app.post("/api/social/x/complete")
+async def complete_x_reward_verification(inp: XRewardCompleteIn):
+    from .player_auth import ACTOR
+    from .x_reward_verifier import complete
+    actor=ACTOR.get()
+    if actor!=inp.playerId: return {"ok":False,"error":"telegram_session_required"}
+    return await complete(_db,actor,inp.state,inp.code,_now())
+
+
+@app.post("/api/social/telegram/verify")
+async def verify_telegram_reward(inp: SocialProviderVerifyIn):
+    from .player_auth import ACTOR
+    from .telegram_reward_verifier import verify
+    actor=ACTOR.get()
+    if not actor or actor!=inp.playerId:
+        return {"ok":False,"error":"telegram_session_required"}
+    result=await verify(_db,actor,inp.campaignId,_now())
+    if result.get("ok"):
+        with closing(_db()) as conn:
+            result["balances"]=_tgwt_get(conn,actor)
+    return result
+
+
+@app.post("/api/social/youtube/start")
+def start_youtube_reward_verification(inp: SocialProviderVerifyIn):
+    from .player_auth import ACTOR
+    from .youtube_reward_verifier import begin
+    actor=ACTOR.get()
+    if not actor or actor!=inp.playerId:
+        return {"ok":False,"error":"telegram_session_required"}
+    return begin(_db,actor,inp.campaignId,_now())
+
+
+@app.post("/api/social/youtube/complete")
+async def complete_youtube_reward_verification(inp: YouTubeRewardCompleteIn):
+    from .player_auth import ACTOR
+    from .youtube_reward_verifier import complete
+    actor=ACTOR.get()
+    if not actor or actor!=inp.playerId:
+        return {"ok":False,"error":"telegram_session_required"}
+    result=await complete(_db,actor,inp.state,inp.code,_now())
+    if result.get("ok"):
+        with closing(_db()) as conn:
+            result["balances"]=_tgwt_get(conn,actor)
+    return result
+
+
+@app.get("/oauth/x/callback",include_in_schema=False)
+def x_reward_oauth_callback(request: Request):
+    payload=getattr(request.state,"x_oauth_callback",{"error":"invalid_callback"})
+    encoded=json.dumps({"type":"qc:x-oauth",**payload}).replace("<","\\u003c").replace(">","\\u003e")
+    nonce=secrets.token_urlsafe(24)
+    page='<!doctype html><meta charset="utf-8"><title>X verification</title><p id="result">Returning verification to QuantumCoin Game…</p>'
+    page+=f'<script nonce="{nonce}">history.replaceState(null,"","/oauth/x/callback");if(window.opener){{window.opener.postMessage({encoded},location.origin);window.close();}}else{{document.getElementById("result").textContent="Reopen the game and start verification in a browser that supports returning sign-in to the game.";}}</script>'
+    return HTMLResponse(page,headers={"Cache-Control":"no-store","Referrer-Policy":"no-referrer",
+        "Content-Security-Policy":f"default-src 'none'; script-src 'nonce-{nonce}'; frame-ancestors 'none'"})
+
+
+@app.get("/oauth/youtube/callback",include_in_schema=False)
+def youtube_reward_oauth_callback(request: Request):
+    payload=getattr(request.state,"youtube_oauth_callback",{"error":"invalid_callback"})
+    encoded=json.dumps({"type":"qc:youtube-oauth",**payload}).replace("<","\\u003c").replace(">","\\u003e")
+    nonce=secrets.token_urlsafe(24)
+    page='<!doctype html><meta charset="utf-8"><title>YouTube verification</title><p id="result">Returning verification to QuantumCoin Game…</p>'
+    page+=f'<script nonce="{nonce}">history.replaceState(null,"","/oauth/youtube/callback");if(window.opener){{window.opener.postMessage({encoded},location.origin);window.close();}}else{{document.getElementById("result").textContent="Reopen the game and start verification in the game browser.";}}</script>'
+    return HTMLResponse(page,headers={"Cache-Control":"no-store","Referrer-Policy":"no-referrer",
+        "Content-Security-Policy":f"default-src 'none'; script-src 'nonce-{nonce}'; frame-ancestors 'none'"})
+
+
+@app.post("/api/tgwt/rewards/claim")
+def verified_reward_claim(inp: VerifiedRewardClaimIn):
+    return _verified_task_reward(inp)
+
+
+@app.post("/api/admin/tgwt/campaigns")
+def create_verified_reward_campaign(inp: RewardCampaignIn):
+    from .reward_evidence import create_campaign
+    return create_campaign(_db,inp.policy)
+
+
+@app.get("/api/tgwt/pool")
+def verified_reward_pool():
+    with closing(_db()) as conn:
+        row=conn.execute("SELECT total_u,distributed_u FROM tgwt_pool WHERE id=1").fetchone()
+    from .social_reward_activation import social_rewards_enabled
+    return {"ok":True,"total_u":row[0],"allocated_u":row[1],"remaining_u":row[0]-row[1],
+            "offChainAccounting":True,"onChainFundingVerified":False,"gasPayer":"user","gasAsset":"BNB",
+            "tokenContract":"0xbc70225507b132e9926c9b09c14ff4f87f6d5451","bscClaimEnabled":False,
+            "socialRewardsEnabled":social_rewards_enabled(),"socialRewardsNetwork":"bsc_mainnet"}
+
+
+@app.get("/api/tgwt/campaigns")
+def verified_reward_campaigns():
+    with closing(_db()) as conn:
+        rows=conn.execute("SELECT policy_json,policy_hash FROM tgwt_campaigns_v1 WHERE enabled=1 LIMIT 100").fetchall()
+    from .social_reward_activation import social_rewards_enabled
+    enabled=social_rewards_enabled()
+    campaigns=[]
+    for row in rows:
+        policy=json.loads(row[0])
+        if str(policy.get("provider","")).upper() in {"X","TELEGRAM","YOUTUBE"} and not enabled:
+            continue
+        campaigns.append({"policy":policy,"campaignHash":row[1]})
+    return {"ok":True,"campaigns":campaigns,"verificationRequired":True,
+            "providerAdaptersConfiguredAutomatically":False,"socialRewardsEnabled":enabled,
+            "socialRewardsNetwork":"bsc_mainnet"}
+
+
+class RewardCampaignStateIn(BaseModel):
+    campaignId: str
+    enabled: bool
+
+
+@app.post("/api/admin/tgwt/campaign-state")
+def verified_reward_campaign_state(inp: RewardCampaignStateIn):
+    with closing(_db()) as conn, conn:
+        changed=conn.execute("UPDATE tgwt_campaigns_v1 SET enabled=? WHERE campaign_id=?",(int(inp.enabled),inp.campaignId)).rowcount
+    return {"ok":changed==1}
+
+
+class GameWorkIn(BaseModel):
+    playerId: str
+    sessionId: str
+    nextBlock: bool = False
+
+
+class GameWorkSubmitIn(GameWorkIn):
+    jobId: str
+    nonce: str
+
+
+@app.post("/api/mine/work")
+async def issue_game_client_work(inp: GameWorkIn):
+    from .game_pow import issue_work
+    from .player_auth import ACTOR
+    if ACTOR.get()!=inp.playerId:
+        return {"ok":False,"error":"telegram_session_required"}
+    if _get_game_mining_mode()!=QC_GAME_MINING_MODE_REAL_CHAIN:
+        return {"ok":False,"error":"real_client_mining_not_enabled"}
+    return await issue_work(_db,inp.playerId,inp.sessionId,_now(),next_block=inp.nextBlock)
+
+
+@app.post("/api/mine/work/status")
+async def game_client_work_status(inp: GameWorkIn):
+    from .game_pow import work_status
+    from .player_auth import ACTOR
+    if ACTOR.get()!=inp.playerId:
+        return {"ok":False,"error":"telegram_session_required"}
+    if _get_game_mining_mode()!=QC_GAME_MINING_MODE_REAL_CHAIN:
+        return {"ok":False,"error":"real_client_mining_not_enabled"}
+    return await work_status(_db,inp.playerId,inp.sessionId,_now())
+
+
+@app.post("/api/mine/work/submit")
+async def submit_game_client_work(inp: GameWorkSubmitIn):
+    from .game_pow import submit_work
+    from .player_auth import ACTOR
+    if ACTOR.get()!=inp.playerId:
+        return {"ok":False,"error":"telegram_session_required"}
+    if _get_game_mining_mode()!=QC_GAME_MINING_MODE_REAL_CHAIN:
+        return {"ok":False,"error":"real_client_mining_not_enabled"}
+    return await submit_work(_db,inp.playerId,inp.sessionId,inp.jobId,inp.nonce,_now())
+
+
+@app.get("/api/security/limits/status")
+def persisted_runtime_limit_status():
+    from .durable_limits import MAX_ROWS
+    with closing(_db()) as conn:
+        count=conn.execute("SELECT COUNT(*) FROM request_limits_v1 WHERE expires_at>?",(_now(),)).fetchone()[0]
+    return {"ok":True,"backend":"canonical_sqlite_fixed_windows","activeRows":count,"maxRows":MAX_ROWS,
+            "actorFrom":"verified_server_session","trustClientForwardedHeaders":False,"expiredRowsPrunedOnAdmission":True}
+
+
+@app.get("/mining/canonical-pow-worker.mjs",include_in_schema=False)
+def canonical_game_mining_worker():
+    return FileResponse(str(_NFT_REPOSITORY_ROOT_V1 / "webui/dist/canonical-pow-worker.mjs"),media_type="text/javascript")
+
+
+@app.get("/mining/mining-session.mjs",include_in_schema=False)
+def canonical_game_mining_lifecycle():
+    return FileResponse(str(_NFT_REPOSITORY_ROOT_V1 / "webui/dist/mining-session.mjs"),media_type="text/javascript")
+
+
+@app.get("/mining/canonical-pow.mjs",include_in_schema=False)
+def canonical_game_mining_core():
+    return FileResponse(str(_NFT_REPOSITORY_ROOT_V1 / "webui/dist/canonical-pow.mjs"),media_type="text/javascript")
+
+
+# Install last so identity is checked before any legacy rate/replay middleware.
+from .endpoint_response_contracts import install_openapi_contracts
+install_openapi_contracts(app)
+from .player_auth import PlayerIdentityBoundary
+app.add_middleware(PlayerIdentityBoundary, db=lambda: _db(), bot_token=lambda: _telegram_bot_token())

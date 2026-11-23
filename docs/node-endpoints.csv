@@ -1,0 +1,49 @@
+method,path,auth,lifecycle,request,response
+GET,/api/monitoring,node-token,active,none,monitoring.Engine.Snapshot
+POST,/api/security/events/action,node-token+monitoring-admin,active,"{id:string,action:string,note:string}","{success:bool,action:string,id:string}"
+POST,/api/monitoring/action,node-token+monitoring-admin,active,"{id:string,action:string,note:string}","{success:bool,action:string,id:string}"
+POST,/api/monitoring/publisher,publisher-token+direct-loopback,active,"{version:string,jobId:string,editorial:string,deliveries:array}","{success:bool}"
+GET,/api/health,node-token,active,none,"{ok:bool,service:string,healthVersion:string,capabilities:object,networkIdentity:NetworkIdentityV1,apiReadOnly:bool,height:int,time:RFC3339,httpPort:string}"
+GET,/api/capabilities,node-token,active,none,"{version:string,signing:string,signed_transactions:bool,http_wallet_creation:bool,staking:bool,score_submission:string,game_backend:string,game_leaderboard_path:string}"
+GET,/api/network/label,public,active,none,config.NetworkLabelInfoV1
+GET,/api/telemetry,node-token,active,none,TelemetryResponse
+GET,/api/economy/policy,node-token,active,none,blockchain.EconomyPolicySummary
+GET,/api/runtime/policy,node-token,active,none,"{version:string,source:string,context:object,sections:object}"
+GET,/api/nft/monthly/program,node-token,configuration-gated,none,node.Runtime.ServeNFTGameProgramV1
+POST,/api/nft/monthly/mint,node-token+signed-evidence,configuration-gated,node.nftMonthlyMintHTTPRequestV1,node.nftMonthlyMintHTTPReceiptV1
+POST,/api/nft/monthly/receipt,node-token+signed-evidence,configuration-gated,node.nftMonthlyMintHTTPRequestV1,node.nftMonthlyMintHTTPReceiptV1
+GET,/api/security/summary,node-token,active,none,security.Summary
+GET,/api/security/events,node-token,active,query limit:int (max 1000),security.ReadEvents
+GET,/api/security/score,node-token,active,none,security.Score
+GET,/api/security/node-health,node-token,active,none,node_app_telemetry.go handleNodeHealth projection
+GET,/api/security/peer-reputation,node-token,active,none,node_app_security.go livePeerReputation projection
+GET,/api/security/dashboard,node-token,active,none,node_app_security.go securityView
+GET,/api/security/admin-report,node-token,active,none,node_app_security.go securityView
+GET,/api/security/wallet-anomaly,node-token,active,none,securityView walletAnomaly projection
+GET,/api/security/mempool-abuse,node-token,active,none,securityView mempoolAbuse projection
+GET,/api/security/anti-spam-fee-policy,node-token,active,none,securityView antiSpamFee projection
+GET,/api/security/finality-checkpoint,node-token,active,none,securityView finality projection
+POST,/api/wallet/new,node-token,retired,none,410 WALLET_CREATION_LOCAL_ONLY error object
+GET,/api/wallet/address,node-token,active,none,WalletResponse
+GET,/api/wallet/balance/,node-token,active,path address:string,BalanceResponse
+POST,/api/mine,node-token,active,MineRequest,"{success:bool,reward:int,height:int,block_hash:hex}"
+POST,/api/mine/local-release,node-token+genesis-pin,configuration-gated,MineRequest and X-QC-Expected-Genesis,"{success:bool,reward:int,height:int,block_hash:hex}"
+POST,/api/tx/send,node-token,active,SendRequest signed transaction,SendResponse
+GET,/api/tx/status,node-token,active,query id or txid:string,"{ok:bool,id:string,txid:string,status:string,inBlock:bool,inMempool:bool,confirmedHeight:int}"
+POST,/api/dev/fastmine,node-token+direct-loopback-dev,configuration-gated,"query address:string,n:int","{success:bool,mined:int,height:int}"
+GET,/api/ai/alerts,node-token,active,none,ai.AIAlert[]
+GET,/api/ai/bonus,node-token,compatibility-read,none,node_app_advisory.go handleAIBonus constant safety view
+GET,/api/ai/analysis,node-token,active,none,node_app_advisory.go handleAIAnalysis projection
+GET,/api/ai/security-dashboard,node-token,active,none,node_app_security.go securityView
+GET,/api/blocks,node-token,active,"query limit:int (max 200),offset:int",node_app_explorer.go block summaries plus pagination headers
+GET,/api/block,node-token,active,query index:int or hash:hex,node_app_explorer.go block detail presentation
+POST,/api/tx/burn,node-token,active,BurnRequest signed burn transaction,SendResponse
+POST,/api/stake/start,node-token,unavailable,none,501 FEATURE_UNAVAILABLE error object
+GET,/api/stake/status,node-token,unavailable,none,501 FEATURE_UNAVAILABLE error object
+GET,/api/mine/job,node-token,active,query address:string,WebMineJobResp
+GET,/api/mine/tip,node-token,active,none,"MiningTip (height,hash,genesis_hash,network,genesis_domain)"
+GET,/api/mine/result,node-token,active,"query height:int,hash:hex,address:string","canonical mining receipt: accepted,hash,height,miner,genesis_hash,rewardStatus"
+POST,/api/mine/submit,node-token,active,WebMineSubmitReq,WebMineSubmitResp
+POST,/api/miner/start,node-token+direct-loopback-dev,configuration-gated,minerStartReq or query address:string,"{running:bool,address:string,difficulty:int,height:int,message?:string}"
+POST,/api/miner/stop,node-token+direct-loopback-dev,configuration-gated,none,"{running:bool,stopping?:bool,message:string,height:int}"
+GET,/api/miner/status,node-token+direct-loopback-dev,configuration-gated,none,"{running:bool,height:int,bits:int,httpPort:string}"

@@ -1,6 +1,7 @@
 # QuantumCoin Monthly NFT Stock Pre-Mainnet
 
-Status: NFT_MONTHLY_STOCK_PRE_MAINNET_V1
+Document ID: `NFT_MONTHLY_STOCK_PRE_MAINNET_V1`\
+Evidence stage: **Implementation**. See [scope and release status](POLICY_EVIDENCE_REGISTER.md).
 
 Date: 20260618_220020
 

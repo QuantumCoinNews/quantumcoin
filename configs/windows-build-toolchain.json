@@ -1,0 +1,31 @@
+{
+  "go": {
+    "version": "go1.26.11",
+    "url": "https://go.dev/dl/go1.26.11.windows-amd64.zip",
+    "sha256": "71ae086f0137e665f855a811cc119152b6a783e0bbc1b906e709f46d80141eb0"
+  },
+  "mingw": {
+    "version": "15.1.0",
+    "url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/15.1.0posix-13.0.0-ucrt-r2/winlibs-x86_64-posix-seh-gcc-15.1.0-mingw-w64ucrt-13.0.0-r2.zip",
+    "sha256": "d48e7be420828e484346f864eed1c6e537fa9131da2acb834f15aeb254c48d9a"
+  },
+  "ffmpeg": {
+    "version": "9.0.2",
+    "url": "https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-essentials_build.zip",
+    "sha256": "60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba"
+  },
+  "node": {
+    "version": "22.23.5",
+    "url": "https://nodejs.org/dist/v22.23.5/node-v22.23.5-win-x64.zip",
+    "sha256": "4a191082e9706866830379d577d2cc8a50c776fcd9436a8d061b063ed0d9a0e3"
+  },
+  "npm": {
+    "version": "10.9.9",
+    "source": "bundled-node-archive"
+  },
+  "python": {
+    "version": "3.14.10",
+    "url": "https://www.python.org/ftp/python/3.14.10/python-3.14.10-amd64.exe",
+    "sha256": "92480239264744fe0386a1bd8275786fefa126e3129e56a68e22b52c73329965"
+  }
+}

@@ -287,6 +287,10 @@ func TestNFTMintTransportHTTPRefusesRAMOnlyCorruptDiskAndWriteFailureV1(t *testi
 			}
 		}
 	}
+	// Recovery must explicitly preserve the damaged destination before replacing it.
+	if err := os.Rename(f.cfg.ChainFile, f.cfg.ChainFile+".corrupt-preserved"); err != nil {
+		t.Fatal(err)
+	}
 	if err := r.Blockchain.SaveToFile(f.cfg.ChainFile); err != nil {
 		t.Fatal(err)
 	}

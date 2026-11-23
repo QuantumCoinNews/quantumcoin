@@ -1,3 +1,2 @@
-fastapi
-uvicorn[standard]
-pydantic
+# Compatibility alias; all runtime, bot and NFT dependencies share one lock.
+-r ../requirements.txt

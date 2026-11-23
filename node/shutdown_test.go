@@ -38,6 +38,7 @@ func TestRuntimeShutdownRejectsNilContextV1(
 		nil,
 		nil)
 
+	//lint:ignore SA1012 negative test verifies nil context is rejected, never a production call.
 	err := runtime.Shutdown(nil)
 	if err == nil {
 		t.Fatal(

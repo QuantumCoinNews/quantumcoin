@@ -80,6 +80,9 @@ class VerifiedActivityReviewTests(unittest.TestCase):
         api._QC_ACTION_BURST_EVENTS_V1.clear()
         api._QC_ACTION_BURST_BLOCKS_V1.clear()
         self.client = TestClient(api.app)
+        from telegram_game.player_auth import issue_session
+        credentials = issue_session(api._db, USER, TOKEN, self.clock)
+        self.player_headers = {"Authorization": "Bearer " + credentials["accessToken"]}
 
     def tearDown(self):
         self.client.close()
@@ -88,7 +91,7 @@ class VerifiedActivityReviewTests(unittest.TestCase):
         self.temp.cleanup()
 
     def post(self, path, body, admin=False):
-        result = self.client.post(path, json=body, headers={"X-Admin-Token":ADMIN} if admin else {})
+        result = self.client.post(path, json=body, headers={"X-Admin-Token":ADMIN} if admin else self.player_headers)
         self.assertEqual(result.status_code, 200, result.text)
         return result.json()
 

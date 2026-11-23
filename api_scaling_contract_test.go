@@ -2,7 +2,6 @@ package main
 
 import (
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 )
@@ -88,9 +87,7 @@ func TestTransactionStatusHandlerUsesIndexedLookup(
 	t *testing.T,
 ) {
 	sourceBytes, err :=
-		os.ReadFile(
-			"main.go",
-		)
+		readNodeApplicationSourcesV1()
 
 	if err != nil {
 		t.Fatalf(
@@ -139,9 +136,7 @@ func TestBlocksListHandlerUsesBoundedCoherentPage(
 	t *testing.T,
 ) {
 	sourceBytes, err :=
-		os.ReadFile(
-			"main.go",
-		)
+		readNodeApplicationSourcesV1()
 
 	if err != nil {
 		t.Fatalf(
@@ -161,7 +156,7 @@ func TestBlocksListHandlerUsesBoundedCoherentPage(
 
 	for _, required := range []string{
 		"parseBlocksPagination(",
-		"BlocksPageFromTipSnapshot(",
+		"BlockSummaryPageFromTipSnapshot(",
 		`"X-Total-Count"`,
 		`"X-Page-Limit"`,
 		`"X-Page-Offset"`,

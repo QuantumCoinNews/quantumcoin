@@ -112,13 +112,14 @@ func TestBlockCoinbaseTotalV1ConsensusBridge(t *testing.T) {
 			wantError: true,
 		},
 		{
-			name: "zero coinbase output is rejected",
+			name: "zero post-genesis coinbase layout is accepted",
 			block: &Block{
+				Index: 1,
 				Transactions: []*Transaction{
 					coinbaseBridgeTestCoinbaseV1(0),
 				},
 			},
-			wantError: true,
+			wantCount: 1,
 		},
 		{
 			name: "negative coinbase output is rejected",

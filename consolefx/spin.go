@@ -3,26 +3,24 @@ package consolefx
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"time"
 )
 
-// SpinFor documents the QuantumCoin component used by this module.
-// Süre boyunca terminalde ufak bir spinner gösterir.
-// Log akışını bozmamak için aynı satırı kullanır ve sonunda temizler.
+// SpinFor waits while writing complete progress lines to the shared console.
 func SpinFor(d time.Duration) {
-	frames := []rune{'|', '/', '-', '\\'}
-	end := time.Now().Add(d)
-	i := 0
-	for time.Now().Before(end) {
-		fmt.Fprintf(os.Stdout, "\r   %c", frames[i%len(frames)])
-		time.Sleep(90 * time.Millisecond)
-		i++
-	}
-	// satırı temizle
-	fmt.Fprint(os.Stdout, "\r      \r")
+	spinFor(os.Stdout, d)
 }
 
-// SpinBrief documents the QuantumCoin component used by this module.
-// Kısa spinner (yaklaşık 1.2s)
+func spinFor(out io.Writer, d time.Duration) {
+	const frames = "|/-\\"
+	end := time.Now().Add(d)
+	for i := 0; time.Now().Before(end); i++ {
+		fmt.Fprintf(out, "%c Waiting for the next mining cycle\n", frames[i%len(frames)])
+		time.Sleep(min(time.Until(end), time.Second))
+	}
+}
+
+// SpinBrief waits for a short interval with console progress.
 func SpinBrief() { SpinFor(1200 * time.Millisecond) }

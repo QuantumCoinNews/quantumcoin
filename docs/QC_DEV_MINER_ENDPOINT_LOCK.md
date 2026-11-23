@@ -1,37 +1,13 @@
 # QuantumCoin Dev / Miner Endpoint Lock
 
-Status: QC_DEV_MINER_ENDPOINT_LOCK_V1
+Document ID: `QC_DEV_MINER_ENDPOINT_LOCK_V1`\
+Evidence stage: **Tested**. See [scope and release status](POLICY_EVIDENCE_REGISTER.md).
 
-Date: 20260617_211754
+The canonical node registers the dev fast-mine and miner-control endpoints.
+They require explicit development mode, a numeric loopback listener, a direct
+loopback caller and header authentication. The request guard checks local Host
+and browser origin metadata and rejects forwarding headers. Public-testnet
+switches disable access even with valid credentials.
 
-Dev and miner control endpoints must not be usable in public testnet mode.
-
-## Root node endpoints
-
-- /api/dev/fastmine
-- /api/miner/start
-- /api/miner/stop
-- /api/miner/status
-
-## Alternate api package endpoints
-
-- /api/miner/start
-- /api/miner/stop
-
-## Allowed mode
-
-Only all of the following:
-
-- QC_DEV_MODE=1 / true / yes
-- request comes from loopback
-- not public testnet mode
-
-## Public testnet behavior
-
-Public testnet mode rejects these endpoints even with a valid API token.
-
-## Safety boundary
-
-This does not change chain state, balances, mining rewards, total supply, consensus, release executables, or stable miner scripts.
-
-It only prevents dev/miner control endpoints from being exposed outside explicit local development.
+The standalone Go API executable has been retired. See
+[API token and listener policy](QC_PUBLIC_TESTNET_API_TOKEN_SECURITY.md).

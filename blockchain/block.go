@@ -2,6 +2,7 @@ package blockchain
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/gob"
 	"fmt"
@@ -29,9 +30,17 @@ func NewBlock(
 	miner string,
 	difficulty int,
 ) (*Block, error) {
+	return newBlockAtTimeV1(index, txs, prevHash, miner, difficulty, time.Now().Unix())
+}
+
+func newBlockAtTimeV1(index int, txs []*Transaction, prevHash []byte, miner string, difficulty int, timestamp int64) (*Block, error) {
+	return newBlockAtTimeContextV1(context.Background(), index, txs, prevHash, miner, difficulty, timestamp)
+}
+
+func newBlockAtTimeContextV1(ctx context.Context, index int, txs []*Transaction, prevHash []byte, miner string, difficulty int, timestamp int64) (*Block, error) {
 	b := &Block{
 		Index:        index,
-		Timestamp:    time.Now().Unix(),
+		Timestamp:    timestamp,
 		Transactions: txs,
 		PrevHash:     prevHash,
 		Hash:         nil,
@@ -43,7 +52,7 @@ func NewBlock(
 
 	pow := NewProofOfWork(b)
 
-	nonce, hash, err := pow.Run()
+	nonce, hash, err := pow.RunContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"mine block proof of work: %w",

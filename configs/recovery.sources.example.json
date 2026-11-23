@@ -1,0 +1,16 @@
+{
+  "network": "testnet",
+  "genesisHash": "REPLACE_WITH_INDEPENDENTLY_PINNED_64_LOWERCASE_HEX_GENESIS_HASH",
+  "offline": false,
+  "sources": {
+    "quantumcoin_chain_file": {"path": "C:/QC_OFFLINE_INPUT/testnet/chain_data_testnet.dat", "format": "file"},
+    "telegram_game_sqlite_db": {"path": "C:/QC_OFFLINE_INPUT/testnet/dev_api_state.db", "format": "sqlite"},
+    "tgwt_ledger": {"path": "C:/QC_OFFLINE_INPUT/testnet/dev_api_state.db", "format": "sqlite"},
+    "monthly_nft_review_log": {"path": "C:/QC_OFFLINE_INPUT/testnet/dev_api_state.db", "format": "sqlite"},
+    "admin_event_log": {"path": "C:/QC_OFFLINE_INPUT/testnet/chain_data_testnet.dat.security/testnet/security_events.json", "format": "json"},
+    "monitoring_event_log": {"path": "C:/QC_OFFLINE_INPUT/testnet/chain_data_testnet.dat.monitoring/state.json", "format": "json"},
+    "runtime_config_examples": {"path": "C:/QC_OFFLINE_INPUT/testnet/runtime-config.json", "format": "json"},
+    "wallet_encrypted_backup": {"path": "C:/QC_OFFLINE_INPUT/testnet/operator.qcwallet", "format": "wallet-envelope"},
+    "wallet_custody_record": {"path": "C:/QC_OFFLINE_INPUT/testnet/operator.custody.local.json", "format": "json"}
+  }
+}

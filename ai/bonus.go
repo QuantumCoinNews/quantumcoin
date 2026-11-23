@@ -1,69 +1,14 @@
 package ai
 
-import (
-	"sync"
-	"time"
-)
-
-// AIBonus documents the QuantumCoin component used by this module.
-// Zincir / madenci için AI bonus durumunun özeti.
+// AIBonus is a retired compatibility response, never monetary state.
 type AIBonus struct {
-	TotalBonusQC float64 `json:"total_bonus_qc"` // bugüne kadar toplam
-	LastBonusQC  float64 `json:"last_bonus_qc"`  // son bonus miktarı
-	Reason       string  `json:"reason"`         // son bonus sebebi
-	UpdatedAt    int64   `json:"updated_at"`     // Unix time
+	TotalBonusQC float64 `json:"total_bonus_qc"`
+	LastBonusQC  float64 `json:"last_bonus_qc"`
+	Reason       string  `json:"reason"`
+	UpdatedAt    int64   `json:"updated_at"`
 }
 
-var (
-	bonusMu    sync.RWMutex
-	bonusState AIBonus
-)
-
-// SetBonus documents the QuantumCoin component used by this module.
-// Bonus durumunu dışarıdan tamamen set etmek istersen:
-func SetBonus(totalBonus, lastBonus float64, reason string) {
-	if !Enabled() {
-		return
-	}
-
-	bonusMu.Lock()
-	defer bonusMu.Unlock()
-
-	bonusState = AIBonus{
-		TotalBonusQC: totalBonus,
-		LastBonusQC:  lastBonus,
-		Reason:       reason,
-		UpdatedAt:    time.Now().Unix(),
-	}
-}
-
-// AddBonus documents the QuantumCoin component used by this module.
-// Tipik kullanım: "AI yeni bir bonus hesapladı; toplamı arttır"
-func AddBonus(delta float64, reason string) {
-	if !Enabled() {
-		return
-	}
-
-	bonusMu.Lock()
-	defer bonusMu.Unlock()
-
-	bonusState.TotalBonusQC += delta
-	bonusState.LastBonusQC = delta
-	bonusState.Reason = reason
-	bonusState.UpdatedAt = time.Now().Unix()
-}
-
-// GetBonusSnapshot documents the QuantumCoin component used by this module.
-// HTTP endpoint'in kullanacağı snapshot.
-func GetBonusSnapshot() AIBonus {
-	bonusMu.RLock()
-	defer bonusMu.RUnlock()
-	return bonusState
-}
-
-// persist yükleme için
-func setBonusFromSnapshot(b AIBonus) {
-	bonusMu.Lock()
-	defer bonusMu.Unlock()
-	bonusState = b
-}
+// Deprecated: these methods have no state, callbacks or financial effect.
+func SetBonus(totalBonus, lastBonus float64, reason string) {}
+func AddBonus(delta float64, reason string)                 {}
+func GetBonusSnapshot() AIBonus                             { return AIBonus{} }

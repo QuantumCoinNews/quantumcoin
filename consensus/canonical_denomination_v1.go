@@ -24,9 +24,7 @@ func ParseQCToAtomsV1(raw string) (int64, error) {
 		return 0, ErrInvalidQCAmountV1
 	}
 
-	if strings.HasPrefix(value, "+") {
-		value = value[1:]
-	}
+	value = strings.TrimPrefix(value, "+")
 
 	if value == "" || strings.HasPrefix(value, "-") {
 		return 0, ErrInvalidQCAmountV1

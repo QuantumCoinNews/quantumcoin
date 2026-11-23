@@ -9,7 +9,7 @@ import (
 // Version bağımsız QuantumCoin consensus sözleşmesinin sürümüdür.
 const Version = "QC_CONSENSUS_V1"
 
-// ProtocolVersion, belirli bir blok yüksekliğinde kullanılacak
+// ProtocolVersion ProtocolVersion, belirli bir blok yüksekliğinde kullanılacak
 // consensus kurallarını belirtir.
 type ProtocolVersion string
 

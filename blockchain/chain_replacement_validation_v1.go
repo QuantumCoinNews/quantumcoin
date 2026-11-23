@@ -11,17 +11,11 @@ import (
 // It does not mint QC, change rewards, or select a chain by AI.
 // It only rejects unsafe peer-supplied replacement chains before ReplaceChain.
 
-// ReplaceChainFromPeerStrictV1 validates a peer-provided longer chain with
-// strict checks, then delegates to the canonical ReplaceChain path.
+// ReplaceChainFromPeerStrictV1 validates and installs a peer-provided branch
+// within the authoritative writer boundary, selecting by cumulative work.
 func (bc *Blockchain) ReplaceChainFromPeerStrictV1(
 	blocks []*Block,
 ) error {
-	if err := bc.ValidateReplacementChainStrictV1(
-		blocks,
-	); err != nil {
-		return err
-	}
-
 	return bc.replaceChainAfterStrictV1(
 		blocks,
 	)
@@ -46,10 +40,18 @@ func (bc *Blockchain) ValidateReplacementChainStrictV1(
 		return ErrEmptyChain
 	}
 
-	if len(blocks) <= len(bc.Blocks) {
-		return ErrIncomingChainNotLonger
+	if err := bc.validateCanonicalChainWithLocalContextV1(blocks); err != nil {
+		return err
 	}
-	return bc.validateCanonicalChainWithLocalContextV1(blocks)
+	better, err := greaterChainWork(blocks, bc.Blocks)
+	if err != nil {
+		return err
+	}
+	if !better {
+		// Retain the exported legacy error identity for callers using errors.Is.
+		return fmt.Errorf("incoming chain has no greater cumulative work: %w", ErrIncomingChainNotLonger)
+	}
+	return nil
 }
 
 // validateCanonicalChainWithLocalContextV1 replays an entire chain using
@@ -235,16 +237,6 @@ func (bc *Blockchain) validateCanonicalChainWithLocalContextV1(blocks []*Block) 
 				)
 			}
 
-			if blk.Timestamp <
-				blocks[i-1].Timestamp {
-				return fmt.Errorf(
-					"incoming chain block[%d] timestamp goes backwards: got %d previous %d",
-					i,
-					blk.Timestamp,
-					blocks[i-1].Timestamp,
-				)
-			}
-
 		}
 
 		if i == 0 {
@@ -277,9 +269,13 @@ func (bc *Blockchain) validateCanonicalChainWithLocalContextV1(blocks []*Block) 
 			activationPolicy:  bc.activationPolicy,
 			nftAwardTrust:     bc.nftAwardTrust,
 			nftMonthlyProgram: bc.nftMonthlyProgram,
+			networkIdentity:   bc.networkIdentity,
 		}
 
 		scratch.UpdateUTXOSet()
+		if err := scratch.validateNextBlockTimestampV1(blk); err != nil {
+			return fmt.Errorf("incoming chain block[%d]: %w", i, err)
+		}
 
 		if err :=
 			scratch.ValidateExpectedDifficultyV1(

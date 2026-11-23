@@ -19,10 +19,6 @@ func chainFileEnvBoolV1(name string) bool {
 	}
 }
 
-func chainFileEnvContainsV1(name string, needle string) bool {
-	return strings.Contains(strings.ToLower(strings.TrimSpace(os.Getenv(name))), strings.ToLower(needle))
-}
-
 func IsTestnetModeEnvV1() bool {
 	if chainFileEnvBoolV1("QC_TESTNET") ||
 		chainFileEnvBoolV1("QC_PUBLIC_TESTNET") ||
@@ -31,11 +27,13 @@ func IsTestnetModeEnvV1() bool {
 		return true
 	}
 
-	return chainFileEnvContainsV1("QC_NET_MAGIC", "testnet") ||
-		chainFileEnvContainsV1("QC_NETWORK", "testnet") ||
-		chainFileEnvContainsV1("QC_NETWORK_MODE", "testnet") ||
-		chainFileEnvContainsV1("QC_CHAIN_MODE", "testnet") ||
-		chainFileEnvContainsV1("QC_MODE", "testnet")
+	for _, name := range networkSelectorKeysV1 {
+		switch networkSelectorV1(name) {
+		case "testnet", "testnet-local", "testnet-public":
+			return true
+		}
+	}
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("QC_NET_MAGIC")), QCTestnetMagicV1)
 }
 
 func chainFileBaseNameV1(path string) string {

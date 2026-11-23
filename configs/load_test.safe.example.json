@@ -15,7 +15,7 @@
     {
       "name": "qc_node_health_local",
       "baseUrl": "http://127.0.0.1:8082",
-      "endpoint": "/health"
+      "endpoint": "/api/health"
     },
     {
       "name": "qc_node_network_label_local",

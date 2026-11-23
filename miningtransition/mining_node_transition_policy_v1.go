@@ -27,6 +27,10 @@ type RewardPeriod struct {
 }
 
 type MiningNodeTransitionPolicy struct {
+	ScheduleBasis                          string          `json:"scheduleBasis"`
+	HalvingIntervalBlocks                  uint64          `json:"halvingIntervalBlocks"`
+	MinimumSubsidyQC                       int64           `json:"minimumSubsidyQc"`
+	YearsAreIllustrative                   bool            `json:"yearsAreIllustrative"`
 	Version                                string          `json:"version"`
 	Mode                                   string          `json:"mode"`
 	MaxSupplyQC                            int64           `json:"maxSupplyQc"`
@@ -57,22 +61,17 @@ func rewardForHalvingV1(halvings int) string {
 		return ""
 	}
 
-	numerator := InitialRewardQCV1
-	denominator := int64(1) << halvings
-
-	whole := numerator / denominator
-	remainder := numerator % denominator
-
-	if remainder == 0 {
-		return strconv.FormatInt(whole, 10)
+	// Match the canonical whole-QC series, including the 1-QC floor.
+	interval := qconsensus.LegacyHalvingIntervalBlocks
+	if uint64(halvings) > (^uint64(0)-1)/interval {
+		return strconv.FormatInt(qconsensus.LegacyMinimumSubsidyQC, 10)
 	}
+	reward, err := qconsensus.LegacySubsidyAtHeight(uint64(halvings)*interval + 1)
+	if err != nil {
+		return ""
+	}
+	return strconv.FormatInt(reward, 10)
 
-	// denominator is always a power of two, so the decimal expansion
-	// terminates exactly. Convert the rational value without changing
-	// the canonical initial reward authority.
-	value := float64(numerator) / float64(denominator)
-
-	return strconv.FormatFloat(value, 'f', -1, 64)
 }
 func PrimaryRewardScheduleV1() []RewardPeriod {
 	return []RewardPeriod{
@@ -93,7 +92,7 @@ func PostTenYearExampleScheduleV1() []RewardPeriod {
 }
 
 func DefaultPolicyV1() MiningNodeTransitionPolicy {
-	return MiningNodeTransitionPolicy{
+	return MiningNodeTransitionPolicy{ScheduleBasis: "BLOCK_HEIGHT_WHOLE_QC", HalvingIntervalBlocks: qconsensus.LegacyHalvingIntervalBlocks, MinimumSubsidyQC: qconsensus.LegacyMinimumSubsidyQC, YearsAreIllustrative: true,
 		Version:                                MiningNodeTransitionVersionV1,
 		Mode:                                   "MINING_PERIOD_BITCOIN_STYLE_CONTINUE_NO_MINT_EXECUTION",
 		MaxSupplyQC:                            MaxSupplyQCV1,
@@ -147,6 +146,9 @@ func SafeBoundaryV1() map[string]bool {
 }
 
 func ValidatePolicyV1(policy MiningNodeTransitionPolicy) error {
+	if policy.ScheduleBasis != "BLOCK_HEIGHT_WHOLE_QC" || policy.HalvingIntervalBlocks != qconsensus.LegacyHalvingIntervalBlocks || policy.MinimumSubsidyQC != qconsensus.LegacyMinimumSubsidyQC || !policy.YearsAreIllustrative {
+		return errors.New("mining schedule must match canonical block-height whole-QC subsidy policy")
+	}
 	if strings.TrimSpace(policy.Version) != MiningNodeTransitionVersionV1 {
 		return errors.New("invalid mining transition version")
 	}

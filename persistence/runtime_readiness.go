@@ -268,6 +268,17 @@ func validateDomainRuntimeEvidenceV1(
 		return err
 	}
 
+	if err := hooks.VerifySchema(domain, evidence.RestoreTarget, observedSchema); err != nil {
+		return fmt.Errorf("restored schema: %w", err)
+	}
+	if err := hooks.VerifyEncryption(domain, evidence.RestoreTarget); err != nil {
+		return fmt.Errorf("restored encryption: %w", err)
+	}
+	if domain.AppendOnlyLedger {
+		if err := hooks.VerifyAppendOnly(domain, evidence.RestoreTarget); err != nil {
+			return fmt.Errorf("restored append-only behavior: %w", err)
+		}
+	}
 	if domain.MigrationRequired {
 		if hooks.VerifyMigration == nil {
 			return errors.New(
@@ -392,34 +403,24 @@ func validateBackupAndRestoreV1(
 		)
 	}
 
-	dryRun, err := RestoreFileDryRunV1(
-		backupPath,
-		manifest.SHA256,
-		manifest.Size,
-		restoreTarget,
-	)
+	// A successful planning call is not evidence of an executed restore.
+	if err := VerifyBackupFileV1(restoreTarget, manifest.SHA256, manifest.Size); err != nil {
+		return fmt.Errorf("verify restored artifact: %w", err)
+	}
+	dataInfo, err := os.Stat(dataPath)
 	if err != nil {
-		return fmt.Errorf("restore dry-run: %w", err)
+		return err
 	}
-
-	if dryRun.Version != BackupManifestVersionV1 ||
-		dryRun.Size != manifest.Size ||
-		dryRun.SHA256 != manifest.SHA256 {
-		return errors.New(
-			"restore dry-run result does not match backup manifest",
-		)
+	backupInfo, err := os.Stat(backupPath)
+	if err != nil {
+		return err
 	}
-
-	if !samePathV1(dryRun.Source, backupPath) {
-		return errors.New(
-			"restore dry-run source mismatch",
-		)
+	restoreInfo, err := os.Stat(restoreTarget)
+	if err != nil {
+		return err
 	}
-
-	if !samePathV1(dryRun.Backup, restoreTarget) {
-		return errors.New(
-			"restore dry-run target mismatch",
-		)
+	if os.SameFile(dataInfo, backupInfo) || os.SameFile(dataInfo, restoreInfo) || os.SameFile(backupInfo, restoreInfo) {
+		return errors.New("backup and restore must be independent files")
 	}
 
 	return nil
@@ -453,6 +454,9 @@ func cleanAbsolutePathV1(
 		)
 	}
 
+	if err := rejectPathLinksV1(absolute); err != nil {
+		return "", err
+	}
 	return filepath.Clean(absolute), nil
 }
 

@@ -35,6 +35,23 @@ func (r *Runtime) Shutdown(
 		)
 	}
 
+	// Close admission before checking active services, so a simultaneous
+	// StartMining/ServeP2P cannot escape the shutdown snapshot.
+	// Signal first: a legacy search may hold r.mu/chain locks. Every runtime
+	// mining context observes this independent signal and releases them.
+	r.shutdownRequested.Store(true)
+	r.shutdownOnce.Do(func() {
+		if r.shutdownDone != nil {
+			close(r.shutdownDone)
+		}
+	})
+	r.StopMining()
+	r.mu.Lock()
+	if !r.stopping {
+		r.stopping = true
+	}
+	r.mu.Unlock()
+
 	r.EmitEvent(
 		NodeEvent{
 			Type:     "NODE_SHUTDOWN_STARTED",

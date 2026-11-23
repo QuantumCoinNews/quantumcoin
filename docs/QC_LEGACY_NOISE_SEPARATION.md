@@ -1,6 +1,7 @@
 # QuantumCoin Legacy / Build / Error / Backup Separation
 
-Status: QC_LEGACY_NOISE_SEPARATION_V1
+Document ID: `QC_LEGACY_NOISE_SEPARATION_V1`\
+Evidence stage: **Design**. See [scope and release status](POLICY_EVIDENCE_REGISTER.md).
 
 This document defines the separation rule for old build, error, backup, and temporary files before testnet preparation.
 

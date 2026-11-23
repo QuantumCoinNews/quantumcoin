@@ -1,11 +1,6 @@
 package blockchain
 
-import (
-	"bytes"
-	"encoding/gob"
-	"fmt"
-	"os"
-)
+import "fmt"
 
 // LoadBlockchainFromFileWithLocalContextV1 validates a persisted chain against
 // a coherent snapshot of a trusted local node's genesis and runtime policies.
@@ -23,8 +18,10 @@ func LoadBlockchainFromFileWithLocalContextV1(filename string, local *Blockchain
 		return nil, fmt.Errorf("trusted chain load: local genesis is missing")
 	}
 	trusted := &Blockchain{
-		Blocks:      []*Block{cloneBlockV1(local.Blocks[0])},
-		TotalSupply: local.TotalSupply, coinbaseMaturity: local.coinbaseMaturity,
+		networkIdentity:         cloneNetworkIdentityV1(local.networkIdentity),
+		StoredNetworkIdentityV1: cloneNetworkIdentityV1(local.StoredNetworkIdentityV1),
+		Blocks:                  []*Block{cloneBlockV1(local.Blocks[0])},
+		TotalSupply:             local.TotalSupply, coinbaseMaturity: local.coinbaseMaturity,
 		activationPolicy: local.activationPolicy,
 		nftAwardTrust:    local.nftAwardTrust, nftMonthlyProgram: local.nftMonthlyProgram,
 	}
@@ -32,16 +29,19 @@ func LoadBlockchainFromFileWithLocalContextV1(filename string, local *Blockchain
 		trusted.nftAwardTrust.trust = cloneNFTAwardTrustV1(trusted.nftAwardTrust.trust)
 	}
 	local.stateMu.RUnlock()
-	data, err := os.ReadFile(filename)
+	loaded, err := loadDiskChainV1(filename, trusted)
 	if err != nil {
-		return nil, fmt.Errorf("trusted chain load: read file: %w", err)
-	}
-	var loaded Blockchain
-	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&loaded); err != nil {
-		return nil, fmt.Errorf("trusted chain load: decode file: %w", err)
+		return nil, fmt.Errorf("trusted chain load: %w", err)
 	}
 	if loaded.TotalSupply != trusted.TotalSupply {
 		return nil, fmt.Errorf("trusted chain load: total supply differs from local policy")
+	}
+	// Untagged legacy files may only be inspected/adopted outside mainnet.
+	if trusted.networkIdentity != nil && loaded.StoredNetworkIdentityV1 == nil {
+		if trusted.networkIdentity.Network == "mainnet" {
+			return nil, fmt.Errorf("trusted chain load: unproven legacy network origin; mainnet refuses untagged chain")
+		}
+		loaded.StoredNetworkIdentityV1 = cloneNetworkIdentityV1(trusted.networkIdentity)
 	}
 	if err := loaded.BindPeerValidationContextFromLocalSynchronizedV1(trusted); err != nil {
 		return nil, fmt.Errorf("trusted chain load: bind local context: %w", err)
@@ -56,5 +56,5 @@ func LoadBlockchainFromFileWithLocalContextV1(filename string, local *Blockchain
 	loaded.pendingTxs = []*Transaction{}
 	loaded.UpdateUTXOSet()
 	loaded.rebuildTransactionLocationIndexesLocked()
-	return &loaded, nil
+	return loaded, nil
 }

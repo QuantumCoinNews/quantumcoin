@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"quantumcoin/persistence"
 )
 
 const QueueSnapshotVersionV1 = "QC_QUEUE_SNAPSHOT_V1"
@@ -87,8 +89,8 @@ func (store *FileStore) Load() (
 		loadQueueSnapshotFileV1(previousPath)
 
 	if previousErr == nil && previousExists {
-		// Kurtarılan dosyayı kaybetmemek için önce mevcut bozuk
-		// snapshot'ı geri alınabilir .corrupt dosyasına taşı.
+		// KurtarÄ±lan dosyayÄ± kaybetmemek iÃ§in Ã¶nce mevcut bozuk
+		// snapshot'Ä± geri alÄ±nabilir .corrupt dosyasÄ±na taÅŸÄ±.
 		if _, statErr := os.Stat(store.path); statErr == nil {
 			corruptPath := store.path + ".corrupt"
 			_ = os.Remove(corruptPath)
@@ -579,60 +581,20 @@ func writeSyncedFileV1(
 	return nil
 }
 
-const (
-	queueStoreLockRetryV1 = 20 * time.Millisecond
-	queueStoreLockWaitV1  = 5 * time.Second
-)
+// Lock ownership belongs to the OS handle; a crash cannot leave a busy sentinel.
+const queueStoreLockWaitV1 = 5 * time.Second
 
-func acquireProcessLockV1(
-	path string,
-) (func(), error) {
-	if strings.TrimSpace(path) == "" {
-		return nil, errors.New("queue store lock path required")
+func acquireProcessLockV1(path string) (func(), error) {
+	if strings.TrimSpace(path) == "" || !strings.HasSuffix(path, ".lock") {
+		return nil, errors.New("queue store .lock path required")
 	}
-
 	parent := filepath.Dir(path)
 	if parent == "." || parent == "" {
 		return nil, errors.New("queue store lock parent directory required")
 	}
-
-	if err := os.MkdirAll(parent, 0o700); err != nil {
-		return nil, fmt.Errorf(
-			"create queue store lock directory: %w",
-			err,
-		)
+	lock, err := persistence.AcquireFileLock(strings.TrimSuffix(path, ".lock"), queueStoreLockWaitV1)
+	if err != nil {
+		return nil, fmt.Errorf("acquire queue store process lock: %w", err)
 	}
-
-	deadline := time.Now().Add(queueStoreLockWaitV1)
-
-	for {
-		file, err := os.OpenFile(
-			path,
-			os.O_CREATE|os.O_EXCL|os.O_WRONLY,
-			0o600,
-		)
-		if err == nil {
-			_ = file.Close()
-
-			return func() {
-				_ = os.Remove(path)
-			}, nil
-		}
-
-		if !os.IsExist(err) {
-			return nil, fmt.Errorf(
-				"create queue store process lock: %w",
-				err,
-			)
-		}
-
-		if time.Now().After(deadline) {
-			return nil, fmt.Errorf(
-				"queue store process lock timeout: %w",
-				err,
-			)
-		}
-
-		time.Sleep(queueStoreLockRetryV1)
-	}
+	return func() { _ = lock.Release() }, nil
 }

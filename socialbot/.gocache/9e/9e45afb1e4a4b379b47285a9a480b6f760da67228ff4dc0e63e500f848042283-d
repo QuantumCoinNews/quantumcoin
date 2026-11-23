@@ -1,5 +1,0 @@
-./autostart_default.go
-./binder.go
-./dialer.go
-./goenv.go
-./lsprpc.go

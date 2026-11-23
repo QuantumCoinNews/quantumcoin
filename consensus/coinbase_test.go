@@ -75,12 +75,12 @@ func TestValidateCoinbaseLayoutV1(t *testing.T) {
 			wantError: true,
 		},
 		{
-			name:    "pozitif olmayan output reddedilir",
+			name:    "post genesis zero payout layout is allowed",
 			genesis: false,
 			transactions: []*CoinbaseTransactionViewV1{
 				{Coinbase: true, OutputAmounts: []int64{0}},
 			},
-			wantError: true,
+			wantCount: 1,
 		},
 		{
 			name:    "coinbase toplami tasarsa reddedilir",

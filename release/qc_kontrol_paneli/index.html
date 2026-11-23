@@ -26,7 +26,7 @@ footer{padding:18px;color:var(--soluk);border-top:1px solid var(--cizgi)}
 <body>
 <header>
 <h1>QuantumCoin Kontrol Paneli</h1>
-<div class="alt">Türkçe yerel kontrol ekranı · Okuma modu · Son güncelleme: 2026-06-25 22:34:53</div>
+<div class="alt">Türkçe yerel kontrol ekranı · Okuma modu · Statik operasyon rehberi</div>
 <span class="rozet">Git/GitHub yok</span>
 <span class="rozet">Gerçek transfer yok</span>
 <span class="rozet">Mining yok</span>
@@ -36,21 +36,21 @@ footer{padding:18px;color:var(--soluk);border-top:1px solid var(--cizgi)}
 </header>
 
 <section class="bolum">
-<h2>Canlı Durum Özeti</h2>
-<div class="izgara"><div class='kart'><h2>Ana API</h2><div class='durum iyi'>&#199;evrim i&#231;i</div><pre>Durum: &#199;evrim i&#231;i
-Ağ: mainnet
-Etiket: MAINNET
-Zincir dosyası: chain_data.dat
-Y&#252;kseklik: 32551
-Blok sayısı: 34940
-Eş sayısı: 0
-Madenci &#231;alışıyor mu: False
-API portu: 8082
-P2P portu: 3001</pre></div><div class='kart'><h2>Lokal Testnet</h2><div class='durum uyari'>Kapalı</div><pre>Durum: Kapalı
-Not: Bu normal olabilir. Lokal testnet s&#252;rekli a&#231;ık tutulmuyor.
-Bu panel testnet başlatmaz.</pre></div><div class='kart'><h2>Telegram Game API</h2><div class='durum uyari'>Kapalı veya endpoint farklı</div><pre>Durum: Kapalı veya sağlık endpointi farklı
-Not: 8082 &#252;zerinde /api/health endpointi yanıt vermedi.
-Bu panel herhangi bir servis başlatmaz.</pre></div></div>
+<h2>Çalışan Node Bilgisi</h2>
+<div class="izgara">
+  <div class="kart">
+    <h2>Node API</h2>
+    <div class="durum uyari">Ağ kimliği doğrulanmadı</div>
+    <p>Canlı ağ etiketi, çalışan node’un bağlı genesis kimliğinden okunur.</p>
+    <p>Canlı telemetri ve uyarılar için CALISTIR_QC_KONTROL_PANELI_28G.ps1 komutunu kullanın.</p>
+    <p><a href="http://127.0.0.1:8082/" style="color:var(--yazi)">Yerel node sayfası</a></p>
+    <p><a href="http://127.0.0.1:28082/" style="color:var(--yazi)">İzole local-release node sayfası</a></p>
+    <pre>Node sağlık sözleşmesi: 8082 &#252;zerinde /api/health.
+İzole profil sağlık portu: 28082.</pre>
+  </div>
+  <div class="kart"><h2>Lokal Testnet</h2><div class="durum uyari">Canlı durum doğrulanmadı</div></div>
+  <div class="kart"><h2>Telegram Game API</h2><div class="durum uyari">Canlı durum doğrulanmadı</div></div>
+</div>
 </section>
 
 <section class="bolum">

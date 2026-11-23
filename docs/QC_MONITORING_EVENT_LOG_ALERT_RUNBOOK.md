@@ -1,6 +1,7 @@
 # QuantumCoin Monitoring / Event Log / Alert Runbook
 
-Status: QC_MONITORING_EVENT_LOG_ALERT_RUNBOOK_V1
+Document ID: `QC_MONITORING_EVENT_LOG_ALERT_RUNBOOK_V1`\
+Evidence stage: **Runtime wired**. See [scope and release status](POLICY_EVIDENCE_REGISTER.md).
 
 Date: 20260619_000753
 

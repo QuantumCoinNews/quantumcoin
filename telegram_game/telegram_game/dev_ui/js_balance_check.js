@@ -1,6 +1,10 @@
 const fs = require("fs");
 
-const file = process.argv[2] || ".\\.check_scripts\\script_01.js";
+const file = process.argv[2];
+if (!file) {
+  console.error("Usage: node js_balance_check.js <current-source.js> (heuristic only; use node --check for syntax validation)");
+  process.exit(64);
+}
 const src = fs.readFileSync(file, "utf8");
 
 let line = 1, col = 0;

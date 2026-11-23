@@ -38,7 +38,7 @@ def main():
                 manifest[path.relative_to(root).as_posix()]=hashlib.sha256(path.read_bytes()).hexdigest()
     (output/"source-manifest.json").write_text(json.dumps(manifest,indent=2,sort_keys=True),encoding="utf-8")
     env=os.environ.copy()
-    env.update(QC_API_BASE="http://127.0.0.1:1",QC_API_TOKEN="test-only-unreachable-node",
+    env.update(QC_GAME_LOAD_DOTENV="0",QC_API_BASE="http://127.0.0.1:1",QC_API_TOKEN="test-only-unreachable-node",
                TELEGRAM_GAME_ADMIN_TOKEN="test-only-regression-admin",TELEGRAM_BOT_TOKEN="test-only-regression-bot",
                QC_ENABLE_CHAIN_NFT_MINT="0",QC_ENABLE_TG_NFT_MINT_BRIDGE="0",
                QMA_NFT_LIFECYCLE_CONTRACT_PATH=str(contract),QMA_NFT_EVIDENCE_OUTPUT_DIR=str(output/"test-only-evidence"))
@@ -48,8 +48,9 @@ def main():
         begin=time.monotonic()
         log=output/(path.stem+".log")
         with tempfile.TemporaryDirectory(prefix="qma-regression-cwd-") as temp:
+            isolated_env={**env,"QC_GAME_DB":str(Path(temp)/"test-only-state.sqlite3")}
             try:
-                result=subprocess.run(command,cwd=temp,env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=240)
+                result=subprocess.run(command,cwd=temp,env=isolated_env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=240)
                 text=result.stdout.decode("utf-8",errors="replace")
                 status="PASS" if result.returncode==0 else "FAIL"
                 if result.returncode==0 and re.search(r"OK \(skipped=|^.*\.\.\. skipped ",text,re.MULTILINE): status="SKIP"

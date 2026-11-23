@@ -230,17 +230,20 @@ func (t *QC20Token) TransferFromAuthorizedV1(
 		return resultErr
 	}
 
-	newRecipientBalance, err := checkedAddUint64(
-		t.balances[recipient],
-		amount,
-	)
-	if err != nil {
-		resultErr = ErrTokenBalanceOverflow
-		return resultErr
-	}
+	// Delegated self-transfers still spend allowance and nonce, not balance.
+	if owner != recipient {
+		newRecipientBalance, err := checkedAddUint64(
+			t.balances[recipient],
+			amount,
+		)
+		if err != nil {
+			resultErr = ErrTokenBalanceOverflow
+			return resultErr
+		}
 
-	t.balances[owner] -= amount
-	t.balances[recipient] = newRecipientBalance
+		t.balances[owner] -= amount
+		t.balances[recipient] = newRecipientBalance
+	}
 	t.allowances[owner][caller] -= amount
 
 	commitTokenAuthorizationNonceV1(

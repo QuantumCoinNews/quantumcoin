@@ -1,8 +1,10 @@
-# QuantumCoin Mining Period / Bitcoin-Style Continuation
+# QuantumCoin Mining Period / Whole-QC Continuation
 
-Status: QC_MINING_PERIOD_BITCOIN_STYLE_CONTINUE_V1
+Document ID: `QC_MINING_PERIOD_BITCOIN_STYLE_CONTINUE_V1`\
+Evidence stage: **Implementation**. See [scope and release status](POLICY_EVIDENCE_REGISTER.md).
 
-Date: 20260619_201209
+Original reference: 20260619_201209
+Updated: 2026-11-05
 
 ## Purpose
 
@@ -10,24 +12,33 @@ This step defines the 10-year primary mining period, the 2-year halving schedule
 
 This step does not mint, mine, distribute remaining coins, or start/stop mining.
 
+## Canonical schedule basis
+
+The user confirmed the existing whole-QC series on 5 November 2026. Consensus
+halving is based on block height: every 2,102,400 blocks. Year labels below are
+illustrative at the target block interval; wall-clock time does not choose rewards.
+The minimum subsidy is 1 QC while issuance remains, capped by remaining supply.
+Go visibility derives amounts from consensus.LegacySubsidyAtHeight. This document
+supersedes the former fractional examples without changing consensus or history.
+
 ## Primary reward schedule
 
 - Year 0-2: 50 QC per block
 - Year 2-4: 25 QC per block
-- Year 4-6: 12.5 QC per block
-- Year 6-8: 6.25 QC per block
-- Year 8-10: 3.125 QC per block
+- Year 4-6: 12 QC per block
+- Year 6-8: 6 QC per block
+- Year 8-10: 3 QC per block
 
-## Bitcoin-style continuation after 10 years
+## Whole-QC continuation after the illustrative 10-year period
 
 If all QC is not mined within the 10-year primary mining period:
 
 - Wallet + Miner continues mining.
-- Halving continues every 2 years.
+- Halving intervals continue by block height, with the 1-QC floor retained.
 - Example continuation:
-  - Year 10-12: 1.5625 QC per block
-  - Year 12-14: 0.78125 QC per block
-  - Year 14-16: 0.390625 QC per block
+  - Year 10-12: 1 QC per block
+  - Year 12-14: 1 QC per block
+  - Year 14-16: 1 QC per block
 - Mining continues only until max supply is reached.
 - Rewards must be capped by remaining supply.
 - Remaining QC is not auto-minted.

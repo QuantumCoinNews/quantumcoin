@@ -14,25 +14,25 @@ func TestStateEncapsulationV1SnapshotsAreDefensive(
 		"Base Token",
 		8,
 		1000,
-		"owner",
+		canonicalAddressFixture("owner"),
 	)
 
 	base.mu.Lock()
-	base.balances["owner"] = 100
+	base.balances[canonicalAddressFixture("owner")] = 100
 	base.mu.Unlock()
 
 	baseSnapshot := base.BalancesSnapshotV1()
-	baseSnapshot["owner"] = 999
-	baseSnapshot["attacker"] = 50
+	baseSnapshot[canonicalAddressFixture("owner")] = 999
+	baseSnapshot[canonicalAddressFixture("attacker")] = 50
 
-	if balance := base.BalanceOf("owner"); balance != 100 {
+	if balance := base.BalanceOf(canonicalAddressFixture("owner")); balance != 100 {
 		t.Fatalf(
 			"base balance changed through snapshot: %d",
 			balance,
 		)
 	}
 
-	if balance := base.BalanceOf("attacker"); balance != 0 {
+	if balance := base.BalanceOf(canonicalAddressFixture("attacker")); balance != 0 {
 		t.Fatalf(
 			"base snapshot created attacker balance: %d",
 			balance,
@@ -44,28 +44,28 @@ func TestStateEncapsulationV1SnapshotsAreDefensive(
 		"FCT",
 		1000,
 		8,
-		"owner",
+		canonicalAddressFixture("owner"),
 	)
 
 	qc20.mu.Lock()
-	qc20.allowances["owner"] =
+	qc20.allowances[canonicalAddressFixture("owner")] =
 		map[string]uint64{
-			"spender": 25,
+			canonicalAddressFixture("spender"): 25,
 		}
 	qc20.mu.Unlock()
 
 	qc20Balances := qc20.BalancesSnapshotV1()
-	qc20Balances["owner"] = 1
-	qc20Balances["attacker"] = 999
+	qc20Balances[canonicalAddressFixture("owner")] = 1
+	qc20Balances[canonicalAddressFixture("attacker")] = 999
 
 	qc20Allowances := qc20.AllowancesSnapshotV1()
-	qc20Allowances["owner"]["spender"] = 999
-	qc20Allowances["attacker"] =
+	qc20Allowances[canonicalAddressFixture("owner")][canonicalAddressFixture("spender")] = 999
+	qc20Allowances[canonicalAddressFixture("attacker")] =
 		map[string]uint64{
-			"spender": 1000,
+			canonicalAddressFixture("spender"): 1000,
 		}
 
-	if balance := qc20.BalanceOf("owner"); balance != 1000 {
+	if balance := qc20.BalanceOf(canonicalAddressFixture("owner")); balance != 1000 {
 		t.Fatalf(
 			"QC20 balance changed through snapshot: %d",
 			balance,
@@ -73,8 +73,8 @@ func TestStateEncapsulationV1SnapshotsAreDefensive(
 	}
 
 	if allowance := qc20.Allowance(
-		"owner",
-		"spender",
+		canonicalAddressFixture("owner"),
+		canonicalAddressFixture("spender"),
 	); allowance != 25 {
 		t.Fatalf(
 			"QC20 allowance changed through snapshot: %d",
@@ -83,8 +83,8 @@ func TestStateEncapsulationV1SnapshotsAreDefensive(
 	}
 
 	if allowance := qc20.Allowance(
-		"attacker",
-		"spender",
+		canonicalAddressFixture("attacker"),
+		canonicalAddressFixture("spender"),
 	); allowance != 0 {
 		t.Fatalf(
 			"QC20 snapshot created attacker allowance: %d",
@@ -95,7 +95,7 @@ func TestStateEncapsulationV1SnapshotsAreDefensive(
 	qc721 := NewQC721TokenWithOwner(
 		"Collection",
 		"NFT",
-		"owner",
+		canonicalAddressFixture("owner"),
 	)
 
 	qc721.mu.Lock()
@@ -106,8 +106,8 @@ func TestStateEncapsulationV1SnapshotsAreDefensive(
 	owners := qc721.OwnersSnapshotV1()
 	uris := qc721.TokenURIsSnapshotV1()
 
-	owners[1] = "attacker"
-	owners[2] = "attacker"
+	owners[1] = canonicalAddressFixture("attacker")
+	owners[2] = canonicalAddressFixture("attacker")
 	uris[1] = "ipfs://tampered"
 	uris[2] = "ipfs://attacker"
 
@@ -202,6 +202,7 @@ func TestStateEncapsulationV1HistoricalJSONKeys(
 		"total_supply",
 		"owner",
 		"balances",
+		"authorization_identity",
 	)
 
 	var loadedBase Token
@@ -245,6 +246,7 @@ func TestStateEncapsulationV1HistoricalJSONKeys(
 		"Decimals",
 		"Balances",
 		"Allowances",
+		"AuthorizationIdentity",
 	)
 
 	var loadedQC20 QC20Token
@@ -284,6 +286,7 @@ func TestStateEncapsulationV1HistoricalJSONKeys(
 		"Owner",
 		"Owners",
 		"TokenURIs",
+		"AuthorizationIdentity",
 	)
 
 	var loadedQC721 QC721Token

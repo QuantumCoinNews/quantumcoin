@@ -26,12 +26,12 @@ def test_default_policy_valid():
 def test_primary_reward_schedule():
     policy = default_mining_node_transition_policy_v1()
     assert policy["primaryRewardSchedule"] == PRIMARY_REWARD_SCHEDULE
-    assert [x["rewardQc"] for x in policy["primaryRewardSchedule"]] == ["50", "25", "12.5", "6.25", "3.125"]
+    assert [x["rewardQc"] for x in policy["primaryRewardSchedule"]] == ["50", "25", "12", "6", "3"]
 
 def test_post_ten_year_bitcoin_style_schedule():
     policy = default_mining_node_transition_policy_v1()
     assert policy["postTenYearExampleSchedule"] == POST_TEN_YEAR_EXAMPLE_SCHEDULE
-    assert [x["rewardQc"] for x in policy["postTenYearExampleSchedule"]] == ["1.5625", "0.78125", "0.390625"]
+    assert [x["rewardQc"] for x in policy["postTenYearExampleSchedule"]] == ["1", "1", "1"]
 
 def test_incomplete_after_ten_years_wallet_miner_continues_bitcoin_style():
     policy = default_mining_node_transition_policy_v1()

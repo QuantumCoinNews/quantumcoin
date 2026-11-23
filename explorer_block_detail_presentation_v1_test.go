@@ -1,7 +1,9 @@
 package main
 
 import (
-	"os"
+	"bytes"
+	"go/format"
+	"go/token"
 	"strings"
 	"testing"
 
@@ -11,32 +13,12 @@ import (
 func TestBlockDetailDoesNotExposeCanonicalBlockDirectlyV1(
 	t *testing.T,
 ) {
-	sourceBytes, err := os.ReadFile("main.go")
-	if err != nil {
-		t.Fatalf("read main.go: %v", err)
+	function := runtimePolicyFunctionV1(t, "node_app_explorer.go", "handleBlockDetail")
+	var source bytes.Buffer
+	if err := format.Node(&source, token.NewFileSet(), function); err != nil {
+		t.Fatal(err)
 	}
-
-	source := string(sourceBytes)
-
-	start := strings.Index(
-		source,
-		"func handleBlockDetail(",
-	)
-	if start < 0 {
-		t.Fatal("handleBlockDetail not found")
-	}
-
-	tail := source[start:]
-
-	end := strings.Index(
-		tail,
-		"/* ---------- Burn & stake stubs ---------- */",
-	)
-	if end < 0 {
-		t.Fatal("handleBlockDetail end boundary not found")
-	}
-
-	handler := tail[:end]
+	handler := source.String()
 
 	if strings.Contains(
 		handler,

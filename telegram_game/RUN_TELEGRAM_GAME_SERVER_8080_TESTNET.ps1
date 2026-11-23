@@ -1,4 +1,6 @@
-﻿
+# Persistence is selected by telegram_game.persistence.
+# To retain a legacy DB, explicitly set QC_GAME_DB to its absolute path first.
+
 
 function Write-QcInfo {
     param(
@@ -22,7 +24,7 @@ function Write-QcInfo {
 }
 $null = "Stop"
 
-Set-Location -Path "C:\Projects\quantumcoin\telegram_game"
+Set-Location -LiteralPath $PSScriptRoot
 
 $env:TELEGRAM_GAME_CHAIN_MODE = "testnet"
 $env:TELEGRAM_GAME_NETWORK = "testnet"
@@ -43,13 +45,6 @@ Write-QcInfo "Telegram Game mode=$env:TELEGRAM_GAME_CHAIN_MODE" -ForegroundColor
 Write-QcInfo "QC_API_BASE=$env:QC_API_BASE" -ForegroundColor Yellow
 Write-QcInfo "TELEGRAM_GAME_MINING_MODE=$env:TELEGRAM_GAME_MINING_MODE" -ForegroundColor Yellow
 
-python -m uvicorn telegram_game.dev_api:app --host 127.0.0.1 --port 8080
-
-
-
-
-
-
-
-
-
+python (Join-Path $PSScriptRoot "../scripts/build_wallet_crypto.py")
+if ($LASTEXITCODE -ne 0) { throw "QC local wallet asset build failed; server not started" }
+python -m uvicorn telegram_game.runtime:app --host 127.0.0.1 --port 8080 --no-proxy-headers

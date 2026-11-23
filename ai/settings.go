@@ -19,6 +19,7 @@ const (
 
 var (
 	cfgOnce sync.Once
+	cfgMu   sync.RWMutex
 
 	aiCfg struct {
 		enabled bool
@@ -58,15 +59,16 @@ func loadAIConfig() {
 	aiCfg.level = level
 }
 
-// DIKKAT: Projede zaten bir Enabled() vardıysa, onu kaldırıp
-// bu dosyadaki Enabled() fonksiyonunu kullanmalısın.
-
-// Enabled, AI motorunun gerçekten analiz yapıp yapmayacağını söyler.
-// Hem global enable flag'e, hem de level'in OFF olup olmamasına bakar.
-
-// Level documents the QuantumCoin component used by this module.
-// Level, geçerli AI seviyesini döner.
-func Level() AILevel {
+// Environment is read once, before any reader or runtime override. Off always
+// disables analysis, including after SetEnabled(true). No setting affects admission.
+func configSnapshot() (bool, AILevel) {
 	cfgOnce.Do(loadAIConfig)
-	return aiCfg.level
+	cfgMu.RLock()
+	defer cfgMu.RUnlock()
+	return aiCfg.enabled && aiCfg.level != AILevelOff, aiCfg.level
+}
+
+func Level() AILevel {
+	_, level := configSnapshot()
+	return level
 }

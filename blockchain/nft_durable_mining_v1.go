@@ -1,11 +1,8 @@
 package blockchain
 
 import (
-	"bytes"
-	"encoding/gob"
 	"fmt"
-	"os"
-	"path/filepath"
+	"io"
 	"strings"
 )
 
@@ -38,43 +35,27 @@ func (bc *Blockchain) MineBlockWithNFTAwardAndPersistSynchronizedV1(
 // persistNFTMiningCandidateLockedV1 serializes a detached prospective chain.
 // It does not append, clear the mempool or update live indexes/ownership.
 // The caller already validated the candidate and owns the canonical lock.
-// This is the configured single writer's synchronous I/O boundary, not a
-// cross-process lock or a claim of crash-atomic Rename on every platform.
+// It shares the destination/OS lock and atomic installation primitive used
+// by normal saves and worker commits, before publishing live NFT state.
 func (bc *Blockchain) persistNFTMiningCandidateLockedV1(candidate *Block, filename string) error {
 	if candidate == nil {
 		return ErrNilBlock
 	}
+	if err := bc.validateBoundNetworkIdentityLockedV1(); err != nil {
+		return err
+	}
 	prospective := &Blockchain{
-		Blocks:      cloneBlocksV1(bc.Blocks),
-		TotalSupply: bc.TotalSupply,
+		StoredNetworkIdentityV1: cloneNetworkIdentityV1(bc.networkIdentity),
+		networkIdentity:         cloneNetworkIdentityV1(bc.networkIdentity),
+		Blocks:                  cloneBlocksV1(bc.Blocks),
+		TotalSupply:             bc.TotalSupply,
 	}
 	prospective.Blocks = append(prospective.Blocks, cloneBlockV1(candidate))
 	prospective.UpdateUTXOSet()
-	var encoded bytes.Buffer
-	if err := gob.NewEncoder(&encoded).Encode(prospective); err != nil {
-		return fmt.Errorf("persistent NFT mining encode: %w", err)
-	}
-	file, err := os.CreateTemp(filepath.Dir(filename), ".qma-nft-commit-*")
-	if err != nil {
-		return fmt.Errorf("persistent NFT mining temporary file: %w", err)
-	}
-	temporary := file.Name()
-	defer func() {
-		_ = file.Close()
-		_ = os.Remove(temporary)
-	}()
-	if _, err := file.Write(encoded.Bytes()); err != nil {
-		return fmt.Errorf("persistent NFT mining write: %w", err)
-	}
-	if err := file.Sync(); err != nil {
-		return fmt.Errorf("persistent NFT mining flush: %w", err)
-	}
-	// Close the temporary handle before installing the completed file.
-	if err := file.Close(); err != nil {
-		return fmt.Errorf("persistent NFT mining close: %w", err)
-	}
-	if err := os.Rename(temporary, filename); err != nil {
-		return fmt.Errorf("persistent NFT mining install: %w", err)
+	if err := persistChainFileV1(filename, func(writer io.Writer) error {
+		return encodeDiskChainV1(writer, prospective)
+	}, bc.networkIdentity); err != nil {
+		return fmt.Errorf("persistent NFT mining: %w", err)
 	}
 	return nil
 }

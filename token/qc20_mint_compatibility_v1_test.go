@@ -166,7 +166,8 @@ func TestQC20LegacyMintV1ReturnsFixedSupplyError(
 		"recipient",
 	)
 
-	subject := NewQC20TokenWithOwner(
+	subject := newTestAuthorizedQC20Token(
+		t,
 		"Fixed Token",
 		"FIX",
 		100,
@@ -236,7 +237,8 @@ func TestQC20FixedSupplyV1CannotRemintBurnedSupply(
 	owner := wallet.NewWallet()
 	recipient := wallet.NewWallet()
 
-	subject := NewQC20TokenWithOwner(
+	subject := newTestAuthorizedQC20Token(
+		t,
 		"Permanent Burn Token",
 		"PBT",
 		100,

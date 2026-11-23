@@ -1,6 +1,7 @@
 # QuantumCoin Testnet Config Skeleton
 
-Status: QC_TESTNET_CONFIG_SKELETON_V1
+Document ID: `QC_TESTNET_CONFIG_SKELETON_V1`\
+Evidence stage: **Implementation**. See [scope and release status](POLICY_EVIDENCE_REGISTER.md).
 
 Date: 20260617_223732
 

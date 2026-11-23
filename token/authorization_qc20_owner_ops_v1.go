@@ -107,17 +107,20 @@ func (t *QC20Token) TransferAuthorizedV1(
 		return resultErr
 	}
 
-	newToBalance, err := checkedAddUint64(
-		t.balances[to],
-		amount,
-	)
-	if err != nil {
-		resultErr = ErrTokenBalanceOverflow
-		return resultErr
-	}
+	// A signed self-transfer consumes its nonce but cannot create balance.
+	if caller != to {
+		newToBalance, err := checkedAddUint64(
+			t.balances[to],
+			amount,
+		)
+		if err != nil {
+			resultErr = ErrTokenBalanceOverflow
+			return resultErr
+		}
 
-	t.balances[caller] -= amount
-	t.balances[to] = newToBalance
+		t.balances[caller] -= amount
+		t.balances[to] = newToBalance
+	}
 
 	commitTokenAuthorizationNonceV1(
 		t.authorizationNonces,

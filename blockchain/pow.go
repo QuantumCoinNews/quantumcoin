@@ -1,6 +1,7 @@
 package blockchain
 
 import (
+	"context"
 	"fmt"
 	"math/big"
 
@@ -52,6 +53,13 @@ func (pow *ProofOfWork) runNonceRangeV1(
 	startNonce uint64,
 	maxNonce uint64,
 ) (int, []byte, error) {
+	return pow.runNonceRangeContextV1(context.Background(), startNonce, maxNonce)
+}
+
+func (pow *ProofOfWork) runNonceRangeContextV1(ctx context.Context, startNonce, maxNonce uint64) (int, []byte, error) {
+	if ctx == nil {
+		return 0, nil, fmt.Errorf("proof of work context is unavailable")
+	}
 	if pow == nil || pow.block == nil {
 		return 0, nil, fmt.Errorf(
 			"%s: proof of work block is unavailable",
@@ -85,6 +93,9 @@ func (pow *ProofOfWork) runNonceRangeV1(
 	}
 
 	for nonce := startNonce; nonce <= maxNonce; nonce++ {
+		if err := ctx.Err(); err != nil {
+			return 0, nil, err
+		}
 		hash, err := ComputePoWHashUint64V1(
 			pow.block,
 			nonce,
@@ -104,6 +115,9 @@ func (pow *ProofOfWork) runNonceRangeV1(
 		)
 
 		if hashInt.Cmp(pow.target) == -1 {
+			if err := ctx.Err(); err != nil {
+				return 0, nil, err
+			}
 			nonceInt, err := ConsensusNonceIntV1(
 				nonce,
 			)
@@ -152,6 +166,12 @@ func (pow *ProofOfWork) Run() (
 	return pow.runWithMaxNonceV1(
 		MaxConsensusNonceV1,
 	)
+}
+
+// RunContext preserves the nonce order and consensus hash, and interrupts only
+// the local search. A canceled result never contains a solved candidate.
+func (pow *ProofOfWork) RunContext(ctx context.Context) (int, []byte, error) {
+	return pow.runNonceRangeContextV1(ctx, 0, MaxConsensusNonceV1)
 }
 
 func (pow *ProofOfWork) ValidateE() error {

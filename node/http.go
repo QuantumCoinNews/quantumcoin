@@ -97,7 +97,15 @@ func (r *Runtime) ServeHTTP(
 
 	server := newHTTPServerV1(addr, handler, options)
 
-	r.SetHTTPServer(server)
+	// Register atomically with shutdown admission. A late server must not
+	// escape the service snapshot and reopen a listener after shutdown.
+	r.mu.Lock()
+	if r.stopping || r.shutdownRequested.Load() {
+		r.mu.Unlock()
+		return ErrRuntimeShuttingDownV1
+	}
+	r.HTTPServer = server
+	r.mu.Unlock()
 
 	r.EmitEvent(
 		NodeEvent{

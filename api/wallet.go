@@ -2,26 +2,29 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
+	"quantumcoin/internal/httpresponse"
 )
 
-// AddressProvider main.go tarafından set edilir:
-//
-//	api.AddressProvider = func() string { return w.Address }
+// AddressProvider is retained for source compatibility but is never called.
+// Deprecated: use the canonical node wallet address endpoint.
 var AddressProvider func() string
 
-// RegisterWalletRoutes documents the QuantumCoin component used by this module.
-// RegisterWalletRoutes, /api/wallet/address endpoint'ini mux'a ekler.
+// RegisterWalletRoutes installs only a fail-closed legacy retirement response.
+// It does not expose wallet state or provide an alternate node API.
+// Deprecated: the canonical root router owns wallet routes and authentication.
 func RegisterWalletRoutes(mux *http.ServeMux) {
+	if mux == nil {
+		return
+	}
 	mux.HandleFunc("/api/wallet/address", func(w http.ResponseWriter, r *http.Request) {
-		addr := ""
-		if AddressProvider != nil {
-			addr = AddressProvider()
+		status := http.StatusGone
+		message := "legacy wallet route retired; use the canonical node API"
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", http.MethodGet)
+			status = http.StatusMethodNotAllowed
+			message = "method not allowed"
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]string{
-			"address": addr,
-		})
+		httpresponse.WriteError(w, status, message)
 	})
 }

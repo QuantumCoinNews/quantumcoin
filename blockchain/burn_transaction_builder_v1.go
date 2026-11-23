@@ -137,7 +137,9 @@ func NewCanonicalBurnTransactionFromQCAmountV1(
 		Amount:    float64(amountUnits),
 	}
 
-	tx.ID = tx.Hash()
+	if err := bc.assignTransactionIDLockedV2(tx); err != nil {
+		return nil, err
+	}
 
 	return tx, nil
 }

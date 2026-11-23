@@ -1,6 +1,7 @@
 # QuantumCoin Blockchain Package Standard
 
-Status: QC_BLOCKCHAIN_PACKAGE_STANDARD_V1
+Document ID: `QC_BLOCKCHAIN_PACKAGE_STANDARD_V1`\
+Evidence stage: **Design**. See [scope and release status](POLICY_EVIDENCE_REGISTER.md).
 
 This document defines the expected blockchain package structure before testnet preparation.
 

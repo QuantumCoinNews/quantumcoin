@@ -3,10 +3,8 @@
 // Package ai contains QuantumCoin project code for this module.
 package ai
 
-// Bu dosya yalnızca AI'nin önerdiği bonusları diske yazdırmak için
-// üstten çağrılabilecek küçük bir sarmalayıcı tutuyor.
-// Asıl işi export.go'daki WriteAIBonusesTo yapıyor.
-
+// Deprecated: retained for callers of the retired AI bonus exporter.
+// Always returns ErrAIBonusDisabled without changing files or balances.
 func CollectAndWrite(dir string, bonuses []BonusSuggestion) error {
 	return WriteAIBonusesTo(dir, bonuses)
 }

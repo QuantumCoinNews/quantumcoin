@@ -8,6 +8,7 @@ import (
 func clearTestnetLabelEnvV1(t *testing.T) {
 	t.Helper()
 	for _, name := range []string{
+		"QC_MAINNET",
 		"QC_TESTNET",
 		"QC_PUBLIC_TESTNET",
 		"QC_API_PUBLIC_TESTNET",
@@ -24,6 +25,7 @@ func clearTestnetLabelEnvV1(t *testing.T) {
 
 func TestGetNetworkLabelInfoMainnetV1(t *testing.T) {
 	clearTestnetLabelEnvV1(t)
+	t.Setenv("QC_MAINNET", "1")
 
 	info := GetNetworkLabelInfoV1(QCMainnetChainFileV1)
 	if info.IsTestnet {
@@ -31,6 +33,14 @@ func TestGetNetworkLabelInfoMainnetV1(t *testing.T) {
 	}
 	if info.Label != "MAINNET" {
 		t.Fatalf("expected MAINNET label, got %q", info.Label)
+	}
+}
+
+func TestDefaultChainNameDoesNotImplyMainnet(t *testing.T) {
+	clearTestnetLabelEnvV1(t)
+	info := GetNetworkLabelInfoV1(QCMainnetChainFileV1)
+	if info.Network != "local-release" || info.Label != "LOCAL RELEASE" {
+		t.Fatalf("unexpected label for default runtime: %+v", info)
 	}
 }
 

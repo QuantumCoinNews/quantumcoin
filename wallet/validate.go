@@ -13,6 +13,12 @@ import (
 // Beklenen format:
 // [version:1 byte][pubKeyHash:20 byte][checksum:4 byte] = 25 byte
 func ValidateAddress(address string) bool {
+	// A 25-byte Base58Check payload fits in at most 35 Base58 characters.
+	// Reject unbounded input before big.Int decoding; valid QC addresses keep
+	// the same version, payload length and checksum rules.
+	if len(address) == 0 || len(address) > 35 {
+		return false
+	}
 	decoded, err := utils.Base58Decode([]byte(address))
 	if err != nil {
 		return false

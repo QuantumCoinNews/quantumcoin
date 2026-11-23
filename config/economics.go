@@ -1,16 +1,13 @@
-// config/economics.go
-
-// Package config contains QuantumCoin project code for this module.
 package config
 
-// Paylaşım yüzdeleri (sabit politika).
-// Toplamı 70 + 10 + 10 + 5 = 95; kalan %5 community’ye gider.
-// Not: Community yüzdesini ayrıca sabit olarak da tutuyoruz
-// ki eski kodlar doğrudan kullanabilsin.
+import qconsensus "quantumcoin/consensus"
+
+// These shares describe the implemented coinbase recipient, not founder allocation.
+// All subsidy and validated fees go to the miner; founder vesting is separate.
 const (
-	ShareMiningPct    = 70
-	ShareStakingPct   = 10
-	ShareDevPct       = 10
-	ShareBurnPct      = 5
-	ShareCommunityPct = 5 // 100 - (Mining+Staking+Dev+Burn)
+	ShareMiningPct    = qconsensus.CanonicalMinerRewardPercentV1
+	ShareStakingPct   = qconsensus.CanonicalStakeRewardPercentV1
+	ShareDevPct       = qconsensus.CanonicalDevRewardPercentV1
+	ShareBurnPct      = qconsensus.CanonicalBurnRewardPercentV1
+	ShareCommunityPct = qconsensus.CanonicalCommunityRewardPercentV1
 )

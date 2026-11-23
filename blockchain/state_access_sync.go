@@ -203,7 +203,7 @@ func (bc *Blockchain) ValidatePeerTransactionSynchronized(
 	bc.stateMu.Lock()
 	defer bc.stateMu.Unlock()
 
-	return bc.ValidatePeerTransactionStrictV1(tx)
+	return bc.validatePeerTransactionLockedV1(tx)
 }
 
 // ValidateReplacementChainSynchronized validates a replacement candidate
@@ -296,10 +296,6 @@ func (bc *Blockchain) ReplaceChainFromPeerSynchronizedV1(
 ) error {
 	if bc == nil {
 		return ErrNilBlockchain
-	}
-
-	if err := bc.ValidateReplacementChainSynchronized(blocks); err != nil {
-		return err
 	}
 
 	return bc.replaceChainAfterStrictV1(blocks)

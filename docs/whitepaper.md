@@ -1,72 +1,20 @@
-# 💠 QuantumCoin (QC) — Whitepaper
+# QuantumCoin technical overview
 
-## 📌 Vision & Mission
+This document describes the current source and names release or activation
+requirements separately. The [README](../README.md) describes the product
+scope. Autopublisher uses its own [editorial status and source registry](../autopublisher/src/runtime/sources.ts).
 
-QuantumCoin is a next-generation hybrid blockchain platform, built on the foundations of decentralization, security, and extensibility. Our aim is to go beyond Bitcoin’s limitations, rival Ethereum’s flexibility, and combine user-friendly innovations in a truly unique network.  
-**“Do what hasn’t been done.” — QuantumCoin Manifesto**
+| Area | Current scope |
+| --- | --- |
+| Supply and mining | The canonical cap is 25,500,000 QC. Founder allocation is 5% when configured. The miner receives the block subsidy and validated fees. The whole-QC subsidy starts at 50 and the first scheduled halving is at height 2,102,401. At the 30-second target rate, the current cap can be reached before that halving. |
+| Consensus and wallet | The node validates PoW, transaction signatures, UTXO ownership and supply. The wallet signs locally. Atom-denominated consensus applies to explicitly activated protocols. |
+| Burn | A signed burn uses its applicable protocol and policy gates. There is no automatic percentage burn of block rewards or replacement mint. |
+| AI and monitoring | AI produces advisory observations. Transaction admission and consensus run independently of AI. Monitoring records incidents and supports operator review. |
+| NFTs | The monthly lifecycle is implemented in source. Final artwork, production approvals and activation are separate milestones. |
+| Token Factory and staking | Token Factory and project-token mining are planned. Staking is inactive in consensus. |
+| Telegram and publishing | Telegram Game has its own ledger and identity boundary. The publisher implements YouTube, Telegram and X paths. Live acceptance is provider-specific. TikTok is manual. |
+| Network and release | Testnet uses a separate profile. Mainnet activation and signed production packaging are separate release decisions. |
 
----
-
-## 🚀 Key Features
-
-| Feature                   | Description  |
-|---------------------------|--------------|
-| **Max Supply**            | 25,500,000 QC (fixed) |
-| **Distribution**          | 70% Mining, 10% Staking, 10% Dev, 5% Burn, 5% Community/DAO |
-| **Block Time**            | ~30 seconds |
-| **Halving System**        | Every 2 years |
-| **Mining**                | Advanced PoW + GUI desktop/miner |
-| **Staking**               | Based on wallet duration & balance |
-| **NFT Standard**          | QC721 |
-| **Token Standard**        | QC20 (ERC20-like, easy creation) |
-| **Explorer/API**          | Built-in HTTP server |
-| **Multi-language**        | EN, TR, ES, ZH |
-| **Mobile Mining**         | CPU-friendly, cross-platform |
-| **Burn Mechanism**        | Active in transfers and block rewards |
-
----
-
-## 🔒 Security & Validation
-
-- **SHA256** & MerkleTree for block integrity
-- **ECDSA** for transaction signatures
-- **UTXO model** for double-spending protection
-- **Peer-to-Peer (P2P)**: decentralized transaction/block propagation
-- **Self-defending network:** AI-detected attacks, auto-freeze, user/exchange notification
-
----
-
-## ⛏️ Mining Model
-
-- GUI-based, one-click mining (desktop & mobile)
-- Background worker process (`miner/worker.go`)
-- Performance monitoring (`metrics.go`)
-- Dynamic difficulty management (`difficulty.go`)
-- Scheduled mining (`scheduler.go`)
-- Bonus/NFT rewards (`rewarder.go`, `nft_miner.go`)
-
----
-
-## 💰 Tokenomics
-
-- **QC20**: Anyone can create and issue tokens
-- QuantumSwap integration (future)
-- Stake pool and dev/community funds on-chain, transparent
-- All fees, burns, and bonus distributions visible
-
----
-
-## 🎮 Integrations & Roadmap
-
-| Stage      | Target Features                                   |
-|------------|---------------------------------------------------|
-| **Q3 2025**| Desktop GUI, Mining, Wallet, Explorer             |
-| **Q4 2025**| Mobile Mining, Web Swap, NFT Drops                |
-| **Q1 2026**| Mainnet, Game Integration, Bonus Upgrades         |
-| **Q2 2026**| DAO Governance, QuantumBridge, zkSync/Layer2      |
-
----
-
-## 📚 Technical Architecture
-
-**Directory Structure (Sample):**
+See the [mining reward contract](MINING_REWARD_CONTRACT.md), the [network and
+emission notes](NETWORK_GENESIS_AND_EMISSION.md), and the [testnet
+instructions](../testnet/README.md) for operational detail.

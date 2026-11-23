@@ -3,7 +3,6 @@ package wallet
 
 import (
 	"crypto/ecdsa"
-	"crypto/rand"
 	"encoding/hex"
 	"log"
 
@@ -18,27 +17,15 @@ type Wallet struct {
 	PublicKey []byte
 }
 
-// 32-byte left-pad
-func pad32(b []byte) []byte {
-	if len(b) >= 32 {
-		return b
-	}
-	out := make([]byte, 32)
-	copy(out[32-len(b):], b)
-	return out
-}
-
 // NewWallet documents the QuantumCoin component used by this module.
 // Yeni anahtar çifti (secp256k1)
 func NewWallet() *Wallet {
-	curve := secp256k1.S256()
-	priv, err := ecdsa.GenerateKey(curve, rand.Reader)
+	private, err := secp256k1.GeneratePrivateKey()
 	if err != nil {
-		log.Panicf("Cüzdan anahtarı oluşturulamadı: %v", err)
+		log.Panicf("wallet key generation failed: %v", err)
 	}
-	pub := append([]byte{0x04}, pad32(priv.PublicKey.X.Bytes())...)
-	pub = append(pub, pad32(priv.PublicKey.Y.Bytes())...)
-	return &Wallet{PrivateKey: priv, PublicKey: pub}
+	defer private.Zero()
+	return &Wallet{PrivateKey: private.ToECDSA(), PublicKey: private.PubKey().SerializeUncompressed()}
 }
 
 // GetAddressFromPub documents the QuantumCoin component used by this module.
@@ -53,7 +40,7 @@ func GetAddressFromPub(pub []byte) string {
 
 func (w *Wallet) GetAddress() string { return GetAddressFromPub(w.PublicKey) }
 
-// HashPubKey documents the QuantumCoin component used by this module.
+// NormalizePubKey HashPubKey documents the QuantumCoin component used by this module.
 // PubKey HASH160
 func NormalizePubKey(pubKey []byte) []byte {
 	if len(pubKey) == 65 && pubKey[0] == 0x04 {
@@ -70,10 +57,15 @@ func HashPubKey(pubKey []byte) []byte {
 // Özel anahtarı hex dışa aktar (ham 32 bayt secp256k1 skalar D)
 // ImportPrivateKeyHex bu formatı doğrudan kabul eder.
 func (w *Wallet) ExportPrivateKeyHex() string {
-	d := w.PrivateKey.D.Bytes()
-	out := make([]byte, 32)
-	copy(out[32-len(d):], d) // left-pad
-	return hex.EncodeToString(out)
+	if w == nil {
+		return ""
+	}
+	raw, err := utils.SecpPrivateBytesV1(w.PrivateKey)
+	if err != nil {
+		return ""
+	}
+	defer clear(raw)
+	return hex.EncodeToString(raw)
 }
 
 // LoadWallet adrese göre cüzdan yükler.

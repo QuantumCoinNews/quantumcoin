@@ -1,6 +1,8 @@
 package token
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"sync"
 )
@@ -28,8 +30,9 @@ type QC20Token struct {
 
 	// authorizationNonces prevents signed QC20 operation replay.
 	// Custom JSON persistence keeps consumed nonces across reloads.
-	authorizationNonces map[string]uint64
-	mu                  sync.RWMutex
+	authorizationNonces   map[string]uint64
+	authorizationIdentity TokenAuthorizationIdentityV1
+	mu                    sync.RWMutex
 }
 
 func NewQC20Token(
@@ -99,22 +102,26 @@ func newQC20TokenV1(
 ) *QC20Token {
 	initialSupply := supply
 
-	// Supply cannot exist without a corresponding owner balance.
-	// This removes the legacy ownerless phantom-supply state.
-	if owner == "" {
+	// Legacy constructors retain their metadata/read surface, but must not
+	// issue supply to a malformed, wrong-version or noncanonical owner.
+	// Untrusted callers should use the error-returning validated constructor.
+	if !validTokenAddress(owner) {
 		initialSupply = 0
 	}
 
+	instance := make([]byte, 32)
+	_, _ = rand.Read(instance)
 	token := &QC20Token{
-		name:                name,
-		symbol:              symbol,
-		owner:               owner,
-		maxSupply:           supply,
-		totalSupply:         initialSupply,
-		decimals:            decimals,
-		balances:            make(map[string]uint64),
-		allowances:          make(map[string]map[string]uint64),
-		authorizationNonces: make(map[string]uint64),
+		name:                  name,
+		symbol:                symbol,
+		owner:                 owner,
+		maxSupply:             supply,
+		totalSupply:           initialSupply,
+		decimals:              decimals,
+		balances:              make(map[string]uint64),
+		allowances:            make(map[string]map[string]uint64),
+		authorizationNonces:   make(map[string]uint64),
+		authorizationIdentity: TokenAuthorizationIdentityV1{InstanceID: hex.EncodeToString(instance)},
 	}
 
 	if initialSupply > 0 {
@@ -122,6 +129,22 @@ func newQC20TokenV1(
 	}
 
 	return token
+}
+
+// NewValidatedQC20TokenForNetworkV1 creates a fixed-supply token whose
+// signatures are scoped to the verified network and persisted instance.
+func NewValidatedQC20TokenForNetworkV1(name, symbol string, supply uint64, decimals uint8, owner string, networkMagic uint32, genesisHash string) (*QC20Token, error) {
+	canonicalOwner, err := requireCanonicalTokenAddressV1(owner)
+	if err != nil {
+		return nil, err
+	}
+	identity, err := NewTokenAuthorizationIdentityV1(networkMagic, genesisHash)
+	if err != nil {
+		return nil, err
+	}
+	token := newQC20TokenV1(name, symbol, supply, decimals, canonicalOwner)
+	token.authorizationIdentity = identity
+	return token, nil
 }
 
 // Mint documents the QuantumCoin component used by this module.

@@ -1,8 +1,86 @@
 *           text=auto
+.gitattributes text eol=lf
+.gitignore  text eol=lf
 *.go        text eol=lf
 *.json      text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
 *.md        text eol=lf
 *.sh        text eol=lf
+*.py        text eol=lf
+*.js        text eol=lf
+*.mjs       text eol=lf
+*.ts        text eol=lf
+*.tsx       text eol=lf
+*.html      text eol=lf
+*.css       text eol=lf
+*.example   text eol=lf
+go.mod      text eol=lf
+go.sum      text eol=lf
 *.ps1       text eol=crlf
+*.psd1      text eol=crlf
 *.cmd       text eol=crlf
 *.bat       text eol=crlf
+
+# Source archives must not contain private runtime databases or sidecars.
+*.db export-ignore
+*.db-* export-ignore
+*.db.* export-ignore
+*.sqlite export-ignore
+*.sqlite-* export-ignore
+*.sqlite.* export-ignore
+*.sqlite3 export-ignore
+*.sqlite3-* export-ignore
+*.sqlite3.* export-ignore
+.env export-ignore
+.env.* export-ignore
+**/.env export-ignore
+**/.env.* export-ignore
+.env.example -export-ignore
+**/.env.example -export-ignore
+telegram_game/admin_settlement_report* export-ignore
+_local_audit_reports/ export-ignore
+_local_audit_backups/ export-ignore
+
+# Generated builds and machine-specific diagnostic snapshots are local.
+bin/** export-ignore
+build/** export-ignore
+cmd/wallet/build/** export-ignore
+webwallet/dist/** export-ignore
+release/dist/** export-ignore
+__qcdiag/** export-ignore
+_wm_review/** export-ignore
+*.before-* export-ignore
+*.bak export-ignore
+*.disabled export-ignore
+.vscode/** export-ignore
+.vscode/settings.json -export-ignore
+.vscode/launch.json -export-ignore
+i18n/bin/** export-ignore
+i18n/*.go.disabled export-ignore
+tests/*.go.disabled export-ignore
+"assets/User closing conversation.html" export-ignore
+"assets/User closing conversation_files/**" export-ignore
+*.exe export-ignore
+*.dll export-ignore
+*.pdb export-ignore
+*.dat export-ignore
+*.dat.* export-ignore
+.wallet export-ignore
+*.qcwallet export-ignore
+**/.check_scripts/** export-ignore
+telegram_game/telegram_game/.vscode export-ignore
+id_ed25519_quantumcoin_release export-ignore
+*.qcvault export-ignore
+*.qcbak export-ignore
+.qc-wallet-* export-ignore
+.qc-encrypted-backup-* export-ignore
+/config.json export-ignore
+.go-tmp/** export-ignore
+autopublisher/dist/** export-ignore
+autopublisher/.build/** export-ignore
+desktop.ini export-ignore
+wallet_priv.hex export-ignore
+miner_priv.hex export-ignore
+wallet_recovery_words.txt export-ignore
+wallet_recovery_manifest.json export-ignore

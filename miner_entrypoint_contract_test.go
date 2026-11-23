@@ -1,7 +1,6 @@
 package main
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,7 +14,7 @@ func readMinerContractSource(
 
 	path := filepath.Join(parts...)
 
-	data, err := os.ReadFile(path)
+	data, err := readNodeContractSourceV1(path)
 	if err != nil {
 		t.Fatalf(
 			"read %s: %v",
@@ -83,6 +82,8 @@ func TestMinerAPIUsesInProcessRuntimeContract(
 		"exec.Command",
 		"run-mine",
 		"cmd/miner",
+		"go startContinuousMining(addr)",
+		"go beginContinuousMining(addr)",
 	} {
 		if strings.Contains(
 			handler,
@@ -97,7 +98,7 @@ func TestMinerAPIUsesInProcessRuntimeContract(
 
 	for _, required := range []string{
 		"nodeRuntime.IsMining()",
-		"go startContinuousMining(addr)",
+		"beginContinuousMining(addr)",
 	} {
 		if !strings.Contains(
 			handler,
@@ -146,7 +147,7 @@ func TestMinerEntrypointContractsRemainSeparated(
 
 	if !strings.Contains(
 		rootSource,
-		"miner := os.Args[2]",
+		"miner := args[2]",
 	) {
 		t.Fatal(
 			"root run-mine positional address contract missing",
@@ -169,6 +170,10 @@ func TestMinerEntrypointContractsRemainSeparated(
 		t.Fatal(
 			"standalone miner usage contract missing",
 		)
+	}
+	if !strings.Contains(minerSource, "miner.NewNodeBackend(") ||
+		strings.Contains(minerSource, "miner.NewQCLocalAdapter(") {
+		t.Fatal("standalone miner must use the running node rather than its own chain writer")
 	}
 
 	// They are separate executable entrypoints. The HTTP API must not
@@ -226,9 +231,9 @@ func TestWalletMinerRestartDoesNotDependOnCommandHandle(
 
 	for _, required := range []string{
 		"qcResetStaleMinerState()",
-		"readMinerPID()",
-		"isProcessAlive(pid)",
-		"clearMinerPID()",
+		"startNativeMining()",
+		"stopNativeMining()",
+		"nativeMinerAlive()",
 	} {
 		if !strings.Contains(
 			source,
@@ -258,10 +263,8 @@ func TestWalletMinerRestartDoesNotDependOnCommandHandle(
 	)
 
 	for _, required := range []string{
-		"minerRunningState = false",
-		`"miner_pid.txt"`,
-		`"miner_cmd_pid.txt"`,
-		`"miner_stop.flag"`,
+		"minerRunningState = nativeMinerAlive()",
+		"nativeMinerAlive()",
 	} {
 		if !strings.Contains(
 			resetBlock,
@@ -271,6 +274,17 @@ func TestWalletMinerRestartDoesNotDependOnCommandHandle(
 				"stale miner cleanup missing %q",
 				required,
 			)
+		}
+	}
+	client := readMinerContractSource(t, "cmd", "wallet", "mining_client.go")
+	for _, required := range []string{"miner.PrepareNodeWorker(", "node.TrustedMiningIdentity(", "worker.Run(ctx)", "cancel()", "case <-done:"} {
+		if !strings.Contains(client, required) {
+			t.Fatal("native lifecycle missing", required)
+		}
+	}
+	for _, forbidden := range []string{"exec.Command", "taskkill", "os.WriteFile", "run_miner.cmd"} {
+		if strings.Contains(client, forbidden) {
+			t.Fatal("native miner touches external process or wallet storage", forbidden)
 		}
 	}
 }

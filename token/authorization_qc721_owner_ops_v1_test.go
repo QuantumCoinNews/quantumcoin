@@ -55,20 +55,12 @@ func newQC721TestTokenV1(
 ) *QC721Token {
 	t.Helper()
 
-	subject := NewQC721TokenWithOwner(
+	subject := newTestAuthorizedQC721WithItems(t,
 		"Factory NFT",
 		"FNFT",
 		collectionOwner.GetAddress(),
+		[]QC721InitialItemV1{{TokenID: tokenID, Owner: holder.GetAddress(), TokenURI: "ipfs://factory-nft"}},
 	)
-
-	if err := subject.MintByOwner(
-		collectionOwner.GetAddress(),
-		holder.GetAddress(),
-		tokenID,
-		"ipfs://factory-nft",
-	); err != nil {
-		t.Fatalf("mint test NFT: %v", err)
-	}
 
 	return subject
 }

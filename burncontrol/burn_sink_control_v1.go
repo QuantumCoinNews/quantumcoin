@@ -16,24 +16,26 @@ const (
 )
 
 type BurnPolicy struct {
-	Version                              string          `json:"version"`
-	Mode                                 string          `json:"mode"`
-	MaxSupplyQC                          int64           `json:"maxSupplyQc"`
-	BurnAddressAlias                     string          `json:"burnAddressAlias"`
-	BurnAddressFinalBeforeMainnet        bool            `json:"burnAddressFinalBeforeMainnet"`
-	BurnAddressMustBeUnspendable         bool            `json:"burnAddressMustBeUnspendable"`
-	BurnPrivateKeyMustNotExist           bool            `json:"burnPrivateKeyMustNotExist"`
-	BurnedSupplyReducesCirculatingSupply bool            `json:"burnedSupplyReducesCirculatingSupply"`
-	BurnDoesNotReduceMaxSupply           bool            `json:"burnDoesNotReduceMaxSupply"`
-	BurnDoesNotMintReplacement           bool            `json:"burnDoesNotMintReplacement"`
-	AutoBurnForbidden                    bool            `json:"autoBurnForbidden"`
-	RequiresExplicitApproval             bool            `json:"requiresExplicitApproval"`
-	AllowedBurnSources                   []string        `json:"allowedBurnSources"`
-	SafeBoundary                         map[string]bool `json:"safeBoundary"`
+	Mechanism                            string                 `json:"mechanism"`
+	RecyclingReserve                     RecyclingReservePolicy `json:"recyclingReserve"`
+	Version                              string                 `json:"version"`
+	Mode                                 string                 `json:"mode"`
+	MaxSupplyQC                          int64                  `json:"maxSupplyQc"`
+	BurnAddressAlias                     string                 `json:"burnAddressAlias"`
+	BurnAddressFinalBeforeMainnet        bool                   `json:"burnAddressFinalBeforeMainnet"`
+	BurnAddressMustBeUnspendable         bool                   `json:"burnAddressMustBeUnspendable"`
+	BurnPrivateKeyMustNotExist           bool                   `json:"burnPrivateKeyMustNotExist"`
+	BurnedSupplyReducesCirculatingSupply bool                   `json:"burnedSupplyReducesCirculatingSupply"`
+	BurnDoesNotReduceMaxSupply           bool                   `json:"burnDoesNotReduceMaxSupply"`
+	BurnDoesNotMintReplacement           bool                   `json:"burnDoesNotMintReplacement"`
+	AutoBurnForbidden                    bool                   `json:"autoBurnForbidden"`
+	RequiresExplicitApproval             bool                   `json:"requiresExplicitApproval"`
+	AllowedBurnSources                   []string               `json:"allowedBurnSources"`
+	SafeBoundary                         map[string]bool        `json:"safeBoundary"`
 }
 
 func DefaultPolicyV1() BurnPolicy {
-	return BurnPolicy{
+	return BurnPolicy{Mechanism: "PERMANENT_BURN", RecyclingReserve: DefaultRecyclingReservePolicyV1(),
 		Version:                              BurnSinkControlVersionV1,
 		Mode:                                 "BURN_SINK_CONTROL_NO_BURN_EXECUTION",
 		MaxSupplyQC:                          MaxSupplyQCV1,
@@ -77,6 +79,12 @@ func SafeBoundaryV1() map[string]bool {
 }
 
 func ValidatePolicyV1(policy BurnPolicy) error {
+	if policy.Mechanism != "PERMANENT_BURN" {
+		return errors.New("permanent burn mechanism required")
+	}
+	if err := ValidateRecyclingReservePolicyV1(policy.RecyclingReserve); err != nil {
+		return err
+	}
 	if strings.TrimSpace(policy.Version) != BurnSinkControlVersionV1 {
 		return errors.New("invalid burn sink control version")
 	}

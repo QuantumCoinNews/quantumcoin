@@ -120,54 +120,86 @@ func (b *MinerTokenBridge) processMinerTokenBlockV1(
 		return err
 	}
 
-	canonical := b.chain.BlockByIndexSnapshot(blk.Index)
-	if canonical == nil ||
-		!bytes.Equal(canonical.Hash, blk.Hash) ||
-		canonical.Miner != blk.Miner {
-		err := ErrMinerTokenBlockIdentityV1
-		b.observeMinerTokenRecordV1(
-			"REORG_REJECTED",
-			record,
-			0,
-			err,
-		)
-		return err
-	}
+	return b.withMinerTokenCanonicalViewV1(record.Height, func(view blockchain.CanonicalBlockViewV1) error {
+		canonical, exists := view.Blocks[blk.Index]
+		if !exists ||
+			canonical.Hash != record.BlockHash ||
+			canonical.Miner != blk.Miner {
+			err := ErrMinerTokenBlockIdentityV1
+			b.observeMinerTokenRecordV1(
+				"REORG_REJECTED",
+				record,
+				0,
+				err,
+			)
+			return err
+		}
 
-	outcome, err := b.reg.recordPendingMinerTokenBlockV1(
-		b.cfg.SaveDir,
-		b.cfg.Symbol,
-		record,
-	)
-	if err != nil {
-		rejectedOutcome := "REJECTED"
-		if errors.Is(err, ErrMinerTokenPersistenceV1) {
-			rejectedOutcome = "PERSISTENCE_REJECTED"
+		outcome, err := b.reg.recordPendingMinerTokenBlockV1(
+			b.cfg.SaveDir,
+			b.cfg.Symbol,
+			record,
+		)
+		if err != nil {
+			rejectedOutcome := "REJECTED"
+			if errors.Is(err, ErrMinerTokenPersistenceV1) {
+				rejectedOutcome = "PERSISTENCE_REJECTED"
+			}
+			b.observeMinerTokenRecordV1(
+				rejectedOutcome,
+				record,
+				view.TipHeight-record.Height,
+				err,
+			)
+			return err
 		}
 		b.observeMinerTokenRecordV1(
-			rejectedOutcome,
+			outcome,
 			record,
-			b.chain.BestHeightSnapshot()-record.Height,
-			err,
+			view.TipHeight-record.Height,
+			nil,
 		)
-		return err
-	}
-	b.observeMinerTokenRecordV1(
-		outcome,
-		record,
-		b.chain.BestHeightSnapshot()-record.Height,
-		nil,
-	)
 
-	return b.reconcilePendingMinerTokenBlocksV1()
+		return b.reconcileMinerTokenViewV1(view)
+	})
 }
 
 func (b *MinerTokenBridge) reconcilePendingMinerTokenBlocksV1() error {
+	return b.withMinerTokenCanonicalViewV1(-1, b.reconcileMinerTokenViewV1)
+}
+
+func (b *MinerTokenBridge) withMinerTokenCanonicalViewV1(extraHeight int, visit func(blockchain.CanonicalBlockViewV1) error) error {
+	if b == nil || b.chain == nil || b.tok == nil {
+		return ErrMinerTokenCanonicalChainRequiredV1
+	}
+	records := b.tok.minerTokenBlocksSnapshotV1()
+	heights := []int{extraHeight}
+	for _, record := range records {
+		heights = append(heights, record.Height)
+	}
+	return b.chain.WithCanonicalBlockViewV1(heights, func(view blockchain.CanonicalBlockViewV1) error {
+		// A six-descendant wait is probabilistic confirmation, not irreversible
+		// finality. Freeze the entire bridge before any mutation on a deep reorg.
+		for _, record := range records {
+			if record.Status != minerTokenBlockCommittedV1 {
+				continue
+			}
+			canonical, exists := view.Blocks[record.Height]
+			if !exists || canonical.Hash != record.BlockHash || canonical.Miner != record.Miner {
+				b.observeMinerTokenRecordV1("REORG_REJECTED", record, view.TipHeight-record.Height, ErrMinerTokenFinalizedHeightConflictV1)
+				return ErrMinerTokenFinalizedHeightConflictV1
+			}
+		}
+		return visit(view)
+	})
+}
+
+func (b *MinerTokenBridge) reconcileMinerTokenViewV1(view blockchain.CanonicalBlockViewV1) error {
 	if b == nil || b.chain == nil {
 		return ErrMinerTokenCanonicalChainRequiredV1
 	}
 
-	tipHeight := b.chain.BestHeightSnapshot()
+	tipHeight := view.TipHeight
 	records := sortedMinerTokenBlockRecordsV1(
 		b.tok.minerTokenBlocksSnapshotV1(),
 	)
@@ -177,9 +209,9 @@ func (b *MinerTokenBridge) reconcilePendingMinerTokenBlocksV1() error {
 			continue
 		}
 
-		canonical := b.chain.BlockByIndexSnapshot(record.Height)
-		if canonical == nil ||
-			hex.EncodeToString(canonical.Hash) != record.BlockHash ||
+		canonical, exists := view.Blocks[record.Height]
+		if !exists ||
+			canonical.Hash != record.BlockHash ||
 			canonical.Miner != record.Miner {
 			if err := b.reg.dropPendingMinerTokenBlockV1(
 				b.cfg.SaveDir,
@@ -294,7 +326,7 @@ func (r *Registry) persistMinerTokenMutationV1(
 
 	r.ensure()
 
-	tok, exists := r.Tokens[symbol]
+	tok, exists := r.tokens[symbol]
 	if !exists || tok == nil {
 		return fmt.Errorf(
 			"token/miner: token %q is not registered",
@@ -305,13 +337,24 @@ func (r *Registry) persistMinerTokenMutationV1(
 	tok.mu.Lock()
 	defer tok.mu.Unlock()
 
+	lock, err := lockMinerTokenLedgerV1(directory)
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
+	if err := verifyMinerTokenLedgerCurrentV1(directory, r, tok); err != nil {
+		return fmt.Errorf("%w: stale or invalid ledger: %w", ErrMinerTokenPersistenceV1, err)
+	}
+
 	before := tokenPersistenceSnapshotLockedV1(tok)
 
 	changed, err := mutate(tok)
 	if err != nil {
+		restoreTokenPersistenceLockedV1(tok, before)
 		return err
 	}
 	if !changed {
+		restoreTokenPersistenceLockedV1(tok, before)
 		return nil
 	}
 
@@ -322,7 +365,7 @@ func (r *Registry) persistMinerTokenMutationV1(
 	if err != nil {
 		restoreTokenPersistenceLockedV1(tok, before)
 		return fmt.Errorf(
-			"%w: encode registry: %v",
+			"%w: encode registry: %w",
 			ErrMinerTokenPersistenceV1,
 			err,
 		)
@@ -334,7 +377,7 @@ func (r *Registry) persistMinerTokenMutationV1(
 	); err != nil {
 		restoreTokenPersistenceLockedV1(tok, before)
 		return fmt.Errorf(
-			"%w: %v",
+			"%w: %w",
 			ErrMinerTokenPersistenceV1,
 			err,
 		)
@@ -349,10 +392,10 @@ func marshalRegistryWithLockedTokenV1(
 ) ([]byte, error) {
 	tokens := make(
 		map[string]json.RawMessage,
-		len(r.Tokens),
+		len(r.tokens),
 	)
 
-	for symbol, tok := range r.Tokens {
+	for symbol, tok := range r.tokens {
 		if tok == nil {
 			return nil, fmt.Errorf(
 				"token registry: nil token for %q",
@@ -567,5 +610,8 @@ func (r *Registry) finalizeMinerTokenBlockV1(
 		},
 	)
 
-	return committed, err
+	if err != nil {
+		return false, err
+	}
+	return committed, nil
 }

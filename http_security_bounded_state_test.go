@@ -17,12 +17,18 @@ func TestHTTPGuardStateBoundedUnderIPChurn(
 		httpLimiterShardCount *
 			(httpGuardMaxKeysPerShard + 64)
 
+	base := time.Unix(1700000000, 0)
+	rejected := 0
 	for index := 0; index < total; index++ {
-		err := guard.allow(
-			"guard-churn-" + strconv.Itoa(index),
+		err := guard.allowAtV1(
+			"guard-churn-"+strconv.Itoa(index), base,
 		)
 
 		if err != nil {
+			if errors.Is(err, ErrHTTPLimiterCapacity) {
+				rejected++
+				continue
+			}
 			t.Fatalf(
 				"unexpected allow error at %d: %v",
 				index,
@@ -52,6 +58,9 @@ func TestHTTPGuardStateBoundedUnderIPChurn(
 		}
 	}
 
+	if rejected == 0 || totalKeys != total-rejected {
+		t.Fatal("capacity pressure evicted live records or was not exercised", totalKeys, rejected)
+	}
 	maxTotal :=
 		httpLimiterShardCount *
 			httpGuardMaxKeysPerShard
@@ -74,19 +83,18 @@ func TestEndpointLimiterStateBoundedUnderKeyChurn(
 		httpLimiterShardCount *
 			(endpointLimiterMaxKeysPerShard + 64)
 
+	base := time.Unix(1700000000, 0)
+	rejected := 0
 	for index := 0; index < total; index++ {
-		allowed := limiter.allow(
+		allowed := limiter.allowAtV1(
 			"endpoint-churn-"+strconv.Itoa(index),
 			"tx_send",
 			10*time.Second,
-			5,
+			5, base,
 		)
 
 		if !allowed {
-			t.Fatalf(
-				"unexpected rejection at %d",
-				index,
-			)
+			rejected++
 		}
 	}
 
@@ -111,6 +119,9 @@ func TestEndpointLimiterStateBoundedUnderKeyChurn(
 		}
 	}
 
+	if rejected == 0 || totalKeys != total-rejected {
+		t.Fatal("capacity pressure evicted live quotas or was not exercised", totalKeys, rejected)
+	}
 	maxTotal :=
 		httpLimiterShardCount *
 			endpointLimiterMaxKeysPerShard
@@ -187,7 +198,7 @@ func TestEndpointLimiterPrunesExpiredState(
 
 	shard.hits["stale"] = &endpointHitState{
 		lastSeen: now.Add(
-			-2 * endpointLimiterMinRetention,
+			-2 * time.Minute,
 		),
 	}
 

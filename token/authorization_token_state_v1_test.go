@@ -18,22 +18,13 @@ func TestTokenAuthorizationStateV1PersistsNonce(
 
 	owner := wallet.NewWallet().GetAddress()
 
-	subject := New(
+	subject := newTestAuthorizedToken(t,
 		"TST",
 		"Test Token",
 		8,
 		1000,
 		owner,
 	)
-
-	if err := subject.Mint(
-		owner,
-		owner,
-		100,
-	); err != nil {
-		t.Fatalf(
-			"mint persisted token state: %v", err)
-	}
 
 	subject.mu.Lock()
 	commitTokenAuthorizationNonceV1(
@@ -183,7 +174,7 @@ func TestTokenAuthorizationStateV1DomainIsStable(
 ) {
 	owner := wallet.NewWallet().GetAddress()
 
-	subject := New(
+	subject := newTestAuthorizedToken(t,
 		"TST",
 		"Stable Domain Token",
 		8,

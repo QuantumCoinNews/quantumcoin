@@ -139,7 +139,7 @@ class NodeNFTMintClientV1:
             except ValueError:
                 local = False
             _require(local, "node_https_required")
-        self.opener = urllib.request.build_opener(_NoRedirect())
+        self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
 
     def _call(self, path, payload=None):
         data = None if payload is None else json.dumps(payload, separators=(",", ":"), allow_nan=False).encode()

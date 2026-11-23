@@ -33,9 +33,9 @@ func ValidateP2PMessageSizeStrictV1(msg Message) error {
 		max = MaxP2PTxDataBytesV1
 	case MsgBlock:
 		max = MaxP2PBlockDataBytesV1
-	case MsgChain:
+	case MsgChain, MsgSyncChunk:
 		max = MaxP2PChainDataBytesV1
-	case MsgRequest, MsgPing, MsgPong, MsgPeerList, MsgError:
+	case MsgRequest, MsgSyncRequest, MsgSyncReset, MsgPing, MsgPong, MsgPeerList, MsgError:
 		max = MaxP2PSmallDataBytesV1
 	default:
 		max = MaxP2PSmallDataBytesV1

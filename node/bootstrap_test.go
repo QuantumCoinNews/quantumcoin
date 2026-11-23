@@ -39,9 +39,9 @@ func TestDefaultBootstrapOptionsV1(
 		)
 	}
 
-	if options.StrictChain {
+	if !options.StrictChain {
 		t.Fatal(
-			"default bootstrap unexpectedly enables strict-chain validation",
+			"default bootstrap must require full chain validation",
 		)
 	}
 }

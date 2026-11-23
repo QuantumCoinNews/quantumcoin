@@ -395,6 +395,3 @@
     setTimeout(showIntroGate, 500);
   });
 })();
-
-
-

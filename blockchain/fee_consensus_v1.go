@@ -16,7 +16,7 @@ type BlockRewardBreakdownV1 struct {
 	CoinbaseTotal int
 }
 
-// CalculateBlockFeesV1 delegates all prevout, ownership and value checks to
+// CalculateBlockFeesAtHeightV1 CalculateBlockFeesV1 delegates all prevout, ownership and value checks to
 // the single canonical UTXO validation engine. Fees are conserved input value.
 func (bc *Blockchain) CalculateBlockFeesAtHeightV1(
 	transactions []*Transaction,

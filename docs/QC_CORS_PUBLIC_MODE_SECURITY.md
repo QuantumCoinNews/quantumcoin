@@ -1,33 +1,26 @@
-# QuantumCoin CORS Public Mode Security
+# API browser origin policy
 
-Status: QC_CORS_PUBLIC_MODE_SECURITY_V1
+The node selects CORS policy from the effective HTTP listener address. A
+numeric loopback listener keeps wildcard compatibility for local tools. Any
+other address, including wildcard and hostname binds, requires an exact browser
+origin from `QC_CORS_ALLOWED_ORIGINS` or the single-origin compatibility variable
+`QC_CORS_ALLOWED_ORIGIN`. The plural setting accepts comma-separated origins.
+The public-testnet switches also select the restricted policy on loopback.
 
-Date: 20260617_210658
+Restricted listeners ignore wildcard origins and return 403 for an origin
+outside the allowlist, including on preflight. Set the origin including its
+scheme and port if the browser sends that origin. Clients that omit the Origin
+header use the normal route authentication rules.
 
-Public testnet API mode must not use wildcard CORS.
+An omitted Origin is different from an explicitly empty one. Empty/whitespace,
+repeated Origin values (even identical values), or duplicate case variants are
+rejected with 403 before application handlers, including for ordinary GET/POST.
+These malformed requests are rejected on local listeners too; the documented
+local wildcard compatibility for a single nonempty Origin remains available.
+The middleware preserves existing Vary fields and adds Origin, and does not
+leave a stale Access-Control-Allow-Origin header on rejected responses.
 
-## Local/dev behavior
-
-Local/dev mode keeps wildcard CORS for compatibility with existing local tools.
-
-## Public testnet behavior
-
-When public testnet mode is active, CORS allows only exact origins configured by:
-
-- QC_CORS_ALLOWED_ORIGINS
-- QC_CORS_ALLOWED_ORIGIN
-
-Comma-separated origins are supported.
-
-Wildcard * is ignored in public testnet mode.
-
-## Affected code
-
-- root main.go withCORS
-- api/http_server.go withCORS
-
-## Safety boundary
-
-This does not change chain state, balances, mining rewards, total supply, consensus, or wallet data.
-
-It only controls browser CORS headers for public testnet API exposure.
+CORS is a browser-origin boundary, not authentication. An allowed browser or a
+native client without Origin still needs the route credential and a valid
+wallet-signed transaction to submit a transfer. Preflight does not submit or
+authorize a transaction.

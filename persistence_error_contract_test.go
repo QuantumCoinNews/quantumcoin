@@ -45,9 +45,7 @@ func TestPersistenceErrorHandlingSourceContract(t *testing.T) {
 				"_ = os.WriteFile(",
 			},
 			required: []string{
-				"func failCLI(",
-				"func writeRequiredCLIFile(",
-				"encode wallet recovery manifest",
+				"walletcli.Run(",
 			},
 		},
 		{
@@ -57,9 +55,7 @@ func TestPersistenceErrorHandlingSourceContract(t *testing.T) {
 				"_ = os.WriteFile(",
 			},
 			required: []string{
-				"func failCLI(",
-				"func writeRequiredCLIFile(",
-				"encode wallet recovery manifest",
+				"walletcli.Run(",
 			},
 		},
 		{
@@ -70,13 +66,13 @@ func TestPersistenceErrorHandlingSourceContract(t *testing.T) {
 				"_ = os.WriteFile(balanceCachePath(), b, 0644)",
 				"_ = os.WriteFile(filepath.Join(dir, \"wallet_recovery_manifest.json\"), b, 0644)",
 				"_ = os.WriteFile(filepath.Join(dir, \"wallet_balance.cache.json\"), b, 0644)",
-				"_ = os.WriteFile(filepath.Join(dir, \"bonus_store.json\"), b, 0644)",
+				"ensureBonusStore(",
+				"\"bonus_store.json\"",
 			},
 			required: []string{
-				"func writeRestoredFile(",
-				"func writeRestoredJSON(",
+				"return saveEncryptedRecoveryBlobNew(targetPath, blob)",
+				"return qwallet.SaveRecoveryVaultNew(targetPath, blob)",
 				"balance cache encode failed",
-				"bonus store encode failed",
 			},
 		},
 		{
@@ -85,7 +81,7 @@ func TestPersistenceErrorHandlingSourceContract(t *testing.T) {
 				`data, _ := json.MarshalIndent(w, "", "  ")`,
 			},
 			required: []string{
-				`data, err := json.MarshalIndent(w, "", "  ")`,
+				`writeWalletFileAtomic(path, raw)`,
 			},
 		},
 	}

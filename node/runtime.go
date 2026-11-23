@@ -3,11 +3,13 @@ package node
 import (
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"quantumcoin/blockchain"
 	"quantumcoin/config"
 	"quantumcoin/consensus"
+	"quantumcoin/monitoring"
 	"quantumcoin/p2p"
 )
 
@@ -15,22 +17,32 @@ const RuntimeVersionV1 = "QC_NODE_RUNTIME_V1"
 
 // Runtime owns the long-lived node services and shared state.
 //
-// This first version is intentionally passive. Existing main.go behavior
-// remains unchanged while services are moved behind this boundary in later
-// runtime migration steps.
+// Bootstrap installs the canonical chain and policies. Runtime owns HTTP, P2P,
+// mining and graceful shutdown; command and HTTP adapters delegate to it.
 type Runtime struct {
-	mu       sync.RWMutex
-	miningMu sync.Mutex
+	mu                sync.RWMutex
+	miningMu          sync.Mutex
+	stopping          bool
+	shutdownDone      chan struct{}
+	shutdownOnce      sync.Once
+	shutdownRequested atomic.Bool
+	activeMiner       atomic.Pointer[miningStopSignalV1]
 
-	Blockchain    *blockchain.Blockchain
-	Config        *config.Config
-	p2pServer     *p2p.ServerV1
-	HTTPServer    *http.Server
-	minerStop     chan struct{}
-	minerDone     chan struct{}
-	minerAddress  string
-	minerStopping bool
-	observers     []Observer
+	Blockchain *blockchain.Blockchain
+	Config     *config.Config
+	p2pServer  *p2p.ServerV1
+	// Peer handlers keep a chain reference for their connection lifetime.
+	// Once P2P has used this runtime, pointer replacement requires a restart.
+	p2pChainPinned     bool
+	HTTPServer         *http.Server
+	minerStop          chan struct{}
+	minerDone          chan struct{}
+	minerAddress       string
+	observers          []Observer
+	monitor            *monitoring.Engine
+	monitorEpoch       string
+	httpMonitorBudgets [3]httpObservationBudgetV1
+	advisoryDir        string
 
 	// Immutable signed game program; only canonical bootstrap installs it.
 	nftGameProgram consensus.VerifiedNFTMonthlyProgramV1
@@ -42,14 +54,16 @@ type Runtime struct {
 	ChainLastSize       int64
 }
 
-// NewRuntime creates a passive node runtime around existing components.
+// NewRuntime wraps existing components without starting services. Production
+// callers must use Bootstrap or BootstrapWithConfig to enforce startup policy.
 func NewRuntime(
 	bc *blockchain.Blockchain,
 	cfg *config.Config,
 ) *Runtime {
 	return &Runtime{
-		Blockchain: bc,
-		Config:     cfg,
+		Blockchain:   bc,
+		Config:       cfg,
+		shutdownDone: make(chan struct{}),
 	}
 }
 

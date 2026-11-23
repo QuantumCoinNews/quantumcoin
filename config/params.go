@@ -1,11 +1,14 @@
 package config
 
-// Dinamik sistem parametreleri (runtime'da değişebilir)
+import qconsensus "quantumcoin/consensus"
+
+// Retired compatibility variables; changing them has no runtime/consensus effect.
+// Deprecated: consult RuntimeCapabilitiesV1 and canonical consensus parameters.
 var (
-	BlockTimeSeconds        = 30        // Blok üretim hedef süresi (saniye)
-	MaxBlockSizeBytes       = 1_000_000 // 1 MB blok limiti
-	EnableStaking           = true      // Stake açık mı?
-	EnableMining            = true      // Madencilik açık mı?
-	CurrentMiningDifficulty = 16        // Anlık PoW zorluk seviyesi
-	CurrentStakeRewardRate  = 0.05      // Yıllık stake ödül oranı (%5)
+	BlockTimeSeconds        = qconsensus.CanonicalBlockTimeSecondsV1      // Retired placeholder; consensus owns the target interval.
+	MaxBlockSizeBytes       = 1_000_000                                   // Retired placeholder; does not set a consensus block-size rule.
+	EnableStaking           = false                                       // Retired: staking is unavailable.
+	EnableMining            = true                                        // Retired placeholder; does not start or stop mining.
+	CurrentMiningDifficulty = qconsensus.CanonicalDefaultDifficultyBitsV1 // Retired placeholder; validated chain/profile owns difficulty.
+	CurrentStakeRewardRate  = 0.0                                         // Retired: no staking emission.
 )

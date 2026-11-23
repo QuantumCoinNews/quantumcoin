@@ -50,7 +50,7 @@ func ValidateCoinbaseLayoutV1(
 		}
 
 		for outputIndex, amount := range transaction.OutputAmounts {
-			if amount <= 0 {
+			if amount < 0 || (genesis && amount == 0) {
 				return CoinbaseLayoutResultV1{}, fmt.Errorf(
 					"%s: coinbase output[%d] invalid amount: %d",
 					Version,

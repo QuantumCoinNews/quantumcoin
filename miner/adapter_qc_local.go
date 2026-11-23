@@ -10,10 +10,10 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
 	"quantumcoin/blockchain"
 	"quantumcoin/config"
+	"quantumcoin/node"
 	"quantumcoin/p2p"
 	"quantumcoin/wallet"
 )
@@ -21,7 +21,7 @@ import (
 type QCLocalOpts struct {
 	ConfigPath string
 	ChainPath  string
-	P2PPort    string // (şimdilik bilgi amaçlı)
+	P2PPort    string // (ÅŸimdilik bilgi amaÃ§lÄ±)
 }
 
 type qcLocal struct {
@@ -77,7 +77,7 @@ func resolveQCLocalChainPathV1(
 }
 
 // NewQCLocalAdapter documents the QuantumCoin component used by this module.
-// Adapter kurulum: config + chain yükle
+// Adapter kurulum: config + chain yÃ¼kle
 func NewQCLocalAdapter(
 	op QCLocalOpts,
 ) (Backend, error) {
@@ -109,59 +109,16 @@ func NewQCLocalAdapter(
 	cfg.ChainFile = chainPath
 	op.ChainPath = chainPath
 
-	if err := config.ValidateRuntimeNetworkProfileV1(
+	// Use the same policy, signed-release, NFT and chain validation boundary
+	// as the node command before handing work to the standalone miner.
+	runtime, err := node.BootstrapWithConfig(
 		cfg,
-	); err != nil {
-		return nil, fmt.Errorf(
-			"adapter runtime profile: %w",
-			err,
-		)
-	}
-
-	var chain *blockchain.Blockchain
-
-	_, statErr := os.Stat(
-		chainPath,
+		true, // Full chain validation is mandatory in every worker mode.
 	)
-
-	switch {
-	case statErr == nil:
-		chain, err =
-			blockchain.LoadBlockchainFromFile(
-				chainPath,
-			)
-		if err != nil {
-			return nil, fmt.Errorf(
-				"chain load %q: %w",
-				chainPath,
-				err,
-			)
-		}
-
-	case os.IsNotExist(statErr):
-		chain = blockchain.NewBlockchain(
-			cfg.InitialReward,
-			cfg.TotalSupply,
-		)
-
-	default:
-		return nil, fmt.Errorf(
-			"chain stat %q: %w",
-			chainPath,
-			statErr,
-		)
+	if err != nil {
+		return nil, fmt.Errorf("qc local bootstrap: %w", err)
 	}
-
-	if err := chain.BindCanonicalActivationPolicySynchronizedV1(); err != nil {
-		return nil, fmt.Errorf(
-			"bind canonical activation policy v1: %w",
-			err,
-		)
-	}
-
-	chain.SetCoinbaseMaturity(
-		cfg.CoinbaseMaturity,
-	)
+	chain, cfg := runtime.Snapshot()
 
 	return &qcLocal{
 		cfg: cfg,
@@ -306,50 +263,10 @@ func (q *qcLocal) GetWork(
 			err,
 		)
 	}
-	reward := q.bc.ExpectedSubsidyForHeightSnapshot(
-		q.bc.BestHeightSnapshot() + 1,
-	)
-	if reward <= 0 {
-		return nil, fmt.Errorf(
-			"qc local get work: mining reward is zero",
-		)
-	}
-	now := time.Now().UTC()
-
-	coinbase := &blockchain.Transaction{
-		ID:     nil,
-		Inputs: []blockchain.TransactionInput{},
-		Outputs: []blockchain.TransactionOutput{
-			{
-				Amount:     reward,
-				PubKeyHash: pubKeyHash,
-			},
-		},
-		Timestamp: now,
-		Sender:    "COINBASE",
-		Amount:    float64(reward),
-	}
-
-	coinbase.ID = coinbase.Hash()
-
-	template := &blockchain.Block{
-		Index:     last.Index + 1,
-		Timestamp: now.Unix(),
-		Transactions: []*blockchain.Transaction{
-			coinbase,
-		},
-		PrevHash: append(
-			[]byte(nil),
-			last.Hash...,
-		),
-		Hash:       nil,
-		Nonce:      0,
-		Miner:      minerAddr,
-		Difficulty: difficulty,
-		Metadata: map[string]string{
-			"ext_miner":        "cmd",
-			"template_version": "QC_LOCAL_TEMPLATE_V1",
-		},
+	// Use the same fee/subsidy/empty-block rules as node and external work.
+	template, _, err := q.bc.PrepareExternalMiningTemplate(minerAddr, difficulty)
+	if err != nil {
+		return nil, fmt.Errorf("qc local get work: %w", err)
 	}
 
 	token, err := qCLocalTemplateTokenV1(
@@ -427,7 +344,7 @@ func (q *qcLocal) Submit(
 		)
 	}
 
-	// Her issued work yalnızca bir kez submit edilebilir.
+	// Her issued work yalnÄ±zca bir kez submit edilebilir.
 	defer delete(
 		q.issued,
 		token,

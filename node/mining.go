@@ -13,6 +13,9 @@ import (
 const MiningRuntimeVersionV1 = "QC_NODE_MINING_RUNTIME_V1"
 
 var ErrMinerAlreadyRunningV1 = errors.New("miner already running")
+var ErrRuntimeReadOnlyV1 = errors.New("node runtime is read-only")
+var ErrRuntimeShuttingDownV1 = errors.New("node runtime is shutting down")
+var ErrMiningNetworkMismatchV1 = errors.New("mining requires the expected isolated local genesis")
 
 var ErrMiningBlockchainUnavailableV1 = errors.New(
 	"mining blockchain is unavailable",
@@ -37,6 +40,38 @@ func (r *Runtime) MineOnceV1(
 	miner string,
 	difficulty int,
 ) (*blockchain.Block, error) {
+	return r.MineOnceContextV1(context.Background(), miner, difficulty)
+}
+
+// MineIsolatedLocalBlockV1 checks the pinned genesis under the same runtime
+// lock used for mining. A reconnect to a different node cannot bypass it.
+func (r *Runtime) MineIsolatedLocalBlockV1(miner string, difficulty int, genesisHash string) (*blockchain.Block, error) {
+	if genesisHash == "" {
+		return nil, ErrMiningNetworkMismatchV1
+	}
+	return r.mineOnceV1(miner, difficulty, genesisHash)
+}
+
+func (r *Runtime) mineOnceV1(
+	miner string,
+	difficulty int,
+	localGenesis string,
+) (result *blockchain.Block, err error) {
+	ctx, cancel, err := r.miningContextV1(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	defer cancel()
+	return r.mineOnceContextV1(ctx, miner, difficulty, localGenesis)
+}
+
+func (r *Runtime) mineOnceContextV1(ctx context.Context, miner string, difficulty int, localGenesis string) (result *blockchain.Block, err error) {
+	defer func() {
+		if result != nil && err == nil {
+			r.recordAdvisoryBlock(result.Index)
+			r.persistAdvisory()
+		}
+	}()
 	if r == nil {
 		return nil, fmt.Errorf(
 			"%s: %w",
@@ -45,12 +80,20 @@ func (r *Runtime) MineOnceV1(
 		)
 	}
 
-	r.miningMu.Lock()
+	if err := r.lockMiningContextV1(ctx); err != nil {
+		return nil, err
+	}
 	defer r.miningMu.Unlock()
 
 	r.mu.RLock()
+	defer r.mu.RUnlock()
 	chain := r.Blockchain
-	r.mu.RUnlock()
+	if r.stopping {
+		return nil, ErrRuntimeShuttingDownV1
+	}
+	if r.APIReadOnly {
+		return nil, ErrRuntimeReadOnlyV1
+	}
 
 	if chain == nil {
 		return nil, fmt.Errorf(
@@ -59,9 +102,25 @@ func (r *Runtime) MineOnceV1(
 			ErrMiningBlockchainUnavailableV1,
 		)
 	}
+	if localGenesis != "" {
+		id := chain.NetworkIdentitySnapshotV1()
+		if id == nil || id.Network != "local-release" ||
+			id.GenesisDomain != blockchain.IsolatedLocalGenesisDomainV1 || id.GenesisHash != localGenesis {
+			return nil, ErrMiningNetworkMismatchV1
+		}
+		if r.Config == nil {
+			return nil, ErrMiningBlockchainUnavailableV1
+		}
+	}
+	if r.Config != nil && strings.TrimSpace(r.Config.ChainFile) != "" {
+		return chain.MineBlockAndPersistContextV1(ctx, miner, difficulty, r.Config.ChainFile)
+	}
+	if localGenesis != "" {
+		return nil, ErrMiningBlockchainUnavailableV1
+	}
 
-	return chain.MineBlock(
-		miner,
+	return chain.MineBlockContextV1(
+		ctx, miner,
 		difficulty,
 	)
 }
@@ -91,8 +150,22 @@ func (r *Runtime) StartMining(
 			MiningRuntimeVersionV1,
 		)
 	}
+	if r.shutdownRequested.Load() {
+		return ErrRuntimeShuttingDownV1
+	}
+	if r.activeMiner.Load() != nil {
+		return ErrMinerAlreadyRunningV1
+	}
 
 	r.mu.Lock()
+	if r.stopping || r.shutdownRequested.Load() {
+		r.mu.Unlock()
+		return ErrRuntimeShuttingDownV1
+	}
+	if r.APIReadOnly {
+		r.mu.Unlock()
+		return ErrRuntimeReadOnlyV1
+	}
 
 	if r.Blockchain == nil {
 		r.mu.Unlock()
@@ -115,6 +188,7 @@ func (r *Runtime) StartMining(
 	r.minerStop = stop
 	r.minerDone = done
 	r.minerAddress = miner
+	r.activeMiner.Store(&miningStopSignalV1{stop: stop})
 
 	r.mu.Unlock()
 
@@ -145,18 +219,30 @@ func (r *Runtime) runMiningLoopV1(
 	done chan<- struct{},
 	hooks MiningHooksV1,
 ) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		select {
+		case <-stop:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
 	defer func() {
-		close(done)
-
 		r.mu.Lock()
 
 		if r.minerStop == stop {
 			r.minerStop = nil
 			r.minerDone = nil
 			r.minerAddress = ""
-			r.minerStopping = false
+			if signal := r.activeMiner.Load(); signal != nil && signal.stop == stop {
+				r.activeMiner.CompareAndSwap(signal, nil)
+			}
 		}
 
+		// Completion means service state has also been cleared. Shutdown and
+		// a replacement miner must never observe "done" with stale ownership.
+		close(done)
 		r.mu.Unlock()
 
 		r.EmitEvent(
@@ -181,17 +267,20 @@ func (r *Runtime) runMiningLoopV1(
 
 		difficulty := hooks.Difficulty()
 
-		block, err := r.MineOnceV1(
-			miner,
+		block, err := r.MineOnceContextV1(
+			ctx, miner,
 			difficulty,
 		)
 		if err != nil {
+			if ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, ErrRuntimeShuttingDownV1) {
+				return
+			}
 			r.reportMiningErrorV1(
 				err,
 				hooks,
 			)
 
-			if errors.Is(
+			if errors.Is(err, ErrRuntimeShuttingDownV1) || errors.Is(err, ErrRuntimeReadOnlyV1) || errors.Is(
 				err,
 				ErrMiningBlockchainUnavailableV1,
 			) {
@@ -220,13 +309,6 @@ func (r *Runtime) runMiningLoopV1(
 
 		if hooks.Broadcast != nil {
 			hooks.Broadcast(block)
-		}
-
-		if err := r.SaveChain(); err != nil {
-			r.reportMiningErrorV1(
-				err,
-				hooks,
-			)
 		}
 
 		r.EmitEvent(
@@ -283,16 +365,10 @@ func (r *Runtime) StopMining() bool {
 		return false
 	}
 
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if r.minerStop == nil ||
-		r.minerStopping {
+	signal := r.activeMiner.Load()
+	if !signal.requestStopV1() {
 		return false
 	}
-
-	r.minerStopping = true
-	close(r.minerStop)
 
 	// The channel remains registered until the mining goroutine exits.
 	// This prevents duplicate close and prevents another miner starting
@@ -305,10 +381,7 @@ func (r *Runtime) IsMining() bool {
 		return false
 	}
 
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	return r.minerStop != nil
+	return r.activeMiner.Load() != nil
 }
 
 func (r *Runtime) MinerAddress() string {

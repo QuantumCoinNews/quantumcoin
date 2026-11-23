@@ -14,7 +14,7 @@ import (
 const NFTMonthlyProgramManifestNameV1 = "nft-monthly-program.json"
 const NFTMonthlyProgramReleaseVersionV1 = "QC_NFT_MONTHLY_PROGRAM_RELEASE_V1"
 
-// The detached file carries a signed decision, never authorities or quorum.
+// NFTMonthlyProgramDecisionV1 The detached file carries a signed decision, never authorities or quorum.
 type NFTMonthlyProgramDecisionV1 struct {
 	NetworkID        string
 	LegacyGenesisHex string
@@ -55,7 +55,7 @@ func (p VerifiedNFTMonthlyProgramV1) TrustSnapshotV1() NFTAwardTrustV1 {
 	return result
 }
 
-// The separate domain prevents NFT award or hardfork signatures from being
+// NFTMonthlyProgramDecisionDigestV1 The separate domain prevents NFT award or hardfork signatures from being
 // replayed as a program approval. All fields affecting the twelve periods bind.
 func NFTMonthlyProgramDecisionDigestV1(d NFTMonthlyProgramDecisionV1) ([32]byte, error) {
 	scope, err := nftAwardScopeV1(d.NetworkID, d.LegacyGenesisHex)
@@ -94,7 +94,7 @@ func VerifyNFTMonthlyProgramReleaseV1(release NFTMonthlyProgramReleaseV1, trust 
 	}
 	approvals := make([]HardforkApprovalV1, len(release.Approvals))
 	for i, a := range release.Approvals {
-		approvals[i] = HardforkApprovalV1{PublicKey: a.PublicKey, Signature: a.Signature}
+		approvals[i] = HardforkApprovalV1(a)
 	}
 	if err := validateHardforkApprovalRoleV1("NFT program admin", trust.AdminPublicKeys, trust.AdminQuorum, approvals, digest); err != nil {
 		return zero, fmt.Errorf("NFT program: approvals: %w", err)
@@ -108,7 +108,7 @@ func VerifyNFTMonthlyProgramReleaseV1(release NFTMonthlyProgramReleaseV1, trust 
 	return result, nil
 }
 
-// path is selected by trusted bootstrap next to the detached hardfork release.
+// LoadNFTMonthlyProgramManifestV1 path is selected by trusted bootstrap next to the detached hardfork release.
 // The fixed small file contains public decision/signatures, no private keys.
 func LoadNFTMonthlyProgramManifestV1(path string, trust NFTAwardTrustV1) (VerifiedNFTMonthlyProgramV1, error) {
 	var zero VerifiedNFTMonthlyProgramV1

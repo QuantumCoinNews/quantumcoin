@@ -19,6 +19,8 @@ const (
 	tokenAddressChecksumSizeV1        = 4
 	tokenAddressDecodedSizeV1         = tokenAddressPayloadSizeV1 +
 		tokenAddressChecksumSizeV1
+	// Any 25-byte Base58Check value fits in at most 35 ASCII characters.
+	tokenAddressMaxEncodedSizeV1 = 35
 )
 
 var (
@@ -60,6 +62,9 @@ func NormalizeTokenAddressV1(
 			ErrTokenAddressFormatV1,
 			"address is empty",
 		)
+	}
+	if len(trimmed) > tokenAddressMaxEncodedSizeV1 {
+		return "", tokenAddressPolicyErrorV1(ErrTokenAddressFormatV1, "encoded address is too long")
 	}
 
 	decoded, err := utils.Base58Decode(

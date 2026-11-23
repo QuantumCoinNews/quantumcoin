@@ -1,1 +1,0 @@
-﻿go build -o "C:\Users\cem78\OneDrive\Desktop\quantumcoin\__qcdiag\_test_build.exe" .

@@ -117,11 +117,6 @@ func TestNewCoinbaseTxWithRewardV1RejectsInvalidArguments(
 			reward: 50,
 		},
 		{
-			name:   "zero reward",
-			miner:  wallet.NewWallet().GetAddress(),
-			reward: 0,
-		},
-		{
 			name:   "negative reward",
 			miner:  wallet.NewWallet().GetAddress(),
 			reward: -1,

@@ -7,15 +7,16 @@ import (
 )
 
 type qc20PersistenceV1 struct {
-	Name                string
-	Symbol              string
-	Owner               string
-	MaxSupply           uint64
-	TotalSupply         uint64
-	Decimals            uint8
-	Balances            map[string]uint64
-	Allowances          map[string]map[string]uint64
-	AuthorizationNonces map[string]uint64 `json:",omitempty"`
+	Name                  string
+	Symbol                string
+	Owner                 string
+	MaxSupply             uint64
+	TotalSupply           uint64
+	Decimals              uint8
+	Balances              map[string]uint64
+	Allowances            map[string]map[string]uint64
+	AuthorizationNonces   map[string]uint64            `json:",omitempty"`
+	AuthorizationIdentity TokenAuthorizationIdentityV1 `json:",omitempty"`
 }
 
 func cloneQC20AllowancesV1(
@@ -68,6 +69,7 @@ func (t *QC20Token) MarshalJSON() ([]byte, error) {
 		AuthorizationNonces: cloneTokenUint64MapV1(
 			t.authorizationNonces,
 		),
+		AuthorizationIdentity: t.authorizationIdentity,
 	})
 }
 
@@ -79,6 +81,10 @@ func (t *QC20Token) UnmarshalJSON(data []byte) error {
 		)
 	}
 
+	if err := validateFungibleStateSchemaModeV1(FungibleTokenModelFixedSupplyV1, data, true); err != nil {
+		return fmt.Errorf("%w: %w", ErrQC20PersistenceIntegrityV1, err)
+	}
+
 	var persisted qc20PersistenceV1
 
 	if err := json.Unmarshal(data, &persisted); err != nil {
@@ -88,6 +94,9 @@ func (t *QC20Token) UnmarshalJSON(data []byte) error {
 		&persisted,
 	); err != nil {
 		return err
+	}
+	if err := validatePersistedTokenAuthorizationIdentityV1(persisted.AuthorizationIdentity); err != nil {
+		return fmt.Errorf("token: persisted QC20 authorization identity: %w", err)
 	}
 
 	if persisted.Balances == nil {
@@ -108,6 +117,10 @@ func (t *QC20Token) UnmarshalJSON(data []byte) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	if t.balances != nil {
+		return ErrTokenStateAlreadyInitialized
+	}
+
 	t.name = persisted.Name
 	t.symbol = persisted.Symbol
 	t.owner = persisted.Owner
@@ -118,6 +131,7 @@ func (t *QC20Token) UnmarshalJSON(data []byte) error {
 	t.allowances = persisted.Allowances
 	t.authorizationNonces =
 		persisted.AuthorizationNonces
+	t.authorizationIdentity = persisted.AuthorizationIdentity
 
 	return nil
 }
@@ -125,14 +139,19 @@ func (t *QC20Token) UnmarshalJSON(data []byte) error {
 func tokenAuthorizationDomainForQC20LockedV1(
 	t *QC20Token,
 ) string {
-	return TokenAuthorizationDomainV1(
+	domain, err := TokenAuthorizationDomainForIdentityV1(
 		TokenAuthorizationModelQC20V1,
 		t.name,
 		t.symbol,
 		t.owner,
 		t.decimals,
 		t.maxSupply,
+		t.authorizationIdentity,
 	)
+	if err != nil {
+		return ""
+	}
+	return domain
 }
 
 func (t *QC20Token) AuthorizationDomainV1() (
@@ -146,7 +165,11 @@ func (t *QC20Token) AuthorizationDomainV1() (
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
-	return tokenAuthorizationDomainForQC20LockedV1(t), nil
+	domain := tokenAuthorizationDomainForQC20LockedV1(t)
+	if domain == "" {
+		return "", ErrTokenNetworkIdentityRequired
+	}
+	return domain, nil
 }
 
 func (t *QC20Token) NextAuthorizationNonceV1(

@@ -1,6 +1,7 @@
 # QuantumCoin Peer Transaction Validation
 
-Status: QC_PEER_TRANSACTION_VALIDATION_V1
+Document ID: `QC_PEER_TRANSACTION_VALIDATION_V1`\
+Evidence stage: **Runtime wired**. See [scope and release status](POLICY_EVIDENCE_REGISTER.md).
 
 Date: 20260617_190932
 

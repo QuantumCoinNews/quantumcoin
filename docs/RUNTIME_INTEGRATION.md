@@ -13,6 +13,9 @@ Network validation checks peer input and chain context. Public configuration
 examples are in `configs/`; launch/check scripts and control-panel sources are in
 `release/`. Real operator settings and credentials are supplied separately.
 
+For the canonical node entry, standalone miner startup and service ownership,
+see [runtime service boundaries](RUNTIME_SERVICE_BOUNDARIES.md).
+
 For rewards, see [NFT lifecycle](NFT_REWARD_LIFECYCLE.md),
 [final preparation](NFT_FINAL_PREPARATION.md), [catalog](NFT_CATALOG.md) and
 [verification coverage](NFT_RUNTIME_TEST_COVERAGE.md).

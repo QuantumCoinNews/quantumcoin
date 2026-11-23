@@ -39,9 +39,9 @@ func ValidateBlockRewardV1(
 		return result, nil
 	}
 
-	if subsidy <= 0 {
+	if subsidy < 0 {
 		return result, fmt.Errorf(
-			"%s: emission is complete at block height %d",
+			"%s: negative subsidy at block height %d",
 			Version,
 			height,
 		)

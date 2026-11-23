@@ -11,6 +11,7 @@ import (
 	"quantumcoin/config"
 	"quantumcoin/consensus"
 	"quantumcoin/internal"
+	"quantumcoin/security"
 )
 
 // Bootstrap loads configuration, opens or creates the blockchain, applies
@@ -26,7 +27,13 @@ func Bootstrap(
 			ConfigPath
 	}
 
-	cfg, err := config.Load(configPath)
+	var cfg *config.Config
+	var err error
+	if options.DataDir == "" {
+		cfg, err = config.Load(configPath)
+	} else {
+		cfg, err = config.LoadWithDataDir(configPath, options.DataDir)
+	}
 	if err != nil {
 		return nil, fmt.Errorf(
 			"%s: load config %q: %w",
@@ -43,7 +50,9 @@ func Bootstrap(
 }
 
 // BootstrapWithConfig constructs a runtime from an already loaded config.
-// It is also the testable canonical boundary used by Bootstrap.
+// It is also the testable canonical boundary used by Bootstrap. Full chain
+// validation is mandatory; strictChain is retained for source compatibility
+// and false cannot disable validation.
 func BootstrapWithConfig(
 	cfg *config.Config,
 	strictChain bool,
@@ -81,6 +90,12 @@ func bootstrapWithNFTStartupV1(
 			"%s: config cannot be nil",
 			BootstrapVersionV1,
 		)
+	}
+	if err := config.ValidateProcessRuntimeEnvironmentV1("node"); err != nil {
+		return nil, err
+	}
+	if err := config.ValidateRuntimeHTTPBindV1(cfg); err != nil {
+		return nil, err
 	}
 
 	activation, err := consensus.LoadHardforkActivationV1(release, snapshotDir)
@@ -127,6 +142,13 @@ func bootstrapWithNFTStartupV1(
 		)
 	}
 
+	profile, profileErr := config.ResolveNetworkProfileV1(cfg.ChainFile)
+	if profileErr != nil {
+		return nil, profileErr
+	}
+	if err := security.ConfigureEventDirectory(cfg.ChainFile, string(profile.Profile)); err != nil {
+		return nil, err
+	}
 	internal.SetBonusFile(
 		cfg.BonusFile,
 	)
@@ -136,23 +158,24 @@ func bootstrapWithNFTStartupV1(
 		return nil, err
 	}
 
-	if strictChain {
-		if err := chain.ValidateBlockchainSynchronized(); err != nil {
-			return nil, fmt.Errorf(
-				"%s: strict chain validation: %w",
-				BootstrapVersionV1,
-				err,
-			)
-		}
+	if err := chain.ValidateBlockchainSynchronized(); err != nil {
+		return nil, fmt.Errorf(
+			"%s: mandatory chain validation: %w",
+			BootstrapVersionV1,
+			err,
+		)
 	}
 
 	runtime := NewRuntime(chain, cfg)
 	runtime.nftGameProgram = nftProgram
+	runtime.initializeAdvisory()
+	runtime.initializeMonitoring()
 	return runtime, nil
 }
 
-func loadOrCreateBlockchainV1(
+func loadOrCreateBlockchainWithContextV1(
 	cfg *config.Config,
+	local *blockchain.Blockchain,
 ) (*blockchain.Blockchain, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf(
@@ -176,8 +199,9 @@ func loadOrCreateBlockchainV1(
 	switch {
 	case statErr == nil:
 		chain, err :=
-			blockchain.LoadBlockchainFromFile(
+			blockchain.LoadBlockchainFromFileWithLocalContextV1(
 				chainFile,
+				local,
 			)
 		if err != nil {
 			return nil, fmt.Errorf(
@@ -191,10 +215,10 @@ func loadOrCreateBlockchainV1(
 		return chain, nil
 
 	case errors.Is(statErr, os.ErrNotExist):
-		return blockchain.NewBlockchain(
-			cfg.InitialReward,
-			cfg.TotalSupply,
-		), nil
+		if local == nil {
+			return nil, fmt.Errorf("%s: local chain context is missing", BootstrapVersionV1)
+		}
+		return local, nil
 
 	default:
 		return nil, fmt.Errorf(

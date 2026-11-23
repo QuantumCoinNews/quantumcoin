@@ -66,6 +66,7 @@ func TestNFTStartupProgramReleaseBindsPeriodsAndDetachedTrustV1(t *testing.T) {
 		t.Fatal("caller mutation changed sealed program")
 	}
 	var decoded VerifiedNFTMonthlyProgramV1
+	//lint:ignore SA9005 negative test proves unexported verification state cannot be manufactured from JSON.
 	if err := json.Unmarshal([]byte(`{"verified":true,"GameActivatedAt":1}`), &decoded); err != nil {
 		t.Fatal(err)
 	}

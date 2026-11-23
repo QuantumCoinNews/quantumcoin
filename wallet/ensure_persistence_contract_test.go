@@ -8,6 +8,10 @@ func TestEnsureDefaultWalletPersistenceRoundTrip(t *testing.T) {
 		t.TempDir(),
 	)
 
+	w := NewWallet()
+	if err := SaveDefaultWallet(&DefaultWallet{Address: w.GetAddress(), PrivateKeyHex: w.ExportPrivateKeyHex()}); err != nil {
+		t.Fatal(err)
+	}
 	created, err := EnsureDefaultWallet()
 	if err != nil {
 		t.Fatalf(
@@ -51,9 +55,10 @@ func TestSaveDefaultWalletPersists(t *testing.T) {
 		t.TempDir(),
 	)
 
+	w := NewWallet()
 	want := &DefaultWallet{
-		PrivateKeyHex: "test-private-key",
-		Address:       "test-address",
+		PrivateKeyHex: w.ExportPrivateKeyHex(),
+		Address:       w.GetAddress(),
 	}
 
 	if err := SaveDefaultWallet(want); err != nil {

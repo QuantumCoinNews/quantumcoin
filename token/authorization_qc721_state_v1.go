@@ -7,12 +7,13 @@ import (
 )
 
 type qc721PersistenceV1 struct {
-	Name                string
-	Symbol              string
-	Owner               string
-	Owners              map[uint64]string
-	TokenURIs           map[uint64]string
-	AuthorizationNonces map[string]uint64 `json:",omitempty"`
+	Name                  string
+	Symbol                string
+	Owner                 string
+	Owners                map[uint64]string
+	TokenURIs             map[uint64]string
+	AuthorizationNonces   map[string]uint64            `json:",omitempty"`
+	AuthorizationIdentity TokenAuthorizationIdentityV1 `json:",omitempty"`
 }
 
 func validateQC721PersistenceAddressesV1(
@@ -85,6 +86,7 @@ func (n *QC721Token) MarshalJSON() ([]byte, error) {
 		AuthorizationNonces: cloneTokenUint64MapV1(
 			n.authorizationNonces,
 		),
+		AuthorizationIdentity: n.authorizationIdentity,
 	})
 }
 
@@ -122,9 +124,16 @@ func (n *QC721Token) UnmarshalJSON(data []byte) error {
 	); err != nil {
 		return err
 	}
+	if err := validatePersistedTokenAuthorizationIdentityV1(persisted.AuthorizationIdentity); err != nil {
+		return fmt.Errorf("token: persisted QC721 authorization identity: %w", err)
+	}
 
 	n.mu.Lock()
 	defer n.mu.Unlock()
+
+	if n.owners != nil {
+		return ErrTokenStateAlreadyInitialized
+	}
 
 	n.name = persisted.Name
 	n.symbol = persisted.Symbol
@@ -133,6 +142,7 @@ func (n *QC721Token) UnmarshalJSON(data []byte) error {
 	n.tokenURIs = persisted.TokenURIs
 	n.authorizationNonces =
 		persisted.AuthorizationNonces
+	n.authorizationIdentity = persisted.AuthorizationIdentity
 
 	return nil
 }
@@ -140,14 +150,19 @@ func (n *QC721Token) UnmarshalJSON(data []byte) error {
 func tokenAuthorizationDomainForQC721LockedV1(
 	n *QC721Token,
 ) string {
-	return TokenAuthorizationDomainV1(
+	domain, err := TokenAuthorizationDomainForIdentityV1(
 		TokenAuthorizationModelQC721V1,
 		n.name,
 		n.symbol,
 		n.owner,
 		0,
 		0,
+		n.authorizationIdentity,
 	)
+	if err != nil {
+		return ""
+	}
+	return domain
 }
 
 func (n *QC721Token) AuthorizationDomainV1() (
@@ -161,7 +176,11 @@ func (n *QC721Token) AuthorizationDomainV1() (
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 
-	return tokenAuthorizationDomainForQC721LockedV1(n), nil
+	domain := tokenAuthorizationDomainForQC721LockedV1(n)
+	if domain == "" {
+		return "", ErrTokenNetworkIdentityRequired
+	}
+	return domain, nil
 }
 
 func (n *QC721Token) NextAuthorizationNonceV1(

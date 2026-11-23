@@ -1,2 +1,0 @@
-﻿config.json -> UTF-8 (BOM YOK)
-config\config.go -> UTF-8 (BOM YOK)

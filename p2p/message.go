@@ -48,8 +48,9 @@ func networkMagic() string {
 
 // Handshake payload
 type Handshake struct {
-	Magic   string
-	Version string
+	Magic       string
+	Version     string
+	SyncVersion uint8
 }
 
 // Message documents the QuantumCoin component used by this module.
@@ -115,10 +116,14 @@ func PongMessage() Message { return Message{Type: MsgPong} }
 
 // HandshakeMessage documents the QuantumCoin component used by this module.
 // HandshakeMessage: ağ kimliği ve versiyon için hello paketi
-func HandshakeMessage() Message {
+func HandshakeMessage(chains ...*blockchain.Blockchain) Message {
 	hs := Handshake{
-		Magic:   networkMagic(),
-		Version: ProtocolVersion,
+		Magic:       networkMagic(),
+		Version:     ProtocolVersion,
+		SyncVersion: 1,
+	}
+	if len(chains) > 0 && chains[0] != nil {
+		hs.Magic = networkMagicForChainV1(chains[0])
 	}
 	var buf bytes.Buffer
 	if err := gob.NewEncoder(&buf).Encode(hs); err != nil {
@@ -126,4 +131,24 @@ func HandshakeMessage() Message {
 		return Message{Type: MsgHello}
 	}
 	return Message{Type: MsgHello, Data: buf.Bytes()}
+}
+
+func networkMagicForChainV1(chain *blockchain.Blockchain) string {
+	if id := chain.NetworkIdentitySnapshotV1(); id != nil {
+		if magic, ok := id.DomainMagicV2(); ok {
+			return magic
+		}
+		switch id.Network {
+		case "local-release":
+			if id.GenesisDomain == blockchain.IsolatedLocalGenesisDomainV1 {
+				return "QC_LOCAL_RELEASE_V2"
+			}
+			return "QC_LOCAL_RELEASE_V1"
+		case "testnet":
+			return "QC_TESTNET_V1"
+		case "mainnet":
+			return "QC_MAINNET_V1"
+		}
+	}
+	return networkMagic()
 }

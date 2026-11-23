@@ -4,7 +4,6 @@ package wallet
 import (
 	"encoding/json"
 	"errors"
-	"io/fs"
 	"os"
 	"path/filepath"
 )
@@ -17,87 +16,93 @@ type DefaultWallet struct {
 	Address       string `json:"address"`
 }
 
-// EnsureDefaultWallet documents the QuantumCoin component used by this module.
-// EnsureDefaultWallet, %APPDATA%\QuantumCoin\wallet.json dosyasını garanti eder.
-// - Dosya geçerliyse okur ve döndürür.
-// - Yoksa yeni bir Wallet üretir, dosyaya yazar ve döndürür.
-func EnsureDefaultWallet() (*DefaultWallet, error) {
-	dir, err := appDataDir()
-	if err != nil {
-		return nil, err
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, err
-	}
+// EnsureDefaultWallet loads an existing valid profile. Despite its legacy
+// name, it never generates a replacement for missing, unreadable or corrupt data.
+// Creation/restoration is explicit through the QC recovery UI or SaveDefaultWallet.
+func EnsureDefaultWallet() (*DefaultWallet, error) { return LoadDefaultWallet() }
 
-	path := filepath.Join(dir, "wallet.json")
-
-	// Varsa ve geçerliyse kullan
-	if b, err := os.ReadFile(path); err == nil {
-		var w DefaultWallet
-		if json.Unmarshal(b, &w) == nil && w.Address != "" {
-			return &w, nil
+func validateDefaultWallet(w *DefaultWallet) error {
+	if w == nil || !ValidateAddress(w.Address) {
+		return ErrWalletStoreCorrupt
+	}
+	if w.PrivateKeyHex != "" {
+		key, err := ImportPrivateKeyHex(w.PrivateKeyHex)
+		if err != nil || key == nil {
+			return ErrWalletStoreCorrupt
 		}
-		// bozuksa aşağıda yeniden yazacağız
+		if GetAddressFromPub(publicKeyBytes(&key.PublicKey)) != w.Address {
+			return ErrWalletStoreCorrupt
+		}
 	}
-
-	// Yeni üret
-	wal := NewWallet()
-	w := &DefaultWallet{
-		PrivateKeyHex: safeExportPrivHex(wal),
-		Address:       wal.GetAddress(),
-	}
-
-	data, err := json.MarshalIndent(w, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-	if err := os.WriteFile(path, data, fs.FileMode(0o600)); err != nil {
-		return nil, err
-	}
-	return w, nil
+	return nil
 }
 
-// LoadDefaultWallet mevcut dosyayı okumak için yardımcı (opsiyonel).
+func readDefaultWalletAt(path string) (*DefaultWallet, error) {
+	raw, err := readWalletBytes(path)
+	if err != nil {
+		return nil, err
+	}
+	defer clear(raw)
+	var w DefaultWallet
+	if err = decodeWalletJSON(raw, &w); err != nil {
+		return nil, err
+	}
+	if err = validateDefaultWallet(&w); err != nil {
+		return nil, err
+	}
+	return &w, nil
+}
+
 func LoadDefaultWallet() (*DefaultWallet, error) {
 	dir, err := appDataDir()
 	if err != nil {
 		return nil, err
 	}
-	path := filepath.Join(dir, "wallet.json")
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
+	storeMu.Lock()
+	defer storeMu.Unlock()
+	w, err := readDefaultWalletAt(filepath.Join(dir, "wallet.json"))
+	if os.IsNotExist(err) {
+		return nil, ErrWalletNotFound
 	}
-	var w DefaultWallet
-	if err := json.Unmarshal(b, &w); err != nil {
-		return nil, err
-	}
-	if w.Address == "" {
-		return nil, errors.New("wallet.json: address missing")
-	}
-	return &w, nil
+	return w, err
 }
 
-// SaveDefaultWallet documents the QuantumCoin component used by this module.
-// Wallet kaydını güncellemek için (ör. adres değişirse) opsiyonel yardımcı.
+// SaveDefaultWallet is explicit, preserves any existing key and refuses a
+// different-address replacement. New wallets belong in separate profiles.
 func SaveDefaultWallet(w *DefaultWallet) error {
-	if w == nil || w.Address == "" {
-		return errors.New("invalid wallet")
+	if err := validateDefaultWallet(w); err != nil {
+		return err
 	}
 	dir, err := appDataDir()
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
 	path := filepath.Join(dir, "wallet.json")
-	data, err := json.MarshalIndent(w, "", "  ")
+	storeMu.Lock()
+	defer storeMu.Unlock()
+	unlock, err := lockWalletStore(path)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, fs.FileMode(0o600))
+	defer unlock()
+	next := *w
+	existing, err := readDefaultWalletAt(path)
+	if err == nil {
+		if existing.Address != next.Address {
+			return ErrWalletWouldReplace
+		}
+		if existing.PrivateKeyHex != "" {
+			next.PrivateKeyHex = existing.PrivateKeyHex
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	raw, err := json.MarshalIndent(next, "", "  ")
+	if err != nil {
+		return err
+	}
+	defer clear(raw)
+	return writeWalletFileAtomic(path, raw)
 }
 
 // %APPDATA%\QuantumCoin yolunu verir.
@@ -107,14 +112,4 @@ func appDataDir() (string, error) {
 		return "", errors.New("APPDATA not set")
 	}
 	return filepath.Join(app, "QuantumCoin"), nil
-}
-
-// Private key export'u güvenli biçimde çağır; yoksa boş bırak.
-// (Projende ExportPrivateKeyHex zaten var; main.go'da kullanılıyor.)
-func safeExportPrivHex(w *Wallet) string {
-	if w == nil {
-		return ""
-	}
-	// ExportPrivateKeyHex mevcut; saklamak istemezsen "" döndürebilirsin.
-	return w.ExportPrivateKeyHex()
 }

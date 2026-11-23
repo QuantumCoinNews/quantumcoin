@@ -124,6 +124,7 @@ func (r *Runtime) EmitEvent(
 
 	r.mu.RUnlock()
 
+	r.observeMonitoringEvent(event)
 	for _, observer := range observers {
 		safelyNotifyObserverV1(
 			observer,

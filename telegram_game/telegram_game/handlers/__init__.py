@@ -1,6 +1,7 @@
 """
 handlers package
-Routers live here and are included by the FastAPI app.
+Compatibility imports only. Retired routers are intentionally empty; the
+canonical app owns authentication and ledger routes in telegram_game.runtime.
 """
 from __future__ import annotations
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	qnode "quantumcoin/node"
 	"testing"
 
 	"quantumcoin/blockchain"
@@ -113,32 +114,23 @@ func TestActualMuxAtomExactOneAtomSendV1(
 		)
 	}
 
-	oldBC := bc
 	oldRuntime := nodeRuntime
 
-	bc = chain
-
-	// BroadcastP2P is nil-receiver safe. Keep networking
-	// disabled for this integration contract.
-	nodeRuntime = nil
+	// Supply the canonical runtime snapshot; no peers are connected.
+	nodeRuntime = qnode.NewRuntime(chain, nil)
 
 	t.Cleanup(func() {
-		bc = oldBC
 		nodeRuntime = oldRuntime
 	})
 
-	payload, err := json.Marshal(
-		SendRequest{
-			From: owner.GetAddress(),
-			To:   receiver.GetAddress(),
-
-			Amount: FlexibleAmount(
-				"0.000001",
-			),
-
-			PrivHex: owner.ExportPrivateKeyHex(),
-		},
-	)
+	localTx, err := blockchain.NewTransactionFromQCAmountV1(owner.GetAddress(), receiver.GetAddress(), "0.000001", chain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := localTx.Sign(owner.PrivateKey); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(SendRequest{Transaction: localTx})
 	if err != nil {
 		t.Fatalf(
 			"marshal send payload: %v",

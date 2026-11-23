@@ -19,9 +19,12 @@ func (r *Runtime) SaveChain() error {
 	}
 
 	r.mu.RLock()
+	defer r.mu.RUnlock()
 	chain := r.Blockchain
 	cfg := r.Config
-	r.mu.RUnlock()
+	if r.APIReadOnly {
+		return nil
+	}
 
 	if chain == nil {
 		return fmt.Errorf(
@@ -89,13 +92,20 @@ func (r *Runtime) RunAutosave(
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
+	r.mu.RLock()
+	shutdownDone := r.shutdownDone
+	r.mu.RUnlock()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
+		case <-shutdownDone:
+			return nil
 
 		case <-ticker.C:
+			r.PollMonitoring()
+			r.persistAdvisory()
 			if err := r.SaveChain(); err != nil &&
 				onError != nil {
 				onError(err)

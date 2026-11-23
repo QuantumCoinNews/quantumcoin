@@ -1,15 +1,8 @@
-"""
-QuantumCoin Telegram Game (Option B)
-Package marker for backend modules.
+"""QuantumCoin Telegram Game. Canonical backend: telegram_game.runtime:app."""
+__version__ = "0.5.0"
 
-Contains:
-- api_server.py (FastAPI app)
-- database/ (SQLite Store + helpers)
-- handlers/ (API routers)
 
-Keep the structure simple and import-safe.
-"""
-from __future__ import annotations
-
-__version__ = "0.1.0"
-__all__ = []
+def load_tests(loader, tests, pattern):
+    # unittest's package hook avoids importing legacy policy scripts as runtime.
+    from isolated_contracts import policy_suite
+    return policy_suite()

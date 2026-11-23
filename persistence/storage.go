@@ -21,7 +21,7 @@ type StorageConfig struct {
 }
 
 func (c StorageConfig) Validate() error {
-	if strings.TrimSpace(c.RootDir) == "" {
+	if strings.TrimSpace(c.RootDir) == "" || c.RootDir != strings.TrimSpace(c.RootDir) {
 		return errors.New("storage root directory required")
 	}
 
@@ -41,6 +41,9 @@ func ResolveDomainPath(
 		return "", err
 	}
 
+	if err := validateDataDomainV1(domain, 0); err != nil {
+		return "", err
+	}
 	if strings.TrimSpace(domain.Name) == "" {
 		return "", errors.New("persistence domain name required")
 	}
@@ -68,11 +71,11 @@ func ResolveDomainPath(
 		string(cfg.Network),
 	)
 
-	return filepath.Join(
-		networkRoot,
-		domain.Name,
-		domain.SchemaVersion,
-	), nil
+	path := filepath.Join(networkRoot, domain.Name, domain.SchemaVersion)
+	if err := rejectPathLinksV1(path); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 func EnsureDomainPath(

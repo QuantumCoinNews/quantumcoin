@@ -33,6 +33,18 @@ func NewQueue(config RuntimeConfig) (*Queue, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
 	}
+	// Own the validated policy; callers cannot change live approval rules later.
+	config.Plan.Queues = append([]QueuePolicy(nil), config.Plan.Queues...)
+	boundary := make(map[string]bool, len(config.Plan.SafeBoundary))
+	for key, value := range config.Plan.SafeBoundary {
+		boundary[key] = value
+	}
+	config.Plan.SafeBoundary = boundary
+	notes := make(map[string]string, len(config.Plan.Notes))
+	for key, value := range config.Plan.Notes {
+		notes[key] = value
+	}
+	config.Plan.Notes = notes
 
 	return &Queue{
 		config:      config,

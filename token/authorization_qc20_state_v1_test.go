@@ -14,7 +14,7 @@ func TestQC20AuthorizationStateV1PersistsNonceAndState(
 	owner := wallet.NewWallet().GetAddress()
 	spender := wallet.NewWallet().GetAddress()
 
-	subject := NewQC20TokenWithOwner(
+	subject := newTestAuthorizedQC20Token(t,
 		"Factory Token",
 		"FCT",
 		1000,
@@ -162,7 +162,7 @@ func TestQC20AuthorizationStateV1DomainIsStable(
 ) {
 	owner := wallet.NewWallet().GetAddress()
 
-	subject := NewQC20TokenWithOwner(
+	subject := newTestAuthorizedQC20Token(t,
 		"Stable Factory Token",
 		"SFT",
 		1000,

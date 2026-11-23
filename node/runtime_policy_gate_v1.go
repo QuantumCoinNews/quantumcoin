@@ -44,8 +44,7 @@ func DefaultRuntimePolicySetV1() RuntimePolicySetV1 {
 //
 // It validates each policy, verifies that duplicated declarations agree with
 // canonical config/consensus/blockchain values and prevents explicit mainnet
-// startup while declared-but-unimplemented burn-sink and fractional-fee
-// requirements remain unresolved.
+// startup while final network-fee parameters and activation remain unresolved.
 func ValidateRuntimePolicyGateV1(
 	cfg *config.Config,
 	policies RuntimePolicySetV1,
@@ -162,7 +161,7 @@ func validateRuntimePolicyGateWithActivationV1(
 	if profile.IsExplicitMainnet {
 		return fmt.Errorf(
 			"%s: explicit mainnet startup blocked: "+
-				"enforceable network fee denomination is not finalized",
+				"final network fee parameters and activation are not finalized",
 			RuntimePolicyGateVersionV1,
 		)
 	}

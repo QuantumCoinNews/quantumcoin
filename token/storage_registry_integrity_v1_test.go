@@ -75,24 +75,14 @@ func registryWithPreservedTokenV1(
 	)
 
 	registry := NewRegistry()
-	subject := New(
+	subject := newTestTokenWithAllocations(t,
 		"KEEP",
 		"Preserved Token",
 		8,
 		1000,
 		owner,
+		map[string]uint64{owner: 25},
 	)
-
-	if err := subject.Mint(
-		owner,
-		owner,
-		25,
-	); err != nil {
-		t.Fatalf(
-			"mint preserved token: %v",
-			err,
-		)
-	}
 
 	if err := registry.Register(subject); err != nil {
 		t.Fatalf(
@@ -261,10 +251,10 @@ func TestRegistryLoadIntegrityV1AcceptsNullTokenMap(
 		)
 	}
 
-	if len(registry.Tokens) != 0 {
+	if len(registry.tokens) != 0 {
 		t.Fatalf(
 			"loaded null registry count = %d, want 0",
-			len(registry.Tokens),
+			len(registry.tokens),
 		)
 	}
 }

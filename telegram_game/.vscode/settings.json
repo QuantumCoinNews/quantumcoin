@@ -1,0 +1,7 @@
+{
+  "python.defaultInterpreterPath": "C:\\Projects\\telegram_game\\.venv\\Scripts\\python.exe",
+  "python.analysis.diagnosticSeverityOverrides": {
+    "reportMissingImports": "none"
+  },
+  "cSpell.enabled": false
+}

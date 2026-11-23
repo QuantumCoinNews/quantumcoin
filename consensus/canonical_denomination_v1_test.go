@@ -71,6 +71,7 @@ func TestCanonicalQCParserRejectsInvalidPrecisionV1(t *testing.T) {
 		"-1",
 		"0.0000001",
 		"1.0000001",
+		"5.79982325",
 		"1.2.3",
 		"abc",
 	}

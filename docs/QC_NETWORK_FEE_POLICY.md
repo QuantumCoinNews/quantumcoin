@@ -1,6 +1,7 @@
 # QuantumCoin Network Fee Policy
 
-Status: QC_NETWORK_FEE_POLICY_V1
+Document ID: `QC_NETWORK_FEE_POLICY_V1`\
+Evidence stage: **Tested**. See [scope and release status](POLICY_EVIDENCE_REGISTER.md).
 
 Date: 20260619_203752
 

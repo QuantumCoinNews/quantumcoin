@@ -108,7 +108,7 @@ ok quantumcoin/p2p 1.977s
 
 This continuation changes 22 existing Go files and adds 12 Go files: 9 production files and 25 test files in total. Existing enabled-policy test fixtures were updated to obtain verified policies from test-only signatures. No production private keys were added.
 
-The repository was already dirty. Its complete git diff is not the scope of this task. Original Go files were copied before edits under C:\Users\cem78\AppData\Local\Temp\quantumcoin-hardfork-binding-20260928. The task-scoped diff is hardfork-activation-scoped.diff in that audit directory. Existing source changes were preserved; no git reset, clean or restore was used.
+The repository was already dirty. Its complete git diff is not the scope of this task. Original Go files were copied before edits under C:\Users\USER\AppData\Local\Temp\quantumcoin-hardfork-binding-20260928. The task-scoped diff is hardfork-activation-scoped.diff in that audit directory. Existing source changes were preserved; no git reset, clean or restore was used.
 
 gofmt -l over all 34 affected Go files returned no filenames. Repository file enumeration found zero qma-prefixed filenames.
 

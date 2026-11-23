@@ -1,6 +1,7 @@
 # QuantumCoin Load Test Scripts
 
-Status: QC_LOAD_TEST_SCRIPTS_SAFE_V1
+Document ID: `QC_LOAD_TEST_SCRIPTS_SAFE_V1`\
+Evidence stage: **Tested**. See [scope and release status](POLICY_EVIDENCE_REGISTER.md).
 
 Date: 20260619_002150
 
@@ -23,7 +24,8 @@ Load tests are read-only by default.
 
 Allowed:
 
-- GET /health
+- GET /api/health for the node, using the `QC_API_TOKEN` environment credential
+- GET /health for Telegram Game
 - GET /api/network/label
 - GET /api/qc/health
 - GET /api/admin/panel/registry
@@ -61,8 +63,14 @@ The load test scripts must not:
 
 ## Later real testnet use
 
-When testnet is running, approved read-only targets can be tested using:
+Use PowerShell 7. Set the node token in the process environment before probing
+protected node health. Admin reads use `TELEGRAM_GAME_ADMIN_TOKEN`. The planner
+does not need credentials.
 
-powershell -ExecutionPolicy Bypass -File tools/qc_load_test_safe_v1.ps1 -BaseUrl http://127.0.0.1:18082 -Endpoint /health -Requests 100 -Concurrency 5
+```powershell
+pwsh -NoProfile -File tools/qc_load_test_safe_v1.ps1 -BaseUrl http://127.0.0.1:18082 -Endpoint /api/health -Requests 100 -Concurrency 5
+```
 
-Remote/public targets require explicit approval and -AllowRemote.
+Remote targets require HTTPS and explicit `-AllowRemote`. The client follows a
+fixed read-only path allowlist. Redirects fail. Any failed request makes the
+summary report `ok: false` and the script exit nonzero.

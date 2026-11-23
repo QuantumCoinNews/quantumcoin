@@ -13,12 +13,12 @@ const (
 	QCMainnetImmutableSymbolV1                    = "QC"
 	QCMainnetImmutableInitialRewardV1       int   = int(qconsensus.CanonicalInitialMiningRewardQCV1)
 	QCMainnetImmutableTotalSupplyV1         int   = int(qconsensus.CanonicalTotalSupplyQCV1)
-	QCMainnetImmutableGenesisUnixV1         int64 = 1_725_158_400
-	QCMainnetImmutableHalvingIntervalSecsV1 int64 = 63_072_000
-	QCMainnetImmutableMiningPeriodSecsV1    int64 = 315_360_000
+	QCMainnetImmutableGenesisUnixV1         int64 = qconsensus.CanonicalGenesisUnixV1
+	QCMainnetImmutableHalvingIntervalSecsV1 int64 = qconsensus.CanonicalHalvingIntervalSecondsV1
+	QCMainnetImmutableMiningPeriodSecsV1    int64 = qconsensus.CanonicalMiningPeriodSecondsV1
 
-	QCMainnetImmutableTargetBlockTimeSecsV1   int = 30
-	QCMainnetImmutableDefaultDifficultyBitsV1 int = 16
+	QCMainnetImmutableTargetBlockTimeSecsV1   int = qconsensus.CanonicalBlockTimeSecondsV1
+	QCMainnetImmutableDefaultDifficultyBitsV1 int = qconsensus.CanonicalDefaultDifficultyBitsV1
 	QCMainnetImmutableCoinbaseMaturityV1      int = qconsensus.CanonicalCoinbaseMaturityBlocksV1
 	QCMainnetImmutablePreminePercentV1        int = qconsensus.CanonicalFounderTotalPercentV1
 	QCMainnetImmutablePremineLiquidPercentV1  int = qconsensus.CanonicalFounderLiquidPercentV1

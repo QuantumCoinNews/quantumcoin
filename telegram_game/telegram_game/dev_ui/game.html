@@ -1,0 +1,1332 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <link rel="icon" href="data:,">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>QuantumCoin Space Miner</title>
+
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{
+      font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      background:#020617;color:#e5e7eb;overflow:hidden;font-size:13px
+    }
+    #gameCanvas{
+      display:block;width:100vw;height:100vh;
+      background:radial-gradient(circle at top,#020617 0,#000 65%,#000 100%)
+    }
+    .hidden{display:none!important}
+
+    /* HUD */
+    .hud{
+      position:fixed;top:12px;left:50%;transform:translateX(-50%);
+      display:flex;gap:10px;padding:6px 10px;border-radius:999px;
+      background:rgba(15,23,42,.86);
+      border:1px solid rgba(148,163,184,.22);
+      backdrop-filter:blur(10px);
+      box-shadow:0 10px 34px rgba(0,0,0,.55);
+      z-index:20
+    }
+    .hud-item{display:flex;flex-direction:column;gap:2px;min-width:78px}
+    .hud-label{font-size:10px;opacity:.82;letter-spacing:.06em;text-transform:uppercase}
+    .hud-value{font-size:13px;font-weight:700}
+    .hud-xp-bar{
+      position:relative;height:14px;border-radius:999px;overflow:hidden;
+      background:rgba(148,163,184,.14);border:1px solid rgba(148,163,184,.14)
+    }
+    .hud-xp-inner{
+      position:absolute;left:0;top:0;bottom:0;width:0%;
+      background:linear-gradient(90deg, rgba(56,189,248,.9), rgba(34,197,94,.9));
+      box-shadow:0 0 16px rgba(56,189,248,.35)
+    }
+    .hud-xp-text{
+      position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+      font-size:10px;font-weight:700;opacity:.92
+    }
+
+    /* Lang switch */
+    .lang-switch{
+      position:fixed;top:12px;right:12px;display:flex;gap:6px;z-index:21
+    }
+    .lang-btn{
+      padding:8px 10px;border-radius:999px;cursor:pointer;
+      border:1px solid rgba(148,163,184,.22);
+      background:rgba(15,23,42,.85);color:#e5e7eb;
+      font-weight:800;font-size:12px;letter-spacing:.03em;
+      transition:transform .15s ease, box-shadow .15s ease, border-color .15s ease
+    }
+    .lang-btn:hover{transform:translateY(-1px);border-color:rgba(56,189,248,.55);box-shadow:0 0 14px rgba(56,189,248,.18)}
+    .lang-btn.active{border-color:#22c55e;box-shadow:0 0 16px rgba(34,197,94,.28)}
+
+    /* Hint */
+    .hint{
+      position:fixed;left:12px;bottom:78px;z-index:18;
+      padding:8px 10px;border-radius:12px;
+      background:rgba(15,23,42,.72);
+      border:1px solid rgba(148,163,184,.18);
+      color:#e5e7eb;opacity:.9;
+      max-width:min(520px, 92vw)
+    }
+
+    /* Bottom nav (slimmer) */
+    .bottom-nav{
+      position:fixed;left:50%;bottom:10px;transform:translateX(-50%);
+      display:flex;gap:6px;z-index:22;
+      padding:6px;border-radius:999px;
+      background:rgba(15,23,42,.78);
+      border:1px solid rgba(148,163,184,.18);
+      backdrop-filter:blur(10px);
+      box-shadow:0 12px 34px rgba(0,0,0,.52)
+    }
+    .nav-btn{
+      display:flex;align-items:center;gap:6px;
+      padding:7px 10px;border-radius:999px;cursor:pointer;
+      border:1px solid transparent;
+      background:rgba(2,6,23,.48);
+      color:#e5e7eb;font-weight:800;font-size:11px;
+      line-height:1;
+      transition:transform .15s ease, background .15s ease, border-color .15s ease
+    }
+    .nav-btn:hover{transform:translateY(-1px);border-color:rgba(56,189,248,.30)}
+    .nav-btn.active{
+      background:rgba(56,189,248,.18);
+      border-color:rgba(56,189,248,.50);
+      box-shadow:0 0 14px rgba(56,189,248,.14)
+    }
+    .nav-btn .icon{font-size:14px}
+    @media (max-width: 520px){
+      .bottom-nav{gap:4px;padding:5px}
+      .nav-btn{padding:8px 9px}
+      .nav-btn .icon{font-size:16px}
+      .nav-btn span:not(.icon){display:none}
+    }
+
+    /* UI Panel (modal) */
+    .ui-panel{
+      position:fixed;inset:0;z-index:30;
+      display:flex;align-items:flex-start;justify-content:center;
+      padding:68px 12px 86px;
+      background:rgba(0,0,0,.40);
+      overflow:auto
+    }
+    .ui-panel[hidden]{display:none}
+    .ui-panel-inner{
+      width:min(1100px, 96vw);
+      border-radius:18px;
+      background:rgba(15,23,42,.92);
+      border:1px solid rgba(148,163,184,.22);
+      backdrop-filter:blur(12px);
+      box-shadow:0 28px 90px rgba(0,0,0,.70);
+      padding:18px 18px 20px;
+      position:relative;
+    }
+    .ui-panel-inner h2{font-size:18px;letter-spacing:.03em}
+    .ui-panel-inner > p{opacity:.85;margin-top:6px;margin-bottom:14px}
+
+    .ui-close-btn{
+      position:absolute;top:14px;right:14px;
+      width:38px;height:38px;border-radius:12px;
+      cursor:pointer;border:1px solid rgba(148,163,184,.22);
+      background:rgba(2,6,23,.55);color:#e5e7eb;
+      font-weight:1000;display:flex;align-items:center;justify-content:center;
+      transition:transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+      z-index:5;
+    }
+    .ui-close-btn:hover{
+      transform:translateY(-1px);
+      border-color:rgba(56,189,248,.45);
+      box-shadow:0 0 14px rgba(56,189,248,.14)
+    }
+
+    /* Wallet / shared cards */
+    .wallet-cols{display:grid;grid-template-columns:1fr 1.2fr;gap:14px}
+    @media (max-width: 980px){ .wallet-cols{grid-template-columns:1fr} }
+    .wallet-card{
+      border-radius:16px;padding:14px;
+      background:rgba(2,6,23,.55);
+      border:1px solid rgba(148,163,184,.18)
+    }
+    .wallet-balance-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid rgba(148,163,184,.12)}
+    .wallet-balance-row:last-child{border-bottom:none}
+    .wallet-balance-row .value{font-weight:900}
+    .wallet-card-header{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+    .wallet-card-sub{opacity:.78;margin-top:4px}
+    .wallet-status-pill{
+      display:flex;align-items:center;gap:8px;
+      padding:8px 10px;border-radius:999px;
+      background:rgba(15,23,42,.9);
+      border:1px solid rgba(148,163,184,.18);
+      white-space:nowrap
+    }
+    .wallet-status-pill .dot{
+      width:10px;height:10px;border-radius:50%;
+      background:#f97316;box-shadow:0 0 8px rgba(249,115,22,.9)
+    }
+    .wallet-section{margin-top:12px;padding-top:12px;border-top:1px solid rgba(148,163,184,.12)}
+    .wallet-section-title{font-weight:900;letter-spacing:.02em;margin-bottom:8px}
+    .wallet-btn-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+    .wallet-btn{
+      padding:10px 12px;border-radius:12px;cursor:pointer;
+      border:1px solid rgba(148,163,184,.18);
+      background:rgba(15,23,42,.88);color:#e5e7eb;
+      font-weight:900
+    }
+    .wallet-btn:hover{border-color:rgba(56,189,248,.45);box-shadow:0 0 14px rgba(56,189,248,.16)}
+    .wallet-btn--metamask{display:flex;align-items:center;gap:8px}
+    .wallet-status{margin-top:8px;opacity:.86}
+    .wallet-status.ok{color:#86efac}
+    .wallet-status.warn{color:#fdba74}
+    .seed-phrase{
+      border-radius:12px;padding:12px;
+      background:rgba(0,0,0,.35);
+      border:1px dashed rgba(148,163,184,.25);
+      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+      line-height:1.55
+    }
+    .seed-phrase-empty{opacity:.85}
+    .wallet-note{margin-top:8px;opacity:.78}
+
+    /* Top panels */
+    .top-cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    @media (max-width: 980px){ .top-cols{grid-template-columns:1fr} }
+    .top-card h2{font-size:15px;letter-spacing:.08em;text-transform:uppercase}
+    .top-card-sub{opacity:.78;margin-top:6px;margin-bottom:12px}
+    .top-stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .top-stat{
+      border-radius:14px;padding:12px;
+      background:rgba(2,6,23,.55);
+      border:1px solid rgba(148,163,184,.14)
+    }
+    .top-stat .label{font-size:10px;opacity:.82;letter-spacing:.08em;text-transform:uppercase}
+    .top-stat .value{font-size:20px;font-weight:1000;margin-top:4px}
+    .top-hint{opacity:.72;margin-top:4px;font-size:12px}
+
+    .top-leaderboard-wrapper{margin-top:10px}
+    .top-leaderboard-header{
+      display:grid;grid-template-columns:60px 1.6fr 100px 110px 110px;
+      gap:8px;padding:8px 10px;border-radius:12px;
+      background:rgba(0,0,0,.25);
+      border:1px solid rgba(148,163,184,.12);
+      font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;opacity:.9
+    }
+    .top-leaderboard-body{margin-top:8px;display:flex;flex-direction:column;gap:8px}
+    .top-row{
+      display:grid;grid-template-columns:60px 1.6fr 100px 110px 110px;
+      gap:8px;align-items:center;
+      padding:10px;border-radius:12px;
+      background:rgba(2,6,23,.55);
+      border:1px solid rgba(148,163,184,.12)
+    }
+    .player-cell{display:flex;align-items:center;gap:10px}
+    .avatar{width:30px;height:30px;border-radius:10px;background:rgba(148,163,184,.16);border:1px solid rgba(148,163,184,.12)}
+    .avatar--empty{opacity:.8}
+    .player-meta .name{font-weight:900}
+    .player-meta .tagline{opacity:.75;font-size:12px;margin-top:2px}
+    .top-footer-note{opacity:.78;margin-top:10px}
+
+    /* Store */
+    .store-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px}
+    @media (max-width: 980px){ .store-grid{grid-template-columns:repeat(2,1fr)} }
+    @media (max-width: 640px){ .store-grid{grid-template-columns:1fr} }
+    .store-card{
+      position:relative;
+      border-radius:16px;padding:12px;
+      background:rgba(2,6,23,.55);
+      border:1px solid rgba(148,163,184,.14)
+    }
+    .store-card img{
+      width:100%;height:160px;object-fit:contain;
+      border-radius:12px;background:rgba(0,0,0,.18);
+      border:1px solid rgba(148,163,184,.10)
+    }
+    .store-card-title{margin-top:10px;font-weight:1000;font-size:14px}
+    .store-card-desc{opacity:.78;margin-top:6px;min-height:34px}
+    .store-card-meta{display:flex;justify-content:space-between;opacity:.85;margin-top:10px;font-weight:800}
+    .store-card-btn{
+      width:100%;margin-top:10px;
+      padding:10px 12px;border-radius:12px;
+      border:1px solid rgba(148,163,184,.18);
+      background:rgba(15,23,42,.90);
+      color:#e5e7eb;font-weight:1000;cursor:pointer
+    }
+    .store-card-btn:hover{border-color:rgba(56,189,248,.45);box-shadow:0 0 14px rgba(56,189,248,.16)}
+    .store-card-btn:disabled{opacity:.6;cursor:not-allowed}
+    .store-badge{
+      position:absolute;top:12px;right:12px;
+      padding:6px 10px;border-radius:999px;
+      background:rgba(34,197,94,.18);
+      border:1px solid rgba(34,197,94,.35);
+      font-weight:1000;font-size:11px
+    }
+    .store-badge--active{
+      right:auto;left:12px;
+      background:rgba(56,189,248,.18);
+      border-color:rgba(56,189,248,.35)
+    }
+
+    /* Social */
+    .social-inner-card{
+      border-radius:16px;padding:14px;
+      background:rgba(2,6,23,.55);
+      border:1px solid rgba(148,163,184,.14);
+      margin-top:10px
+    }
+    .social-links{margin-top:10px;display:flex;flex-direction:column;gap:8px;list-style:none}
+    .social-links a{
+      color:#eaf2ff;text-decoration:none;font-weight:900;
+      padding:10px 12px;border-radius:12px;
+      border:1px solid rgba(148,163,184,.12);
+      background:rgba(15,23,42,.70);
+      display:block
+    }
+    .social-links a:hover{border-color:rgba(56,189,248,.45);box-shadow:0 0 14px rgba(56,189,248,.14)}
+
+    /* WATCH panel */
+    #panel-watch{
+      position:fixed;inset:0;z-index:29;
+      padding:72px 12px 110px;
+      overflow:auto;background:rgba(0,0,0,.35);
+      display:none;
+    }
+    #panel-watch.show{display:block}
+    .watch-layout{width:min(1100px, 96vw);margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    @media (max-width: 980px){ .watch-layout{grid-template-columns:1fr} }
+    .watch-card{
+      border-radius:16px;padding:14px;
+      background:rgba(15,23,42,.92);
+      border:1px solid rgba(148,163,184,.20);
+      box-shadow:0 20px 70px rgba(0,0,0,.55)
+    }
+    .watch-card h2{font-size:15px;letter-spacing:.08em;text-transform:uppercase}
+    .watch-card > p{opacity:.80;margin-top:8px}
+    .watch-status-row{display:flex;justify-content:space-between;opacity:.88;margin-top:10px}
+    .watch-progress{
+      margin-top:10px;height:14px;border-radius:999px;overflow:hidden;
+      background:rgba(148,163,184,.14);border:1px solid rgba(148,163,184,.14)
+    }
+    #watch-progress-fill{height:100%;width:0%;background:linear-gradient(90deg, rgba(34,197,94,.9), rgba(56,189,248,.9))}
+    .watch-progress-text{margin-top:6px;opacity:.85;font-weight:900}
+    .watch-video-grid{margin-top:10px;display:flex;flex-direction:column;gap:10px}
+    .watch-video-card{
+      display:flex;gap:10px;align-items:flex-start;
+      border-radius:14px;padding:12px;
+      background:rgba(2,6,23,.55);
+      border:1px solid rgba(148,163,184,.12)
+    }
+    .watch-video-thumb{
+      width:44px;height:44px;border-radius:14px;
+      background:rgba(56,189,248,.18);
+      border:1px solid rgba(56,189,248,.22);
+      display:flex;align-items:center;justify-content:center;
+      font-weight:1000
+    }
+    .watch-video-title{font-weight:1000}
+    .watch-video-meta{opacity:.8;margin-top:6px}
+    .btn-watch-start{
+      margin-top:8px;padding:10px 12px;border-radius:12px;
+      border:1px solid rgba(148,163,184,.18);
+      background:rgba(15,23,42,.88);color:#e5e7eb;
+      font-weight:1000;cursor:pointer
+    }
+    .btn-watch-start:hover{border-color:rgba(56,189,248,.45);box-shadow:0 0 14px rgba(56,189,248,.14)}
+    /* watch close X (fixed) */
+    #watchCloseBtn{
+      position:fixed;top:80px;right:16px;z-index:9999;
+    }
+
+    /* ============ MINE SCENE OVERLAY ============ */
+    #mineScene{
+      position: fixed; inset: 0;
+      z-index: 9999; overflow: hidden;
+      background: #000;
+      display:none;
+    }
+    #mineScene.show{display:block}
+    #mineBg{
+      position:absolute;inset:0;z-index:0;
+      background-repeat:no-repeat;background-position:center center;background-size:cover;
+    }
+    #mineFXLayer{
+      position:absolute;inset:0;z-index:2;
+      pointer-events:none;
+    }
+    #mineSparkCanvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+    #mineShip{
+      position:absolute;left:50%;top:62%;
+      transform:translate(-50%,-50%);
+      z-index:4;pointer-events:none;
+      width:190px;height:auto;
+      opacity:0;
+      filter:drop-shadow(0 14px 28px rgba(0,0,0,.55));
+      will-change:transform,left,top;
+    }
+    #mineScene.show-ship #mineShip{
+      opacity:1;
+      animation:
+        mineShipIn .55s ease-out forwards,
+        mineBob 2.8s ease-in-out infinite .55s,
+        shipDrift 12s ease-in-out infinite .55s;
+    }
+    @keyframes mineShipIn{
+      from{opacity:0;transform:translate(-50%,-50%) translateY(80px) scale(.94)}
+      to  {opacity:1;transform:translate(-50%,-50%) translateY(0)    scale(1)}
+    }
+    @keyframes mineBob{
+      0%   { transform:translate(-50%, -50%) translateY(0)     rotate(-2deg); }
+      50%  { transform:translate(-50%, -50%) translateY(-10px) rotate( 2deg); }
+      100% { transform:translate(-50%, -50%) translateY(0)     rotate(-2deg); }
+    }
+    @keyframes shipDrift{
+      0%   { left:50%;   top:62%; }
+      25%  { left:51.1%; top:61.4%; }
+      50%  { left:49.4%; top:61.9%; }
+      75%  { left:50.7%; top:62.6%; }
+      100% { left:50%;   top:62%; }
+    }
+
+    #mineHudWrap{
+      position:absolute;left:50%;top:10vh;transform:translateX(-50%);
+      z-index:5;width:min(920px, 92vw);display:flex;justify-content:center;
+    }
+    #mineHud{
+      width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;
+      padding:12px 18px;border-radius:999px;
+      background:radial-gradient(circle at top left, rgba(15,23,42,.96), rgba(15,23,42,.88));
+      border:1px solid rgba(148,163,184,.35);
+      backdrop-filter:blur(10px);
+      box-shadow:0 24px 60px rgba(0,0,0,.9);
+      color:#e5e7eb;
+    }
+    #mineTitle{font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-bottom:2px}
+    #mineSub{font-size:11px;opacity:.82}
+    #mineCloseBtn{
+      font-size:12px;padding:8px 14px;border-radius:999px;
+      border:1px solid rgba(120,180,255,.6);
+      background:rgba(15,23,42,.9);
+      color:#eaf2ff;cursor:pointer;
+      transition:transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+    }
+    #mineCloseBtn:hover{
+      border-color:#22c55e;
+      box-shadow:0 0 14px rgba(34,197,94,.7);
+      transform:translateY(-1px);
+    }
+    .mine-beam{
+      position:absolute;height:5px;border-radius:999px;
+      background:linear-gradient(90deg,
+        rgba(56,189,248,0),
+        rgba(56,189,248,.98),
+        rgba(34,197,94,.98),
+        rgba(34,197,94,0)
+      );
+      transform-origin:0 50%;
+      --ang:0deg;
+      transform:rotate(var(--ang)) scaleX(1);
+      opacity:1;
+      filter:drop-shadow(0 0 14px rgba(56,189,248,.55)) drop-shadow(0 0 22px rgba(34,197,94,.45));
+      animation:beamPulse .38s ease-out forwards;
+      will-change:transform,opacity,width;
+    }
+    @keyframes beamPulse{
+      0%   { opacity:0; transform: rotate(var(--ang)) scaleX(.10); }
+      35%  { opacity:1; transform: rotate(var(--ang)) scaleX(1);   }
+      100% { opacity:0; transform: rotate(var(--ang)) scaleX(1);   }
+    }
+    .mine-hit{
+      position:absolute;width:16px;height:16px;border-radius:50%;
+      background:radial-gradient(circle, rgba(34,197,94,.9), rgba(56,189,248,.35), rgba(0,0,0,0));
+      filter:drop-shadow(0 0 18px rgba(34,197,94,.55));
+      opacity:0;animation:hitPop .35s ease-out forwards;
+      pointer-events:none;z-index:2;
+    }
+    @keyframes hitPop{
+      0%{opacity:0;transform:scale(.5)}
+      35%{opacity:1;transform:scale(1)}
+      100%{opacity:0;transform:scale(1.25)}
+    }
+    @media (max-width: 900px){
+      #mineHud{ flex-direction:column; align-items:flex-start; row-gap:6px; border-radius:18px; padding:10px 14px; }
+      #mineShip{ width:170px; top:62%; }
+    }
+
+/* Mine açıkken HUD/nav/panelleri kapat */
+body.mine-open .hud,
+body.mine-open .lang-switch,
+body.mine-open .hint,
+body.mine-open .bottom-nav,
+body.mine-open #uiPanel,
+body.mine-open #panel-watch{
+  display: none !important;
+}
+/* ===== TGWT Ledger UI ===== */
+.tgwt-ledger-grid{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px
+}
+@media (max-width: 980px){ .tgwt-ledger-grid{grid-template-columns:repeat(2,1fr)} }
+@media (max-width: 520px){ .tgwt-ledger-grid{grid-template-columns:1fr} }
+
+.tgwt-ledger-item{
+  border-radius:14px;padding:12px;
+  background:rgba(2,6,23,.55);
+  border:1px solid rgba(148,163,184,.14)
+}
+.tgwt-ledger-item .label{
+  font-size:10px;opacity:.82;letter-spacing:.08em;text-transform:uppercase
+}
+.tgwt-ledger-item .value{
+  font-size:20px;font-weight:1000;margin-top:4px
+}
+.tgwt-ledger-item .sub{opacity:.72;margin-top:6px;font-size:12px}
+
+.tgwt-form{
+  margin-top:14px;
+  display:grid;
+  grid-template-columns:1.4fr 0.7fr auto;
+  gap:10px;
+  align-items:end
+}
+@media (max-width: 820px){ .tgwt-form{grid-template-columns:1fr;align-items:stretch} }
+
+.tgwt-input{
+  width:100%;
+  padding:10px 12px;
+  border-radius:12px;
+  border:1px solid rgba(148,163,184,.18);
+  background:rgba(15,23,42,.70);
+  color:#e5e7eb;
+  font-weight:800;
+  outline:none;
+}
+.tgwt-input:focus{border-color:rgba(56,189,248,.45);box-shadow:0 0 14px rgba(56,189,248,.12)}
+
+.tgwt-statusline{margin-top:10px;opacity:.88}
+.tgwt-statusline.ok{color:#86efac}
+.tgwt-statusline.warn{color:#fdba74}
+
+.tgwt-history{
+  margin-top:12px;
+  display:flex;flex-direction:column;gap:8px
+}
+.tgwt-row{
+  display:flex;justify-content:space-between;gap:10px;
+  padding:10px 12px;border-radius:12px;
+  background:rgba(2,6,23,.55);
+  border:1px solid rgba(148,163,184,.12)
+}
+.tgwt-row .left{display:flex;flex-direction:column;gap:2px}
+.tgwt-row .t{font-weight:1000}
+.tgwt-row .m{opacity:.75;font-size:12px}
+.tgwt-row .amt{font-weight:1000;white-space:nowrap}
+
+@media (pointer: coarse), (max-width: 820px){
+  .hint, #hintText { display:none !important; }
+}
+
+@media (max-width: 480px) {
+  :root{
+    /* Safe-area */
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
+    --safe-left: env(safe-area-inset-left, 0px);
+
+    /* Genel UI offset */
+    --ui-gap: 8px;
+    --ui-top:  calc(8px + var(--safe-top));
+    --ui-right: calc(8px + var(--safe-right));
+    --ui-left:  calc(8px + var(--safe-left));
+
+    /* Dil satırı (küçük ekran optimize) */
+    --lang-row-h: 32px;
+    --lang-btn-pad-y: 6px;
+    --lang-btn-pad-x: 8px;
+    --lang-btn-font: 11px;
+
+    /* ÇAKIŞMA ÇÖZÜMÜ:
+       Dil butonları en üstte, HUD/XP onun ALTINA iner */
+    --lang-top: var(--ui-top);
+    --hud-top: calc(var(--lang-top) + var(--lang-row-h) + var(--ui-gap));
+
+    /* Opsiyonel: panel genişliği (taşma olmasın) */
+    --panel-max-w: calc(100vw - (var(--ui-left) + var(--ui-right)));
+  }
+}
+
+/* Ekstra küçük cihazlar (opsiyonel) */
+@media (max-width: 360px) {
+  :root{
+    --lang-btn-pad-x: 7px;
+    --lang-btn-font: 10px;
+    --lang-row-h: 30px;
+    --hud-top: calc(var(--lang-top) + var(--lang-row-h) + 6px);
+  }
+}
+@media (max-width: 480px) {
+  .lang-switch{
+    top: var(--lang-top);
+    right: var(--ui-right);
+  }
+  .hud{
+    top: var(--hud-top);
+  }
+}
+  </style>
+  <link rel="stylesheet" href="assets/cinematics/cinematic_manager.css?v=1">
+
+<style>
+/* MOBILE_X_CLOSE_XP_SLOW_V1
+   Item 10 polish:
+   - Watch close X stays inside the watch panel area
+   - panels/nav have safer spacing on desktop/mobile
+   - XP speed is slowed in JS constant above when present
+*/
+#panel-watch{
+  padding-top: 72px !important;
+  padding-bottom: 112px !important;
+}
+
+#panel-watch .watch-layout{
+  position: relative;
+}
+
+#watchCloseBtn{
+  position: absolute !important;
+  top: 16px !important;
+  right: 16px !important;
+  z-index: 5 !important;
+}
+
+@media (max-width: 980px){
+  #panel-watch{
+    padding-top: 64px !important;
+  }
+  #watchCloseBtn{
+    top: 10px !important;
+    right: 10px !important;
+  }
+}
+
+@media (max-width: 520px){
+  .hud{
+    max-width: calc(100vw - 16px);
+    overflow: hidden;
+    gap: 6px;
+    padding: 6px 8px;
+  }
+
+  .hud-item{
+    min-width: 54px !important;
+  }
+
+  .hud-item[style]{
+    min-width: 128px !important;
+  }
+
+  .hud-label{
+    font-size: 9px;
+  }
+
+  .hud-value{
+    font-size: 12px;
+  }
+
+  .bottom-nav{
+    max-width: calc(100vw - 12px);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .bottom-nav::-webkit-scrollbar{
+    display:none;
+  }
+
+  .ui-panel{
+    padding: 58px 8px 92px !important;
+  }
+
+  .ui-panel-inner{
+    width: calc(100vw - 16px) !important;
+    max-width: calc(100vw - 16px) !important;
+  }
+
+  #panel-watch{
+    padding: 58px 8px 94px !important;
+  }
+
+  .watch-layout{
+    width: calc(100vw - 16px) !important;
+  }
+}
+</style>
+
+
+
+
+
+
+
+<link rel="stylesheet" href="/dev_ui/account_wallet.css">
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script defer src="/dev_ui/player_session.js"></script>
+<script defer src="/dev_ui/verified_actions.js"></script>
+<script defer src="/dev_ui/x_rewards.js"></script>
+<script defer src="/dev_ui/game_scene.js"></script>
+<script defer src="/dev_ui/account_wallet.js"></script>
+<script defer src="/dev_ui/mining_controller.js"></script>
+<script defer src="/dev_ui/wallet_recovery.js"></script>
+<script defer src="/dev_ui/qc_local_wallet.js"></script>
+<script defer src="/dev_ui/wallet_link.js"></script>
+<script defer src="/assets/cinematics/cinematic_manager.js?v=full_wait_1"></script>
+</head>
+
+<body>
+  <div id="spaceScene">
+    <canvas id="gameCanvas"></canvas>
+  </div>
+
+  <!-- Maden Sahnesi Overlay (TEK) -->
+  <div id="mineScene" class="hidden" aria-hidden="true">
+    <div id="mineBg"></div>
+
+    <div id="mineFXLayer">
+      <canvas id="mineSparkCanvas"></canvas>
+    </div>
+
+    <div id="mineHudWrap">
+      <div id="mineHud">
+        <div>
+          <div id="mineTitle">LUNA-01 · VEGA CRATER</div>
+          <div id="mineSub">QuantumCoin mining sector.</div>
+        </div>
+        <button id="mineCloseBtn" type="button">← Back to Moon</button>
+      </div>
+    </div>
+
+    <img id="mineShip" src="assets/ships/ship_starter.png" alt="Mining ship" />
+  </div>
+
+  <!-- HUD -->
+  <div class="hud">
+    <div class="hud-item">
+      <div class="hud-label" id="hudLabelLevel">Level</div>
+      <div class="hud-value" id="hudLevel">1</div>
+    </div>
+    <div class="hud-item">
+      <div class="hud-label" id="hudLabelQC">QC Balance</div>
+      <div class="hud-value" id="hudQC">0</div>
+    </div>
+    <div class="hud-item">
+      <div class="hud-label" id="hudLabelTGWT">TGWT Balance</div>
+      <div class="hud-value" id="hudTGWT">0</div>
+    </div>
+    <div class="hud-item" style="min-width:210px">
+      <div class="hud-label" id="hudLabelXP">XP</div>
+      <div class="hud-xp-bar">
+        <div class="hud-xp-inner" id="hudXpInner"></div>
+        <div class="hud-xp-text" id="hudXpText">0 / 100</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Language -->
+  <div class="lang-switch">
+    <button class="lang-btn" data-lang="tr">TR</button>
+    <button class="lang-btn" data-lang="en">EN</button>
+    <button class="lang-btn" data-lang="es">ES</button>
+    <button class="lang-btn" data-lang="zh">中文</button>
+  </div>
+
+  <div class="hint" id="hintText">
+    ← → move, ↑ thrust, 1–5 select mining spot, SPACE toggles auto mine
+  </div>
+
+  <!-- Top modal panel -->
+  <div class="ui-panel" id="uiPanel" hidden>
+    <div class="ui-panel-inner">
+      <button id="uiCloseBtn" class="ui-close-btn" type="button" aria-label="Close">✖</button>
+      <h2 id="uiPanelTitle">Panel</h2>
+      <p id="uiPanelBody">Here you will see the selected screen content.</p>
+
+      <!-- WALLET -->
+      <div class="wallet-panel" id="walletPanel" hidden>
+        <div class="wallet-cols">
+          <div class="wallet-card">
+            <h3 id="walletBalancesTitle">Balances</h3>
+            <div class="wallet-balance-row">
+              <span id="walletQCLabel">In-game QC balance</span>
+              <span class="value" id="walletQCValue">0</span>
+            </div>
+            <div class="wallet-balance-row">
+              <span id="walletTGWTLabel">TGWT balance</span>
+              <span class="value" id="walletTGWTValue">0</span>
+            </div>
+            <div class="wallet-balance-row">
+              <span id="walletLevelLabel">Level</span>
+              <span class="value" id="walletLevelValue">1</span>
+            </div>
+          </div>
+
+          <div class="wallet-card">
+            <div class="wallet-card-header">
+              <div>
+                <h3 id="walletConnectionTitle">Wallet &amp; MetaMask</h3>
+                <p class="wallet-card-sub" id="walletConnectionSub">
+                  Manage MetaMask connection and QC seed in one place.
+                </p>
+              </div>
+              <div class="wallet-status-pill" id="walletMetaStatusPill">
+                <span class="dot" id="walletMetaDot"></span>
+                <span class="label" id="walletMetaStatusPillText">Not connected</span>
+              </div>
+            </div>
+
+            <div class="wallet-section">
+              <div class="wallet-section-title" id="walletMetaTitle">MetaMask connection</div>
+              <div class="wallet-btn-row">
+                <button class="wallet-btn wallet-btn--metamask" id="btnConnectMetaMask" type="button">
+                  <span class="meta-icon" aria-hidden="true">🦊</span>
+                  <span id="walletMetaConnectLabel">Connect MetaMask</span>
+                </button>
+              </div>
+              <div class="wallet-status warn" id="walletMetaStatus">
+                MetaMask not found or not connected.
+              </div>
+            </div>
+
+            <div class="wallet-section">
+              <div class="wallet-section-title" id="walletSeedTitle">QC wallet seed (12 words)</div>
+              <div class="seed-phrase seed-phrase-empty" id="walletSeedBox">
+                No seed has been generated yet.
+              </div>
+              <div class="wallet-btn-row">
+                <button class="wallet-btn" id="btnGenerateSeed" type="button">Generate new seed</button>
+                <button class="wallet-btn" id="btnToggleSeed" type="button">Show seed</button>
+                <button class="wallet-btn" id="btnCopySeed" type="button">Copy seed</button>
+              </div>
+              <p class="wallet-note" id="walletSeedNote">
+                Your 12-word seed is stored only in this browser and never sent to a server.
+                Write it down and keep it safe.
+              </p>
+            </div>
+            <!-- NFT_STATUS_UI_V1: read-only monthly NFT status. No mint, no winner selection, no chain write. -->
+            <div class="wallet-section" id="nftStatusSection">
+              <div class="wallet-section-title">Monthly Rare NFT Status</div>
+              <div class="wallet-status" id="nftStatusLine">NFT status not loaded yet.</div>
+              <div class="wallet-note" id="nftStatusDetail">
+                Read-only status only. Minting, winner selection, and chain metadata are not triggered from this UI.
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- TOP -->
+      <div class="top-panel" id="topPanel" hidden>
+        <div class="top-cols">
+          <div class="wallet-card top-card">
+            <h2 id="topStatusTitle">GLOBAL STATS</h2>
+            <p class="top-card-sub" id="topStatusSubtitle">
+              Summary statistics of all players inside Space Miner.
+            </p>
+
+            <div class="top-stats-grid">
+              <div class="top-stat">
+                <div class="label" id="topCardTotalPlayersTitle">TOTAL PLAYERS</div>
+                <div class="value" id="topTotalPlayersValue">1</div>
+                <div class="top-hint" id="topCardTotalPlayersDesc">Unique accounts joined so far.</div>
+              </div>
+              <div class="top-stat">
+                <div class="label" id="topCardOnlineTitle">ONLINE NOW</div>
+                <div class="value" id="topActivePlayersValue">1</div>
+                <div class="top-hint" id="topCardOnlineDesc">Players active in the last minutes.</div>
+              </div>
+              <div class="top-stat">
+                <div class="label" id="topCardRankTitle">YOUR RANK</div>
+                <div class="value" id="topYourRankValue">—</div>
+                <div class="top-hint" id="topCardRankDesc">Your position by total QC earnings.</div>
+              </div>
+              <div class="top-stat">
+                <div class="label" id="topCardTotalEarnedTitle">TOTAL QC EARNED</div>
+                <div class="value" id="topYourEarnedValue">0</div>
+                <div class="top-hint" id="topCardTotalEarnedDesc">Total QC earned since you started.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="wallet-card top-card">
+            <h2 id="topLeaderboardTitle">TOP QC EARNERS</h2>
+            <p class="top-card-sub" id="topLeaderboardSubtitle">
+              Top players sorted by QC earned.
+            </p>
+
+            <div class="top-leaderboard-wrapper">
+              <div class="top-leaderboard-header">
+                <span class="col-rank" id="topHeaderRank">#</span>
+                <span class="col-player" id="topHeaderPlayer">PLAYER</span>
+                <span class="col-qc" id="topHeaderQC">QC</span>
+                <span class="col-sessions" id="topHeaderSessions">SESSIONS</span>
+                <span class="col-last" id="topHeaderLast">LAST SEEN</span>
+              </div>
+
+              <div class="top-leaderboard-body" id="topLeaderboardBody">
+                <div class="top-row placeholder">
+                  <span class="col-rank">01</span>
+                  <div class="col-player player-cell">
+                    <div class="avatar avatar--empty"></div>
+                    <div class="player-meta">
+                      <div class="name">Player #001</div>
+                      <div class="tagline">Demo data – backend will fill this later.</div>
+                    </div>
+                  </div>
+                  <span class="col-qc">12,345</span>
+                  <span class="col-sessions">128</span>
+                  <span class="col-last">5m ago</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="top-footer-note" id="topFooterNoteText">
+              Real on-chain statistics will appear here once backend is connected. Demo data for now.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STORE -->
+      <div class="store-panel" id="storePanel" hidden>
+        <div class="wallet-card top-card">
+          <h2 id="storePanelTitle">Ship Store</h2>
+          <p id="storePanelIntro" class="store-header-text">
+            Everyone starts with a free starter ship. Buy advanced ships with QC.
+          </p>
+          <div id="storeGrid" class="store-grid"></div>
+        </div>
+      </div>
+<!-- TGWT (placeholder) -->
+<div class="tgwt-panel" id="tgwtPanel" hidden>
+  <div class="wallet-card top-card">
+    <h2 id="tgwtTitle">TGWT</h2>
+
+    <!-- Mount point (API-driven TGWT rewards UI will render here) -->
+    <div id="tgwtRewardsMount"></div>
+
+    <!-- Keep old placeholder as fallback (optional) -->
+    <p id="tgwtBody" class="hidden">
+      Ledger-backed TGWT rewards, pool and withdrawal requests are shown here.
+    </p>
+  </div>
+</div>
+
+      <!-- SOCIAL -->
+      <div class="social-panel" id="socialPanel" hidden>
+        <div class="wallet-card top-card">
+          <h2 id="socialPanelTitle">QC Social</h2>
+          <p id="socialPanelIntro">
+            Complete a published Telegram, YouTube or X task. Each provider-verified task earns 1 TGWT in your game balance when rewards are enabled.
+          </p>
+
+          <div class="social-inner-card">
+            <h3 id="socialCardTitle">Follow QuantumCoin – Earn TGWT</h3>
+            <p id="socialCardIntro">
+              Verified TGWT rewards are recorded in your game balance. No BSC transfer happens until the claim contract is approved and enabled; when claims open, you will connect your own BSC wallet and pay gas in BNB.
+            </p>
+            <ul class="social-links" id="socialLinksList"></ul>
+            <p id="socialRewardNote" class="top-footer-note">
+              Social campaigns are hidden and disabled on testnet. Mainnet activation requires explicit configuration; each verified Telegram, YouTube, or X task can earn 1 TGWT once per campaign.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- SETTINGS -->
+      <div class="settings-panel" id="settingsPanel" hidden>
+        <div class="wallet-card top-card">
+          <h2 id="settingsTitle">Settings</h2>
+          <p id="settingsBody">Language and settings will be managed here.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- WATCH PANEL (FIXED: bozuk parça yerine tam section) -->
+  <section id="panel-watch" aria-hidden="true">
+    <button id="watchCloseBtn" class="ui-close-btn" type="button" aria-label="Close">✖</button>
+
+    <div class="watch-layout">
+      <div class="watch-card">
+        <h2 id="watchTitle">WATCH &amp; EARN</h2>
+        <p id="watchDesc">DEV TEST: Watch flow preview. Final Watch & Earn will use verified Google Rewarded Ads and TGWT reward after valid ad completion.</p>
+
+        <div class="watch-status-row">
+          <span><span id="watchStatusLabel">Status</span>: <b id="watchStatusText">Not started yet</b></span>
+          <span><span id="watchRequiredLabel">Required time</span>: <b id="watchRequiredTime">00:30</b></span>
+        </div>
+
+        <div class="watch-status-row">
+          <span><span id="watchRewardLabel">Reward (DEV TEST)</span>: <b id="watchRewardText">+1 TGWT pending after verified rewarded ad</b></span>
+          <span><span id="watchDurationLabel2">Duration</span>: <b id="watchElapsed">00:00</b></span>
+        </div>
+
+        <div class="watch-progress">
+          <div id="watch-progress-fill"></div>
+        </div>
+        <div class="watch-progress-text" id="watchHintText">
+          DEV TEST: timer simulates rewarded-ad completion. Final mode will require Google rewarded-ad verification.
+        </div>
+
+        <button class="btn-watch-start" id="watchStartBtn" type="button">Start Watching</button>
+      </div>
+
+      <div class="watch-card">
+        <h2 id="watchVideoListTitle">Videos</h2>
+        <p style="opacity:.8;margin-top:8px" id="watchVideoListDesc">
+          Demo list – backend will provide curated content later.
+        </p>
+
+        <div class="watch-video-grid">
+          <article class="watch-video-card">
+            <div class="watch-video-thumb">01</div>
+            <div>
+              <div class="watch-video-title" id="watchVideoIntroTitle">What is QuantumCoin? (Short Intro)</div>
+              <div class="watch-video-meta">
+                <span id="watchDurationLabel">Duration</span>: <span data-watch-duration="intro">00:30</span>
+              </div>
+            </div>
+          </article>
+
+          <article class="watch-video-card">
+            <div class="watch-video-thumb">02</div>
+            <div>
+              <div class="watch-video-title" id="watchVideoSpaceMinerTitle">Space Miner Gameplay (Demo)</div>
+              <div class="watch-video-meta">
+                <span id="watchDurationLabelB">Duration</span>: <span data-watch-duration="space">00:45</span>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Bottom nav -->
+  <div class="bottom-nav">
+    <button class="nav-btn active" data-nav="start" type="button">
+      <span class="icon">⛏️</span><span id="navStartText">Start</span>
+    </button>
+    <button class="nav-btn" data-nav="wallet" type="button">
+      <span class="icon">💼</span><span id="navWalletText">Wallet</span>
+    </button>
+    <button class="nav-btn" data-nav="top" type="button">
+      <span class="icon">🏆</span><span id="navTopText">Top</span>
+    </button>
+    <button class="nav-btn" data-nav="store" type="button">
+      <span class="icon">🚀</span><span id="navStoreText">Ship Store</span>
+    </button>
+    <button class="nav-btn" data-nav="tgwt" type="button">
+      <span class="icon">🎁</span><span id="navTGWTText">TGWT</span>
+    </button>
+    <button class="nav-btn" data-nav="social" type="button">
+      <span class="icon">⭐</span><span id="navSocialText">QC Follow</span>
+    </button>
+    <button class="nav-btn" data-nav="watch" type="button">
+      <span class="icon">▶️</span><span id="navWatchText">Watch &amp; Earn</span>
+    </button>
+    <button class="nav-btn" data-nav="settings" type="button">
+      <span class="icon">⚙️</span><span id="navSettingsText">Settings</span>
+    </button>
+  </div>
+
+
+
+
+<!-- QC_BACKEND_WALLET_BRIDGE_V1 -->
+
+
+<!-- QC_BACKEND_MINING_BRIDGE_V1 -->
+
+
+
+<!-- QC_REAL_WALLET_PANEL_V1 -->
+<style>
+  #qcRealWalletCard {
+    margin-top: 14px;
+    padding: 14px;
+    border: 1px solid rgba(80, 220, 255, 0.28);
+    border-radius: 16px;
+    background: linear-gradient(135deg, rgba(5,18,35,.86), rgba(5,40,62,.72));
+    box-shadow: 0 0 18px rgba(0, 210, 255, 0.10);
+    color: #e9fbff;
+    font-family: system-ui, -apple-system, Segoe UI, Arial, sans-serif;
+  }
+
+  #qcRealWalletCard .qc-real-title {
+    font-weight: 800;
+    font-size: 14px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: #7eeaff;
+    margin-bottom: 10px;
+  }
+
+  #qcRealWalletCard .qc-real-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  #qcRealWalletCard .qc-real-row {
+    padding: 10px;
+    border-radius: 12px;
+    background: rgba(255,255,255,.055);
+    border: 1px solid rgba(255,255,255,.08);
+  }
+
+  #qcRealWalletCard .qc-real-label {
+    font-size: 11px;
+    opacity: .72;
+    margin-bottom: 4px;
+  }
+
+  #qcRealWalletCard .qc-real-value {
+    font-size: 15px;
+    font-weight: 800;
+    word-break: break-all;
+  }
+
+  #qcRealWalletCard .qc-real-address {
+    grid-column: 1 / -1;
+  }
+
+  #qcRealWalletCard .qc-real-note {
+    margin-top: 10px;
+    font-size: 11px;
+    opacity: .72;
+    line-height: 1.35;
+  }
+</style>
+
+
+
+
+<!-- QC_WALLET_WITHDRAW_CARD_V1 -->
+<style>
+#qcWithdrawCard{
+  margin-top:12px;border-radius:16px;padding:14px;
+  background:rgba(2,6,23,.55);
+  border:1px solid rgba(148,163,184,.18)
+}
+#qcWithdrawCard .qcw-title{font-size:15px;font-weight:1000;margin-bottom:8px}
+#qcWithdrawCard .qcw-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+@media(max-width:720px){#qcWithdrawCard .qcw-grid{grid-template-columns:1fr}}
+#qcWithdrawCard .qcw-row{
+  border-radius:12px;padding:10px;background:rgba(0,0,0,.25);
+  border:1px solid rgba(148,163,184,.12)
+}
+#qcWithdrawCard .qcw-label{
+  opacity:.72;font-size:11px;text-transform:uppercase;
+  letter-spacing:.06em;margin-bottom:4px
+}
+#qcWithdrawCard .qcw-value{font-weight:1000;word-break:break-word}
+#qcWithdrawCard .qcw-note{margin-top:8px;opacity:.78;line-height:1.45}
+#qcWithdrawBtn{margin-top:10px}
+#qcWithdrawBtn:disabled{opacity:.55;cursor:not-allowed;box-shadow:none}
+</style>
+
+
+
+
+<!-- QC_WALLET_SEND_UI_BRIDGE_V1 -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<style>
+/* WATCH_CLOSE_INSIDE_CARD_V1
+   Moves Watch close X visually inside the Watch card area.
+*/
+#panel-watch .watch-card{
+  position: relative !important;
+}
+
+#panel-watch #watchCloseBtn{
+  position: absolute !important;
+  top: 14px !important;
+  right: 14px !important;
+  z-index: 20 !important;
+  transform: none !important;
+}
+
+#panel-watch .watch-card:first-child{
+  padding-top: 54px !important;
+}
+
+@media (max-width: 520px){
+  #panel-watch #watchCloseBtn{
+    top: 10px !important;
+    right: 10px !important;
+  }
+
+  #panel-watch .watch-card:first-child{
+    padding-top: 50px !important;
+  }
+}
+</style>
+
+
+
+
+<style>
+/* MINING_REAL_BLOCK_UX_V1
+   Mining UX layer:
+   - Click mining site opens session
+   - No fake balance increase
+   - QC balance updates only after real block result from backend/QC chain
+*/
+#mineRealUxBox{
+  margin-top:10px;
+  padding:10px 12px;
+  border-radius:14px;
+  background:rgba(2,6,23,.72);
+  border:1px solid rgba(56,189,248,.28);
+  color:#e5e7eb;
+  font-size:13px;
+  line-height:1.35;
+  box-shadow:0 14px 40px rgba(0,0,0,.38);
+}
+
+#mineRealUxStatus{
+  opacity:.92;
+  margin-bottom:8px;
+}
+
+#mineRealBlockBtn{
+  border:1px solid rgba(56,189,248,.42);
+  background:rgba(56,189,248,.14);
+  color:#e5e7eb;
+  border-radius:12px;
+  padding:9px 12px;
+  font-weight:900;
+  cursor:pointer;
+}
+
+#mineRealBlockBtn:disabled{
+  opacity:.55;
+  cursor:not-allowed;
+}
+
+#mineRealUxResult{
+  margin-top:8px;
+  opacity:.88;
+  font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size:12px;
+  word-break:break-word;
+}
+
+@media (max-width: 720px){
+  #mineRealUxBox{
+    width:100%;
+    box-sizing:border-box;
+  }
+}
+</style>
+
+
+
+
+<style>
+/* XP_PROGRESS_CONTROL_V1 */
+#xpDebugLine{
+  margin-top:4px;
+  font-size:9px;
+  opacity:.68;
+  white-space:nowrap;
+}
+@media (max-width:520px){
+  #xpDebugLine{font-size:8px}
+}
+</style>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<style>
+/* SETTINGS_FINAL_OVERVIEW_V1 */
+.settings-final-grid-v1{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
+  gap:14px;
+  margin-top:16px;
+}
+.settings-final-card-v1{
+  border-radius:16px;
+  padding:14px;
+  background:rgba(2,6,23,.56);
+  border:1px solid rgba(148,163,184,.18);
+  box-shadow:0 12px 30px rgba(0,0,0,.20);
+}
+.settings-final-card-v1 h3{
+  margin:0 0 8px;
+  font-size:15px;
+  letter-spacing:.02em;
+}
+.settings-final-card-v1 p{
+  margin:0;
+  opacity:.86;
+  line-height:1.55;
+  font-size:13px;
+}
+.settings-final-note-v1{
+  margin-top:16px;
+  border-radius:16px;
+  padding:14px;
+  background:rgba(34,197,94,.08);
+  border:1px solid rgba(34,197,94,.20);
+  color:#d1fae5;
+  line-height:1.55;
+}
+.settings-final-steps-v1{
+  margin:0;
+  padding-left:18px;
+  line-height:1.75;
+  opacity:.9;
+}
+</style>
+
+
+
+
+
+
+
+
+
+
+</body>
+</html>

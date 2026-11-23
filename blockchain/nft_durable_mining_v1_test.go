@@ -84,10 +84,10 @@ func nftDurableReadFileV1(t *testing.T, filename string) []byte {
 }
 
 func TestNFTDurableMiningPersistsAwardFeeAndDetachedOwnershipV1(t *testing.T) {
-	entry := nftDurableMiningEntryV1(t, (*Blockchain)(nil))
+	nftDurableMiningEntryV1(t, (*Blockchain)(nil))
 	// The exact missing-entry diagnostic runs before fixture work.
 	f := nftDurableMiningFixtureV1(t)
-	entry = nftDurableMiningEntryV1(t, f.chain)
+	entry := nftDurableMiningEntryV1(t, f.chain)
 	before, subsidy := f.chain.TotalMinted(), f.chain.ExpectedSubsidyForHeightV1(2)
 	subsidyUnits, err := f.chain.ExpectedSubsidyUnitsForHeightV1(2)
 	if err != nil {
@@ -185,7 +185,7 @@ func TestNFTDurableMiningPreservesStateOnWriteAndInstallFailureV1(t *testing.T) 
 			if sentinel != "" && !bytes.Equal(sentinelBefore, nftDurableReadFileV1(t, sentinel)) {
 				t.Fatal("failed install modified existing target/parent data")
 			}
-			leftovers, err := filepath.Glob(filepath.Join(parent, ".qma-nft-commit-*"))
+			leftovers, err := filepath.Glob(filepath.Join(parent, ".qc-chain-commit-*"))
 			if err != nil || len(leftovers) != 0 {
 				t.Fatalf("failed commit retained temporary files: %v %v", leftovers, err)
 			}
@@ -207,7 +207,7 @@ func TestNFTDurableMiningRejectsChangedEvidenceBeforeWritingV1(t *testing.T) {
 	if !reflect.DeepEqual(state, f.chain.StateSnapshot()) || !bytes.Equal(file, nftDurableReadFileV1(t, f.filename)) {
 		t.Fatal("invalid proof changed live or persisted state")
 	}
-	if temporary, err := filepath.Glob(filepath.Join(filepath.Dir(f.filename), ".qma-nft-commit-*")); err != nil || len(temporary) != 0 {
+	if temporary, err := filepath.Glob(filepath.Join(filepath.Dir(f.filename), ".qc-chain-commit-*")); err != nil || len(temporary) != 0 {
 		t.Fatal("invalid proof wrote a prospective chain file")
 	}
 }

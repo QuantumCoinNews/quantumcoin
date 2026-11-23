@@ -1,0 +1,76 @@
+{
+  "schema": "QMA_GROUP_STATUS_V1",
+  "date_tr": "2026-11-02",
+  "scope": "QMA-0066--QMA-0073 within user 237-item list",
+  "closed_before": [
+    "0067",
+    "0068",
+    "0069",
+    "0072"
+  ],
+  "newly_closed": [
+    "0070"
+  ],
+  "open": [
+    "0071"
+  ],
+  "closed_count": 7,
+  "open_count": 1,
+  "closure_scopes": {
+    "0066": "Canonical technical lifecycle and fail-closed evidence bindings; not live readiness approval",
+    "0073": "Runtime regression coverage and evidence matrix; not real final asset or external operator approval",
+    "0072": "Draft catalogue/metadata consistency only",
+    "0070": "User-requested deployment-ready technical delivery; independent service not deployed; no live policy/keys selected"
+  },
+  "remaining": {
+    "0071": "Actual final 12 NFT assets/metadata and actual distinct authorized AI/admin signatures postponed by user to final stage",
+    "operational_deployment": "Independent host/operator, HTTPS, scope and keys, game pinned policy and token; not performed",
+    "wallet_UI": "Challenge signing support remains to be integrated into user wallet UI"
+  },
+  "validation": {
+    "go_main_tests_pass": 1088,
+    "go_test_packages_pass": 24,
+    "go_packages_without_tests": 18,
+    "go_test_fail": 0,
+    "go_test_skip": 0,
+    "race_warnings": 0,
+    "python_regression_scripts_pass": 23,
+    "python_regression_reported_unittest_cases": 98,
+    "python_assertion_scripts": 13,
+    "additional_adversarial_cases_pass": 7,
+    "javascript_ui_script_pass": 1,
+    "matrix_scenarios": 24,
+    "source_manifest_sha256": "779899e88b70479abd64fbd71bb0697aa3a7ff54dd99004efbeaf1d4361813fc",
+    "external_service_cases_pass": 10,
+    "go_files_unchanged_since_race_pass": 412,
+    "python_regression_source_changed": [],
+    "quicknet_live_read_signature_verified": true,
+    "additional_adversarial_cases_scope": "Included in current 23-script regression; not additional to unittest total",
+    "go_validation_scope": "R1 full go test ./... -race -count=1 -json reused after unchanged Go byte hashes; r2 real Go lifecycle rerun via Python"
+  },
+  "revision": "r2",
+  "closed_previous_turn": [
+    "0066",
+    "0073"
+  ],
+  "user_scope_decision": "Henüz yok; kuruluma hazır teslim et",
+  "technical_infrastructure_complete": [
+    "0070",
+    "0071"
+  ],
+  "validation_r1_historical": {
+    "go_main_tests_pass": 1088,
+    "go_test_packages_pass": 24,
+    "go_packages_without_tests": 18,
+    "go_test_fail": 0,
+    "go_test_skip": 0,
+    "race_warnings": 0,
+    "python_regression_scripts_pass": 21,
+    "python_regression_reported_unittest_cases": 81,
+    "python_assertion_scripts": 13,
+    "additional_adversarial_cases_pass": 7,
+    "javascript_ui_script_pass": 1,
+    "matrix_scenarios": 19,
+    "source_manifest_sha256": "35aec95fded6b45ad174d2918aaa42da76f8fb440f52360b2ade7782b4439801"
+  }
+}

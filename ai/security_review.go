@@ -5,6 +5,7 @@ package ai
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,8 +29,9 @@ type AISecurityReview struct {
 
 // AISecurityReviewFile is the persisted report format.
 type AISecurityReviewFile struct {
-	Timestamp int64              `json:"ts"`
-	Reviews   []AISecurityReview `json:"ai_security_reviews"`
+	Timestamp      int64              `json:"ts"`
+	Reviews        []AISecurityReview `json:"ai_security_reviews"`
+	DroppedReviews uint64             `json:"dropped_reviews"`
 }
 
 // BuildSecurityReviews converts anomaly analysis into advisory-only security reviews.
@@ -93,20 +95,48 @@ func WriteAISecurityReviewsTo(dir string, reviews []AISecurityReview) error {
 		return nil
 	}
 
-	payload := AISecurityReviewFile{
-		Timestamp: time.Now().Unix(),
-		Reviews:   reviews,
-	}
-
-	data, err := json.MarshalIndent(payload, "", "  ")
-	if err != nil {
-		return err
-	}
-
 	if strings.TrimSpace(dir) == "" {
 		dir = "."
 	}
-
 	path := filepath.Join(dir, "ai_security_reviews.json")
-	return os.WriteFile(path, data, 0o644)
+	storeMu.Lock()
+	defer storeMu.Unlock()
+	unlock, lockErr := lockRecordDirectory(dir)
+	if lockErr != nil {
+		return lockErr
+	}
+	defer unlock()
+	var payload AISecurityReviewFile
+	data, err := readBoundedFile(path)
+	if err == nil {
+		if err = json.Unmarshal(data, &payload); err != nil {
+			return err
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	const maxReviews = 1000
+	if len(payload.Reviews) > maxReviews {
+		payload.DroppedReviews += uint64(len(payload.Reviews) - maxReviews)
+		payload.Reviews = payload.Reviews[len(payload.Reviews)-maxReviews:]
+	}
+	if len(reviews) > maxReviews {
+		payload.DroppedReviews += uint64(len(reviews) - maxReviews)
+		reviews = reviews[len(reviews)-maxReviews:]
+	}
+	for _, review := range reviews {
+		review.WalletAddress = boundedText(review.WalletAddress)
+		review.TxID = boundedText(review.TxID)
+		review.Scope = boundedText(review.Scope)
+		review.RiskLevel = boundedText(review.RiskLevel)
+		review.Action = boundedText(review.Action)
+		review.Reason = boundedText(review.Reason)
+		payload.Reviews = append(payload.Reviews, review)
+	}
+	if len(payload.Reviews) > maxReviews {
+		payload.DroppedReviews += uint64(len(payload.Reviews) - maxReviews)
+		payload.Reviews = payload.Reviews[len(payload.Reviews)-maxReviews:]
+	}
+	payload.Timestamp = time.Now().Unix()
+	return writeJSONAtomic(path, payload)
 }

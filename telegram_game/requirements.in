@@ -1,0 +1,12 @@
+# Canonical Windows runtime + bot + NFT verification inputs.
+# Validated with Python 3.14; locked hashes are generated from this file.
+fastapi==0.162.5
+uvicorn==0.54.0
+pydantic==2.14.3
+httpx==0.28.1
+# Starlette TestClient uses HTTPX2; keep HTTPX for the Telegram bot runtime.
+httpx2==2.16.2
+python-telegram-bot==22.8
+python-dotenv==1.2.4
+cryptography==50.0.2
+py-ecc==8.0.0

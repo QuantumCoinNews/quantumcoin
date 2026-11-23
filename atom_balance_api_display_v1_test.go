@@ -100,6 +100,10 @@ func TestBalanceAPIReportsOneAtomAsMicroQCV1(t *testing.T) {
 		)
 	}
 
+	if response.BalanceAtoms != "1" || response.SpendableAtoms != "1" || response.BalanceQc != "0.000001" || response.AtomsPerQc != "1000000" {
+		t.Fatalf("exact atom balance: %+v", response)
+	}
+
 	if response.Balance != 0.000001 {
 		t.Fatalf(
 			"AtomV3 API balance=%v want=0.000001 QC",

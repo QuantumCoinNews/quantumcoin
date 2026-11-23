@@ -11,7 +11,7 @@ import (
 
 const NFTAwardApprovalVersionV1 = "QC_NFT_AWARD_APPROVAL_V1"
 
-// RecordDigest must be computed from the actual canonical NFT mint record.
+// NFTAwardDecisionV1 RecordDigest must be computed from the actual canonical NFT mint record.
 // That commitment includes the recipient, period, asset and metadata.
 type NFTAwardDecisionV1 struct {
 	NetworkID        string
@@ -108,7 +108,7 @@ func ValidateNFTAwardApprovalsV1(
 	}
 	canonicalApprovals := make([]HardforkApprovalV1, len(approvals))
 	for i, approval := range approvals {
-		canonicalApprovals[i] = HardforkApprovalV1{PublicKey: approval.PublicKey, Signature: approval.Signature}
+		canonicalApprovals[i] = HardforkApprovalV1(approval)
 	}
 	if err := validateHardforkApprovalRoleV1("NFT admin", trust.AdminPublicKeys, trust.AdminQuorum, canonicalApprovals, digest); err != nil {
 		return fmt.Errorf("%s: NFT approval rejected: %w", NFTAwardApprovalVersionV1, err)

@@ -6,13 +6,12 @@ import (
 	"io/fs"
 )
 
-// Frontend build çıktıları (index.html, assets/...)
+// Only the public landing and operator browser mining files ship with the node.
 //
-//go:embed dist/**
+//go:embed dist/index.html dist/network-label.mjs dist/webminer.html dist/webminer.mjs dist/canonical-pow.mjs dist/canonical-pow-worker.mjs
 var embeddedDist embed.FS
 
-// Assets documents the QuantumCoin component used by this module.
-// Assets: dist kökünü döner; dist yoksa geliştirme için boş FS döndürür.
+// Assets returns the embedded node UI files.
 func Assets() fs.FS {
 	sub, err := fs.Sub(embeddedDist, "dist")
 	if err != nil {

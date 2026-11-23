@@ -1,0 +1,20 @@
+{
+  "surum": "QC_KONTROL_PANELI_28G",
+  "dil": "Türkçe",
+  "zaman": "2026-06-25 22:34:52",
+  "okumaModu": true,
+  "exe": "release\\qc-kontrol-paneli.exe",
+  "klasor": "release\\qc_kontrol_paneli",
+  "anaApiDurum": "Ağ kimliği doğrulanmadı",
+  "lokalTestnetDurum": "Canlı durum doğrulanmadı",
+  "telegramGameDurum": "Canlı durum doğrulanmadı",
+  "merkezler": [
+    "AI",
+    "Blokzincir",
+    "Güvenlik",
+    "İzleme / Operasyon",
+    "Telegram Game",
+    "Cüzdan + Madenci",
+    "Gelecek Modüller"
+  ]
+}

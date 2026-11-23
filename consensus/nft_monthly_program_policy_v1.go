@@ -61,7 +61,7 @@ func (p NFTMonthlyProgramPolicyV1) Validate() error {
 	return nil
 }
 
-// Serial is the one-based month position: month one has serial 1 and month
+// SerialForAwardPeriodV1 Serial is the one-based month position: month one has serial 1 and month
 // twelve serial 12. A thirteenth month is not part of this program.
 func (p NFTMonthlyProgramPolicyV1) SerialForAwardPeriodV1(period string) (uint32, error) {
 	if err := p.Validate(); err != nil {

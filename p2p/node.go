@@ -47,7 +47,7 @@ func RunNode(port string, bc *blockchain.Blockchain) {
 		registerPeer(conn)
 
 		// Bağlantı kurulur kurulmaz kendi handshake'imizi gönder
-		sendToPeer(conn, HandshakeMessage())
+		sendToPeer(conn, HandshakeMessage(bc))
 
 		go HandleConnection(conn, bc)
 	}
@@ -109,11 +109,11 @@ func ConnectToPeer(
 		}
 	}
 
-	registerPeer(conn)
+	registerPeer(conn, true)
 
 	sendToPeer(
 		conn,
-		HandshakeMessage(),
+		HandshakeMessage(bc),
 	)
 
 	go HandleConnection(
@@ -121,8 +121,4 @@ func ConnectToPeer(
 		bc,
 	)
 
-	sendToPeer(
-		conn,
-		RequestMessage(),
-	)
 }

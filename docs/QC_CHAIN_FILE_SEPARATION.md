@@ -1,6 +1,7 @@
 # QuantumCoin Chain File Separation
 
-Status: QC_CHAIN_FILE_SEPARATION_V1
+Document ID: `QC_CHAIN_FILE_SEPARATION_V1`\
+Evidence stage: **Tested**. See [scope and release status](POLICY_EVIDENCE_REGISTER.md).
 
 Date: 20260617_224803
 

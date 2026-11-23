@@ -17,13 +17,13 @@ func minerBridgeTestBlock(
 	variant string,
 ) *blockchain.Block {
 	hash := sha256.Sum256(
-		[]byte(fmt.Sprintf(
+		fmt.Appendf(nil,
 			"qma0010:%s:%d:%x:%s",
 			variant,
 			height,
 			previous,
 			minerAddress,
-		)),
+		),
 	)
 
 	return &blockchain.Block{

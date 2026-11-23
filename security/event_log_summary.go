@@ -1,9 +1,12 @@
 // Package security contains QuantumCoin project code for this module.
 package security
 
+import "time"
+
 const SecurityEventSummaryVersion = "SECURITY_EVENT_SUMMARY_V1"
 
 func SummarizeEvents(events []SecurityEvent) map[string]any {
+	events = ActiveSecurityEvents(events, time.Now())
 	bySeverity := map[string]int{}
 
 	for _, ev := range events {

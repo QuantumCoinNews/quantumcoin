@@ -60,21 +60,9 @@ func NewMinerTokenBridge(
 		return nil, ErrMinerTokenCanonicalChainRequiredV1
 	}
 
-	reg := NewRegistry()
-	if err := reg.Load(cfg.SaveDir); err != nil {
-		return nil, fmt.Errorf("registry yüklenemedi: %w", err)
-	}
-
-	tok, ok := reg.Get(cfg.Symbol)
-	if !ok {
-		// Token kayıtlı değilse oluştur ve kaydet
-		tok = New(cfg.Symbol, cfg.Name, cfg.Decimals, cfg.MaxSupply, cfg.Owner)
-		if err := reg.Register(tok); err != nil {
-			return nil, fmt.Errorf("token kaydı başarısız: %w", err)
-		}
-		if err := reg.Save(cfg.SaveDir); err != nil {
-			return nil, fmt.Errorf("registry kaydedilemedi: %w", err)
-		}
+	reg, tok, err := loadOrCreateMinerTokenLedgerV1(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("token registry: %w", err)
 	}
 
 	bridge := &MinerTokenBridge{
@@ -85,7 +73,7 @@ func NewMinerTokenBridge(
 	}
 
 	bridge.mu.Lock()
-	err := bridge.reconcilePendingMinerTokenBlocksV1()
+	err = bridge.reconcilePendingMinerTokenBlocksV1()
 	bridge.mu.Unlock()
 	if err != nil {
 		return nil, err
@@ -120,43 +108,12 @@ func reportMinerTokenBridgeErrorV1(
 func (b *MinerTokenBridge) Options(
 	userOpts ...miner.Options,
 ) miner.Options {
-	var user miner.Options
-
-	// miner options contract:
-	// Merge every variadic user option instead of silently using only
-	// userOpts[0]. Non-zero callback/configuration fields use last-wins
-	// precedence. Animate is a plain bool, so the last supplied option
-	// owns its value.
-	for _, option := range userOpts {
-		if option.OnBlock != nil {
-			user.OnBlock = option.OnBlock
-		}
-		if option.OnError != nil {
-			user.OnError = option.OnError
-		}
-		if option.OnTick != nil {
-			user.OnTick = option.OnTick
-		}
-		if option.Interval > 0 {
-			user.Interval = option.Interval
-		}
-		if option.Broadcaster != nil {
-			user.Broadcaster = option.Broadcaster
-		}
-
-		user.Animate = option.Animate
-	}
+	user := miner.MergeOptionsV1(userOpts...)
 
 	userOnBlock := user.OnBlock
 	userOnError := user.OnError
 
-	opts := miner.Options{
-		OnError:     userOnError,
-		OnTick:      user.OnTick,
-		Interval:    user.Interval,
-		Broadcaster: user.Broadcaster,
-		Animate:     user.Animate,
-	}
+	opts := user
 
 	opts.OnBlock = func(
 		block *blockchain.Block,
@@ -192,20 +149,22 @@ func StartMiningWithToken(
 	cfg MinerTokenConfig,
 	userOpts ...miner.Options, // (opsiyonel) kendi OnBlock/Broadcaster eklemek istersen
 ) (*MinerTokenBridge, error) {
-	bridge, err := NewMinerTokenBridge(
-		cfg,
-		bc,
-	)
+	var bridge *MinerTokenBridge
+	err := miner.StartExclusiveV1(bc, minerAddress, difficulty, func() (miner.Options, error) {
+		created, err := NewMinerTokenBridge(cfg, bc)
+		if err != nil {
+			return miner.Options{}, err
+		}
+		bridge = created
+		return bridge.Options(userOpts...), nil
+	})
+	if errors.Is(err, miner.ErrMinerAlreadyActiveV1) {
+		return nil, fmt.Errorf("%w: %w", ErrAttachToRunningMinerUnsupportedV1, err)
+	}
 	if err != nil {
 		return nil, err
 	}
 
-	// Köprü ve kullanıcı callback'leri aynı hata kanalında birleştirilir.
-	opts := bridge.Options(userOpts...)
-
-	if err := miner.Start(bc, minerAddress, difficulty, opts); err != nil {
-		return nil, err
-	}
 	return bridge, nil
 }
 

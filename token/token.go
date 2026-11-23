@@ -1,9 +1,13 @@
 package token
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"sync"
 )
+
+var ErrTokenMintDisabled = errors.New("token: mint is disabled after initial issuance")
 
 // Token documents the QuantumCoin component used by this module.
 // Token: basit QC-20 çekirdeği.
@@ -24,21 +28,81 @@ type Token struct {
 
 	// authorizationNonces is private runtime state. Custom JSON
 	// persistence will store it without exposing mutable map access.
-	authorizationNonces map[string]uint64
-	mu                  sync.Mutex `json:"-"`
+	authorizationNonces   map[string]uint64
+	authorizationIdentity TokenAuthorizationIdentityV1
+	mu                    sync.Mutex `json:"-"`
 }
 
 func New(symbol, name string, decimals uint8, maxSupply uint64, owner string) *Token {
+	instance := make([]byte, 32)
+	_, _ = rand.Read(instance)
 	return &Token{
-		symbol:              symbol,
-		name:                name,
-		decimals:            decimals,
-		maxSupply:           maxSupply,
-		owner:               owner,
-		balances:            make(map[string]uint64),
-		minerTokenBlocks:    make(map[string]minerTokenBlockRecordV1),
-		authorizationNonces: make(map[string]uint64),
+		symbol:                symbol,
+		name:                  name,
+		decimals:              decimals,
+		maxSupply:             maxSupply,
+		owner:                 owner,
+		balances:              make(map[string]uint64),
+		minerTokenBlocks:      make(map[string]minerTokenBlockRecordV1),
+		authorizationNonces:   make(map[string]uint64),
+		authorizationIdentity: TokenAuthorizationIdentityV1{InstanceID: hex.EncodeToString(instance)},
 	}
+}
+
+// NewValidatedTokenForNetworkV1 binds future signed operations to a verified
+// network identity and a new persistent token instance ID.
+func NewValidatedTokenForNetworkV1(symbol, name string, decimals uint8, maxSupply uint64, owner string, networkMagic uint32, genesisHash string) (*Token, error) {
+	canonicalOwner, err := requireCanonicalTokenAddressV1(owner)
+	if err != nil {
+		return nil, err
+	}
+	identity, err := NewTokenAuthorizationIdentityV1(networkMagic, genesisHash)
+	if err != nil {
+		return nil, err
+	}
+	token := New(symbol, name, decimals, maxSupply, canonicalOwner)
+	token.authorizationIdentity = identity
+	return token, nil
+}
+
+// NewValidatedTokenWithInitialSupplyForNetworkV1 assigns the initial supply
+// atomically at creation. Further public mint calls are disabled.
+func NewValidatedTokenWithInitialSupplyForNetworkV1(symbol, name string, decimals uint8, maxSupply, initialSupply uint64, owner string, networkMagic uint32, genesisHash string) (*Token, error) {
+	return NewValidatedTokenWithInitialAllocationsForNetworkV1(symbol, name, decimals, maxSupply, owner, networkMagic, genesisHash, map[string]uint64{owner: initialSupply})
+}
+
+// NewValidatedTokenWithInitialAllocationsForNetworkV1 assigns all initial
+// balances atomically and rejects allocations that exceed the supply cap.
+func NewValidatedTokenWithInitialAllocationsForNetworkV1(symbol, name string, decimals uint8, maxSupply uint64, owner string, networkMagic uint32, genesisHash string, allocations map[string]uint64) (*Token, error) {
+	canonicalOwner, err := requireCanonicalTokenAddressV1(owner)
+	if err != nil {
+		return nil, err
+	}
+	total := uint64(0)
+	for address, amount := range allocations {
+		if !validTokenAddress(address) {
+			return nil, ErrInvalidTokenAddress
+		}
+		var addErr error
+		total, addErr = checkedAddUint64(total, amount)
+		if addErr != nil {
+			return nil, ErrTokenBalanceOverflow
+		}
+	}
+	if maxSupply != 0 && total > maxSupply {
+		return nil, ErrTokenMaxSupplyExceeded
+	}
+	token, err := NewValidatedTokenForNetworkV1(symbol, name, decimals, maxSupply, canonicalOwner, networkMagic, genesisHash)
+	if err != nil {
+		return nil, err
+	}
+	for address, amount := range allocations {
+		if amount > 0 {
+			token.balances[address] = amount
+		}
+	}
+	token.totalSupply = total
+	return token, nil
 }
 
 // NewValidatedTokenV1 is the fail-closed constructor for untrusted owner
@@ -83,22 +147,9 @@ func (t *Token) Mint(caller, to string, amount uint64) error {
 	if caller != t.owner {
 		return errors.New("not token owner")
 	}
-	if err := validateMintCommon(to, amount, t.totalSupply, t.maxSupply); err != nil {
-		return err
-	}
-
-	newBalance, err := checkedAddUint64(t.balances[to], amount)
-	if err != nil {
-		return ErrTokenBalanceOverflow
-	}
-	newSupply, err := checkedAddUint64(t.totalSupply, amount)
-	if err != nil {
-		return err
-	}
-
-	t.balances[to] = newBalance
-	t.totalSupply = newSupply
-	return nil
+	_ = to
+	_ = amount
+	return ErrTokenMintDisabled
 }
 
 func (t *Token) Transfer(

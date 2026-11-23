@@ -1,13 +1,10 @@
 package main
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"image/color"
@@ -17,6 +14,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"quantumcoin/apiclient"
+	"quantumcoin/consensus"
+	"quantumcoin/utils"
+	qwallet "quantumcoin/wallet"
+	"quantumcoin/walletsigner"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -36,12 +38,6 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-var ansiRegexp = regexp.MustCompile(`\x1b\[[0-9;]*m`)
-
-func stripANSI(s string) string {
-	return ansiRegexp.ReplaceAllString(s, "")
-}
-
 func hideConsoleOnStartup() {
 	if runtime.GOOS != "windows" {
 		return
@@ -51,217 +47,17 @@ func hideConsoleOnStartup() {
 	_, _, _ = proc.Call()
 }
 
-// İçeriden ortak "STOP'a indir" helper'ı (tek yerden yönetelim)
-func markMinerStoppedFromWatcher() {
-	// Devre dışı: otomatik watcher/poller/cmd.Wait hattı Start sonrası anında Stopped'a düşürüyordu.
-	// Stop durumunu yalnızca stopMinerVisible() ayarlayacak.
-}
+func startMinerVisible() error { return startNativeMining() }
 
-func startMinerVisible() error {
-	qcResetStaleMinerState()
-	exePath, err := os.Executable()
-	if err != nil {
-		return err
-	}
-
-	releaseDir := filepath.Dir(exePath)
-
-	nodeExe := filepath.Join(releaseDir, "quantumcoin.exe")
-	if _, err := os.Stat(nodeExe); err != nil {
-		return fmt.Errorf("quantumcoin.exe not found in release: %w", err)
-	}
-
-	runBat := filepath.Join(releaseDir, "run_miner.cmd")
-	if _, err := os.Stat(runBat); err != nil {
-		return fmt.Errorf("run_miner.cmd not found in release: %w", err)
-	}
-
-	if minerRunningState {
-		if pid, err := readMinerPID(); err == nil && pid > 0 && isProcessAlive(pid) {
-			return nil
-		}
-	}
-
-	addr := cleanBase58(strings.TrimSpace(os.Getenv("ADDR")))
-	if !isLikelyBase58Address(addr) {
-		if b, err := os.ReadFile(filepath.Join(releaseDir, "miner_address.txt")); err == nil {
-			addr = cleanBase58(strings.TrimSpace(string(b)))
-		}
-	}
-	if !isLikelyBase58Address(addr) {
-		if b, err := os.ReadFile(filepath.Join(releaseDir, "wallet_address.txt")); err == nil {
-			addr = cleanBase58(strings.TrimSpace(string(b)))
-		}
-	}
-	if !isLikelyBase58Address(addr) {
-		return fmt.Errorf("invalid or missing miner address")
-	}
-
-	// API balance için kalsın. mine-forever API portu açmaz.
-	_ = startAPIBackground()
-
-	// Eski miner/CMD kalıntısı varsa temizle, API'ye dokunma.
-	killQuantumcoinMineOnly()
-	time.Sleep(500 * time.Millisecond)
-
-	_ = os.Remove(filepath.Join(releaseDir, "miner_stop.flag"))
-	_ = os.Remove(filepath.Join(releaseDir, "miner_pid.txt"))
-	_ = os.Remove(filepath.Join(releaseDir, "miner_cmd_pid.txt"))
-	clearMinerPID()
-
-	_ = os.WriteFile(filepath.Join(releaseDir, "wallet_address.txt"), []byte(addr), 0644)
-	_ = os.WriteFile(filepath.Join(releaseDir, "miner_address.txt"), []byte(addr), 0644)
-	cmd := exec.Command("cmd.exe", "/C", "start", "QuantumCoin Miner", runBat)
-	cmd.Dir = releaseDir
-	cmd.Env = append(os.Environ(),
-		"ADDR="+addr,
-		"QC_MINER="+addr,
-		"QC_NODE_DIR="+releaseDir,
-		"QC_API_BASE=http://127.0.0.1:8082",
-		"QC_LANG=en",
-		"QC_COMMUNITY_ADDRESS="+addr,
-		"QC_DEV_FUND_ADDRESS="+addr,
-		"QC_PREMINE_ADDRESS="+addr,
-	)
-
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		CreationFlags: 0x00000010, // CREATE_NEW_CONSOLE
-	}
-
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-
-	// /C start launcher PID hemen kapanır; gerçek "QuantumCoin Miner" CMD PID'sini bul.
-	time.Sleep(1500 * time.Millisecond)
-
-	realPID := findMinerCmdPIDByTitle()
-	if realPID > 0 {
-		writeMinerPID(realPID)
-		_ = os.WriteFile(filepath.Join(releaseDir, "miner_cmd_pid.txt"), []byte(strconv.Itoa(realPID)), 0644)
-	}
-
-	if walletRefreshHook != nil {
-		go func() {
-			time.Sleep(3 * time.Second)
-			walletRefreshHook()
-		}()
-	}
-	// ÖNEMLİ:
-	// Burada cmd.Wait ile otomatik Stopped'a düşürmüyoruz.
-	// Çünkü Windows/Fyne tarafında bu yol anlık false tetikleyip Start sonrası hemen Stop'a düşürüyor.
-	// Durumu sadece Stop Mining butonu değiştirecek.
-	return nil
-}
-
-func stopMinerVisible() error {
-	exePath, err := os.Executable()
-	if err != nil {
-		return err
-	}
-
-	releaseDir := filepath.Dir(exePath)
-
-	_ = os.WriteFile(filepath.Join(releaseDir, "miner_stop.flag"), []byte("stop"), 0644)
-
-	if runtime.GOOS == "windows" {
-		if pid, err := readMinerPID(); err == nil && pid > 0 {
-			c := exec.Command("taskkill", "/PID", strconv.Itoa(pid), "/T", "/F")
-			c.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-			_ = c.Run()
-		}
-		killQuantumcoinMineOnly()
-	} else {
-		_ = exec.Command("pkill", "-f", "quantumcoin.*mine").Run()
-	}
-
-	time.Sleep(700 * time.Millisecond)
-
-	clearMinerPID()
-	_ = os.Remove(filepath.Join(releaseDir, "miner_pid.txt"))
-	_ = os.Remove(filepath.Join(releaseDir, "miner_cmd_pid.txt"))
-
-	minerRunningState = false
-
-	ui(func() {
-		if onMinerStateUpdate != nil {
-			onMinerStateUpdate(false)
-		}
-	})
-
-	_ = startAPIBackground()
-
-	if walletRefreshHook != nil {
-		go walletRefreshHook()
-	}
-
-	return nil
-}
-
-// Windows paylaşım kilidi metnini yakalamak için basit helper
-func isSharingViolation(err error) bool {
-	if err == nil {
-		return false
-	}
-	s := strings.ToLower(err.Error())
-	return strings.Contains(s, "being used by another process") ||
-		strings.Contains(s, "sharing violation") ||
-		strings.Contains(s, "used by another process")
-}
+func stopMinerVisible() error { return stopNativeMining() }
 
 /* ================== Versiyon & Renkler ================== */
 
 var appVersion = "wallet-gui v3.0.0-seed-runtime"
 
-func qcMinerRunnerAlive() bool {
-	logPath := filepath.Join(nodeDir(), "miner_out.log")
+func qcMinerRunnerAlive() bool { return nativeMinerAlive() }
 
-	st, err := os.Stat(logPath)
-	if err != nil {
-		return false
-	}
-
-	// Son 25 saniyede log yazıldıysa miner aktif kabul edilir.
-	if time.Since(st.ModTime()) <= 25*time.Second {
-		return true
-	}
-
-	b, err := os.ReadFile(logPath)
-	if err != nil {
-		return false
-	}
-
-	txt := strings.ToLower(string(b))
-	lines := strings.Split(txt, "\n")
-
-	start := 0
-	if len(lines) > 30 {
-		start = len(lines) - 30
-	}
-
-	tail := strings.Join(lines[start:], "\n")
-
-	if strings.Contains(tail, "block") && strings.Contains(tail, `"success":true`) {
-		return true
-	}
-
-	if strings.Contains(tail, "stable api-mempool miner started") {
-		return true
-	}
-
-	return false
-}
-
-func qcResetStaleMinerState() {
-	if qcMinerRunnerAlive() {
-		return
-	}
-	minerRunningState = false
-	dir := nodeDir()
-	_ = os.Remove(filepath.Join(dir, "miner_pid.txt"))
-	_ = os.Remove(filepath.Join(dir, "miner_cmd_pid.txt"))
-	_ = os.Remove(filepath.Join(dir, "miner_stop.flag"))
-}
+func qcResetStaleMinerState() { minerRunningState = nativeMinerAlive() }
 
 var (
 	colSuccess = color.NRGBA{R: 46, G: 204, B: 113, A: 255} // yeşil
@@ -276,21 +72,9 @@ var (
 	walletAutoRefreshStop chan struct{}
 	lastBalance           float64 // son gösterilen toplam (confirmed+pending)
 
-	// Miner log & state
-	minerLogPath                     = ""
-	minerTailStop      chan struct{} = nil
-	minerTailMu        sync.Mutex
 	minerRunningState  = false
 	walletRefreshHook  func()
 	onMinerStateUpdate func(bool)
-
-	// Loga bağlı otomatik bakiye yenileme için throttle
-	minerRefreshMu   sync.Mutex
-	minerLastRefresh time.Time
-
-	// Miner durum poller'ı sadece 1 kere başlat
-	minerStatePollerMu  sync.Mutex
-	minerStatePollerRun bool
 )
 
 // --- AI sekmesi text alanları ---
@@ -316,10 +100,6 @@ func ui(f func()) { fyne.Do(f) }
 func exeDir() string {
 	self, _ := os.Executable()
 	return filepath.Dir(self)
-}
-
-func startMinerStatePoller() {
-	// Devre dışı: instant Stop'a düşürüyordu.
 }
 
 func isWalletTabActive(w fyne.Window) bool {
@@ -603,92 +383,6 @@ func changeLanguage(newLang string, w fyne.Window) {
 
 /* ============ mined_balance.json path (esnek & sıralı) ============ */
 
-func minedJSONPath() string {
-	// küçük yardımcı: yineleneni ekleme
-	appendUniq := func(list *[]string, p string) {
-		if p == "" {
-			return
-		}
-		cp := filepath.Clean(p)
-		for _, s := range *list {
-			if strings.EqualFold(filepath.Clean(s), cp) {
-				return
-			}
-		}
-		*list = append(*list, cp)
-	}
-
-	candidates := make([]string, 0, 32)
-
-	// 0) Manuel override en üstte
-	if v := strings.TrimSpace(os.Getenv("QC_MINED_PATH")); v != "" {
-		appendUniq(&candidates, v)
-	}
-
-	// 1) QC_NODE_DIR verildiyse orası
-	if v := strings.TrimSpace(os.Getenv("QC_NODE_DIR")); v != "" {
-		appendUniq(&candidates, filepath.Join(v, "mined_balance.json"))
-		appendUniq(&candidates, filepath.Join(v, "miner", "mined_balance.json"))
-		appendUniq(&candidates, filepath.Join(v, "data", "mined_balance.json"))
-	}
-
-	// 2) nodeDir() (çoğu zaman gerçek node klasörü)
-	if nd := nodeDir(); nd != "" {
-		appendUniq(&candidates, filepath.Join(nd, "mined_balance.json"))
-		appendUniq(&candidates, filepath.Join(nd, "miner", "mined_balance.json"))
-		appendUniq(&candidates, filepath.Join(nd, "data", "mined_balance.json"))
-	}
-
-	// 3) Windows sabitleri (sizin listedeki gibi)
-	if runtime.GOOS == "windows" {
-		appendUniq(&candidates, `C:\QuantumMiner\mined_balance.json`)
-		appendUniq(&candidates, `C:\QuantumMiner\miner\mined_balance.json`)
-		appendUniq(&candidates, `C:\QuantumMiner\data\mined_balance.json`)
-	}
-
-	// 4) exeDir() (wallet-gui’nin durduğu yer)
-	ed := exeDir()
-	appendUniq(&candidates, filepath.Join(ed, "mined_balance.json"))
-	appendUniq(&candidates, filepath.Join(ed, "miner", "mined_balance.json"))
-
-	// 5) Çalışma dizini
-	if wd, err := os.Getwd(); err == nil {
-		appendUniq(&candidates, filepath.Join(wd, "mined_balance.json"))
-		appendUniq(&candidates, filepath.Join(wd, "miner", "mined_balance.json"))
-	}
-
-	// 6) Alternatif isimler – aynı baz dizinlerde dene
-	altNames := []string{"mined.json", "mining_balance.json", "rewards.json", "miner_balance.json"}
-	baseDirs := []string{ed, nodeDir()}
-	if v := strings.TrimSpace(os.Getenv("QC_NODE_DIR")); v != "" {
-		baseDirs = append(baseDirs, v)
-	}
-	if runtime.GOOS == "windows" {
-		baseDirs = append(baseDirs, `C:\QuantumMiner`, `C:\QuantumMiner\data`, `C:\QuantumMiner\miner`)
-	}
-	for _, bd := range baseDirs {
-		if bd == "" {
-			continue
-		}
-		for _, name := range altNames {
-			appendUniq(&candidates, filepath.Join(bd, name))
-		}
-	}
-
-	// 7) İlk mevcut dosyayı seç
-	for _, p := range candidates {
-		if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
-			return p
-		}
-	}
-
-	// 8) Fallback: nodeDir() varsa orası, yoksa exeDir()
-	if nd := nodeDir(); nd != "" {
-		return filepath.Join(nd, "mined_balance.json")
-	}
-	return filepath.Join(ed, "mined_balance.json")
-}
-
 // ================= Preferences & Startup Load =================
 
 func loadPrefsAtStartup() {
@@ -780,75 +474,7 @@ func findNodeExe() string {
 
 /* ============ Miner status helpers ============ */
 
-func isProcessAlive(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	if runtime.GOOS == "windows" {
-		c := exec.Command("tasklist", "/FI", fmt.Sprintf("PID eq %d", pid))
-		c.SysProcAttr = &syscall.SysProcAttr{
-			HideWindow: true,
-		}
-		out, _ := c.CombinedOutput()
-		return strings.Contains(string(out), fmt.Sprintf("%d", pid))
-	}
-	return exec.Command("kill", "-0", fmt.Sprint(pid)).Run() == nil
-}
-
 /* ===== Miner PID (sadece bizim başlattığımız süreçler) ===== */
-
-func minerPIDPath() string { return filepath.Join(exeDir(), "miner_pid.txt") }
-
-func writeMinerPID(pid int) { _ = os.WriteFile(minerPIDPath(), []byte(strconv.Itoa(pid)), 0644) }
-func readMinerPID() (int, error) {
-	b, e := os.ReadFile(minerPIDPath())
-	if e != nil {
-		return 0, e
-	}
-	return strconv.Atoi(strings.TrimSpace(string(b)))
-}
-func clearMinerPID() { _ = os.Remove(minerPIDPath()) }
-
-func minerActiveViaAPI() bool {
-	if apiPort == "" {
-		apiPort = detectAPIPort()
-	}
-	if !portHasAPI(apiPort) {
-		return false
-	}
-	client := &http.Client{Timeout: 700 * time.Millisecond}
-	for _, p := range []string{"/api/miner/status", "/api/miner"} {
-		resp, err := client.Get(apiBase() + p)
-		if err != nil {
-			continue
-		}
-		b, _ := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
-		var m map[string]interface{}
-		if json.Unmarshal(b, &m) == nil {
-			for _, k := range []string{"active", "running", "mining", "is_active"} {
-				switch v := m[k].(type) {
-				case bool:
-					if v {
-						return true
-					}
-				case string:
-					if strings.EqualFold(v, "true") || strings.EqualFold(v, "running") || strings.EqualFold(v, "active") {
-						return true
-					}
-				}
-			}
-		}
-	}
-	return false
-}
-
-func minerActiveHeuristic() bool {
-	if pid, err := readMinerPID(); err == nil && isProcessAlive(pid) {
-		return true
-	}
-	return minerActiveViaAPI()
-}
 
 /* ============ Node dir & adres dosyaları ============ */
 
@@ -898,6 +524,9 @@ func loadText(path string) string {
 
 // Mevcut (ilk geçerli) adresi bulur: txt -> APPDATA\QuantumCoin\wallet.json -> regex
 func detectExistingAddress() string {
+	if selected, err := selectedRecoveryAddress(); err != nil || selected != "" {
+		return selected
+	}
 	// 1) Yerel txt dosyaları (temizle + doğrula)
 	if v := loadText(walletAddressPath()); v != "" {
 		v = cleanBase58(v)
@@ -1040,214 +669,34 @@ func genAddressViaNode() (string, error) {
 	return "", fmt.Errorf("could not parse address from newaddr output: %q", s)
 }
 
-// Adres + private key (hex) birlikte üretir (quantumcoin.exe newaddr-priv)
-func genAddressPrivViaNode() (addr, privHex string, err error) {
-	exe := findNodeExe()
-	if _, e := os.Stat(exe); e != nil {
-		return "", "", fmt.Errorf("quantumcoin executable not found: %w", e)
-	}
-
-	cmd := exec.Command(exe, "newaddr-priv")
-	cmd.Dir = filepath.Dir(exe)
-	if runtime.GOOS == "windows" {
-		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	}
-	if os.Getenv("QC_NODE_DIR") == "" {
-		cmd.Env = append(os.Environ(), "QC_NODE_DIR="+filepath.Dir(exe))
-	}
-
-	out, e := cmd.CombinedOutput()
-	if e != nil {
-		return "", "", fmt.Errorf("newaddr-priv error: %w (out=%s)", e, string(out))
-	}
-	s := strings.TrimSpace(string(out))
-
-	// ---- 1) Etiketli satırlar (Address / PrivateKey) ----
-	for _, marker := range []string{"New Wallet Address:", "Wallet Address:", "New Address:", "Address:"} {
-		if i := strings.Index(s, marker); i >= 0 {
-			part := strings.TrimSpace(s[i+len(marker):])
-			if j := strings.IndexByte(part, '\n'); j >= 0 {
-				part = part[:j]
-			}
-			part = cleanBase58(part)
-			if isLikelyBase58Address(part) {
-				addr = part
-				break
-			}
-		}
-	}
-	for _, marker := range []string{
-		"PrivateKey (hex):", "Private Key (hex):", "PrivateKey:", "Private Key:", "Priv:", "Secret:",
-	} {
-		if i := strings.Index(s, marker); i >= 0 {
-			part := strings.TrimSpace(s[i+len(marker):])
-			if j := strings.IndexByte(part, '\n'); j >= 0 {
-				part = part[:j]
-			}
-			part = strings.Trim(part, "\"' ")
-			part = strings.TrimPrefix(part, "0x")
-			privHex = part
-			break
-		}
-	}
-
-	// ---- 2) JSON olasılıkları ----
-	if addr == "" || privHex == "" {
-		var obj struct {
-			Address       string `json:"address"`
-			WalletAddress string `json:"wallet_address"`
-			Addr          string `json:"addr"`
-
-			Private       string `json:"private"`
-			Priv          string `json:"priv"`
-			PrivKey       string `json:"privkey"`
-			PrivateKey    string `json:"private_key"`
-			PrivateKeyHex string `json:"privateKeyHex"`
-		}
-		if json.Unmarshal([]byte(s), &obj) == nil {
-			if addr == "" {
-				for _, c := range []string{obj.Address, obj.WalletAddress, obj.Addr} {
-					a := cleanBase58(strings.TrimSpace(c))
-					if a != "" && isLikelyBase58Address(a) {
-						addr = a
-						break
-					}
-				}
-			}
-			if privHex == "" {
-				for _, c := range []string{obj.Private, obj.Priv, obj.PrivKey, obj.PrivateKey, obj.PrivateKeyHex} {
-					h := strings.TrimSpace(c)
-					h = strings.Trim(h, "\"' ")
-					h = strings.TrimPrefix(h, "0x")
-					if h != "" {
-						privHex = h
-						break
-					}
-				}
-			}
-		}
-	}
-
-	// Generic map (anahtar adları farklıysa)
-	if (addr == "" || privHex == "") && json.Valid([]byte(s)) {
-		var any map[string]interface{}
-		if json.Unmarshal([]byte(s), &any) == nil {
-			// address
-			if addr == "" {
-				for _, k := range []string{"address", "wallet_address", "addr"} {
-					if v, ok := any[k].(string); ok {
-						a := cleanBase58(strings.TrimSpace(v))
-						if a != "" && isLikelyBase58Address(a) {
-							addr = a
-							break
-						}
-					}
-				}
-			}
-			// priv
-			if privHex == "" {
-				for _, k := range []string{"private", "priv", "privkey", "private_key", "privatekeyhex"} {
-					if v, ok := any[k].(string); ok {
-						h := strings.TrimSpace(v)
-						h = strings.Trim(h, "\"' ")
-						h = strings.TrimPrefix(h, "0x")
-						if h != "" {
-							privHex = h
-							break
-						}
-					}
-				}
-			}
-		}
-	}
-
-	// ---- 3) Regex fallbacks ----
-	if addr == "" {
-		reB58 := regexp.MustCompile(`[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{26,50}`)
-		if m := reB58.FindString(s); m != "" {
-			m = cleanBase58(m)
-			if isLikelyBase58Address(m) {
-				addr = m
-			}
-		}
-	}
-	if privHex == "" {
-		reHex := regexp.MustCompile(`(?i)(?:0x)?[0-9a-f]{32,128}`)
-		if m := reHex.FindString(s); m != "" {
-			privHex = strings.TrimPrefix(m, "0x")
-		}
-	}
-
-	// ---- doğrula & dön ----
-	if addr == "" || !isLikelyBase58Address(addr) || strings.TrimSpace(privHex) == "" {
-		return "", "", fmt.Errorf("could not parse address/private key from newaddr-priv output")
-	}
-	return addr, privHex, nil
-}
-
 /* ================== API utils ================== */
 
-func ping(u string, t time.Duration) error {
-	client := &http.Client{Timeout: t}
-	req, _ := http.NewRequest("GET", noCacheURL(u), nil)
-	req.Header.Set("Cache-Control", "no-cache")
-	req.Header.Set("Pragma", "no-cache")
-	req.Header.Set("Expires", "0")
-	resp, err := client.Do(req)
-
-	if err != nil {
-		return err
-	}
-	io.Copy(io.Discard, resp.Body)
-	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("bad status: %s", resp.Status)
-	}
-	return nil
-}
-
-const canonicalAPIHealthPath = "/api/health"
-const canonicalAPIDefaultPort = "8082"
-
 func normalizeCanonicalAPIPort(p string) string {
-	p = strings.TrimSpace(p)
-	p = strings.TrimPrefix(p, ":")
-	return p
-}
-
-func portHasAPI(p string) bool {
-	p = normalizeCanonicalAPIPort(p)
-	if p == "" {
-		return false
+	port, err := apiclient.NormalizeAPIPortV1(p)
+	if err != nil {
+		return ""
 	}
-
-	health := "http://127.0.0.1:" + p + canonicalAPIHealthPath
-	return ping(health, 400*time.Millisecond) == nil
+	return port
 }
 
 func detectAPIPort() string {
-	// Environment values are hints only. They are accepted only when the
-	// canonical /api/health contract is actually reachable.
-	for _, k := range []string{"QC_HTTP_PORT", "HTTP_PORT"} {
-		p := normalizeCanonicalAPIPort(os.Getenv(k))
-		if p != "" && portHasAPI(p) {
-			return p
-		}
-	}
-
-	// canonical GUI health migration: do not probe legacy /health or unrelated historical ports.
-	// The canonical QuantumCoin HTTP API port is 8082.
-	if portHasAPI(canonicalAPIDefaultPort) {
-		return canonicalAPIDefaultPort
-	}
-
-	return canonicalAPIDefaultPort
+	port, _ := apiclient.ConfiguredAPIPortV1()
+	return port
 }
-func apiBase() string {
-	if apiPort == "" {
-		apiPort = detectAPIPort()
+
+func walletAPIPortV1() string {
+	if apiPort != "" {
+		return normalizeCanonicalAPIPort(apiPort)
 	}
-	return "http://127.0.0.1:" + apiPort
+	return detectAPIPort()
+}
+
+func apiBase() string {
+	port := walletAPIPortV1()
+	if port == "" {
+		return ""
+	} // Invalid configuration must never form a remote URL.
+	return "http://127.0.0.1:" + port
 }
 
 func canonicalAPIResponseError(status int, raw []byte) error {
@@ -1286,43 +735,6 @@ func canonicalAPIResponseError(status int, raw []byte) error {
 	}
 
 	return fmt.Errorf("api request failed: http %d", status)
-}
-
-func apiPost(path string, body interface{}, to time.Duration) error {
-	b := []byte("{}")
-	if body != nil {
-		var err error
-		b, err = json.Marshal(body)
-		if err != nil {
-			return fmt.Errorf("encode API request: %w", err)
-		}
-	}
-
-	client := &http.Client{Timeout: to}
-	resp, err := client.Post(
-		apiBase()+path,
-		"application/json",
-		bytes.NewReader(b),
-	)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	raw, err := io.ReadAll(
-		io.LimitReader(
-			resp.Body,
-			1<<20,
-		),
-	)
-	if err != nil {
-		return fmt.Errorf("read API response: %w", err)
-	}
-
-	return canonicalAPIResponseError(
-		resp.StatusCode,
-		raw,
-	)
 }
 
 /* ================== i18n ================== */
@@ -1581,117 +993,6 @@ func T(k string) string {
 	return k
 }
 
-/* ========== mined_balance.json tolerant reader & pending ========== */
-
-type minedBalance struct {
-	Addr      string  `json:"addr"`
-	Balance   float64 `json:"balance"`
-	UpdatedAt int64   `json:"updated_at"`
-}
-
-func readLocalMined() (minedBalance, error) {
-	var m minedBalance
-	p := minedJSONPath()
-
-	// Dosya kilitlenmiş olabileceği için birden fazla kez dene
-	var b []byte
-	var err error
-	for i := 0; i < 12; i++ { // ~12 * 80ms ≈ 1s
-		b, err = os.ReadFile(p)
-		if err == nil && len(bytes.TrimSpace(b)) > 0 {
-			break
-		}
-		// Paylaşım kilidi veya boş/yarım yazılmış içerikse biraz bekleyip tekrar dene
-		if err != nil && isSharingViolation(err) {
-			time.Sleep(80 * time.Millisecond)
-			continue
-		}
-		if err == nil && len(b) == 0 {
-			time.Sleep(60 * time.Millisecond)
-			continue
-		}
-		// Başka bir hata ise küçük bir gecikmeyle tekrar dene
-		time.Sleep(60 * time.Millisecond)
-	}
-	if err != nil {
-		return m, err
-	}
-
-	// Normal parse akışı (sizin mevcut mantığınız)
-	if err := json.Unmarshal(b, &m); err == nil && (m.Addr != "" || m.Balance != 0) {
-		return m, nil
-	}
-
-	var m2 map[string]interface{}
-	if err := json.Unmarshal(b, &m2); err != nil {
-		return m, err
-	}
-	if s, ok := m2["addr"].(string); ok && s != "" {
-		m.Addr = strings.TrimSpace(s)
-	}
-	if s, ok := m2["address"].(string); ok && s != "" && m.Addr == "" {
-		m.Addr = strings.TrimSpace(s)
-	}
-
-	candidates := []string{
-		"balance", "confirmed_balance", "confirmed", "spendable",
-		"available", "total", "mined_total", "mined", "reward", "rewards", "amount", "pending",
-	}
-	parseNum := func(v interface{}) (float64, bool) {
-		switch t := v.(type) {
-		case float64:
-			return t, true
-		case json.Number:
-			if f, err := t.Float64(); err == nil {
-				return f, true
-			}
-		case string:
-			if f, err := strconv.ParseFloat(strings.TrimSpace(t), 64); err == nil {
-				return f, true
-			}
-		}
-		return 0, false
-	}
-	for _, k := range candidates {
-		if v, ok := m2[k]; ok {
-			if f, ok := parseNum(v); ok {
-				m.Balance = f
-				break
-			}
-		}
-	}
-	if v, ok := m2["updated_at"].(float64); ok {
-		m.UpdatedAt = int64(v)
-	} else if v, ok := m2["updated"].(float64); ok {
-		m.UpdatedAt = int64(v)
-	}
-
-	if m.Balance == 0 {
-		re := regexp.MustCompile(`[-+]?\d+(\.\d+)?`)
-		if g := re.FindString(string(b)); g != "" {
-			if f, err := strconv.ParseFloat(g, 64); err == nil {
-				m.Balance = f
-			}
-		}
-	}
-	if m.Balance == 0 && m.Addr == "" && m.UpdatedAt == 0 {
-		return m, fmt.Errorf("unsupported mined_balance.json")
-	}
-	return m, nil
-}
-
-func getPendingForAddr(addr string) float64 {
-	if m, err := readLocalMined(); err == nil {
-		if m.Addr == "" || strings.EqualFold(strings.TrimSpace(m.Addr), strings.TrimSpace(addr)) {
-			if m.Balance < 0 {
-				return 0
-			}
-			return m.Balance
-		}
-	}
-	return 0
-}
-
 /* ===== Balance cache ===== */
 
 func balanceCachePath() string { return filepath.Join(nodeDir(), "wallet_balance.cache.json") }
@@ -1751,252 +1052,36 @@ func loadBalanceCache(addr string) (float64, bool) {
 
 /* ===== API helpers for numbers ===== */
 
-func numericFromAny(v interface{}) (float64, bool) {
-	switch t := v.(type) {
-	case float64:
-		return t, true
-	case float32:
-		return float64(t), true
-	case int:
-		return float64(t), true
-	case int64:
-		return float64(t), true
-	case json.Number:
-		if f, err := t.Float64(); err == nil {
-			return f, true
-		}
-	case string:
-		s := strings.TrimSpace(t)
-		if f, err := strconv.ParseFloat(s, 64); err == nil {
-			return f, true
-		}
-		re := regexp.MustCompile(`[-+]?\d+(\.\d+)?`)
-		if g := re.FindString(s); g != "" {
-			if f, err := strconv.ParseFloat(g, 64); err == nil {
-				return f, true
-			}
-		}
-	}
-	return 0, false
-}
-
-func getStringAnyKey(m map[string]interface{}, keys ...string) string {
-	for _, k := range keys {
-		if v, ok := m[k]; ok {
-			if s, ok2 := v.(string); ok2 && strings.TrimSpace(s) != "" {
-				return strings.TrimSpace(s)
-			}
-		}
-	}
-	return ""
-}
-
-func getAnyKey(m map[string]interface{}, keys ...string) interface{} {
-	for _, k := range keys {
-		if v, ok := m[k]; ok {
-			return v
-		}
-	}
-	return nil
-}
-
-/* ========== API balance fetcher (confirmed + pending) - tolerant ========== */
-
-func findBalancesInMapTolerant(m map[string]interface{}) (confirmed float64, pending float64) {
-	if f, ok := numericFromAny(getAnyKey(m, "confirmed_balance", "confirmed", "spendable", "available")); ok {
-		confirmed = f
-	}
-	if confirmed == 0 {
-		if f, ok := numericFromAny(getAnyKey(m, "balance", "Balance", "total", "Total")); ok {
-			confirmed = f
-		}
-	}
-	if f, ok := numericFromAny(getAnyKey(m, "pending", "unconfirmed", "immature", "pending_balance")); ok {
-		pending = f
-	}
-	if bsub, ok := m["balance"].(map[string]interface{}); ok {
-		if f, ok := numericFromAny(bsub["confirmed"]); ok {
-			confirmed = f
-		}
-		if f, ok := numericFromAny(bsub["pending"]); ok {
-			pending = f
-		}
-		if confirmed == 0 {
-			if tot, ok := numericFromAny(bsub["total"]); ok {
-				if pending > 0 {
-					confirmed = tot - pending
-				} else {
-					confirmed = tot
-				}
-			}
-		}
-	}
-	return
-}
-
 func getBalanceUniversal(addr string) (float64, float64, bool) {
 	addr = strings.TrimSpace(addr)
-	if addr == "" {
+	if !qwallet.ValidateAddress(addr) {
 		return 0, 0, false
 	}
-
-	// 1) Denenecek portlar: önce mevcut/tespit edilen, sonra yaygınlar (tekrarları at)
-	cands := []string{}
-	if apiPort != "" {
-		cands = append(cands, apiPort)
-	}
-	if p := detectAPIPort(); p != "" {
-		cands = append(cands, p)
-	}
-	cands = append(cands, "8082", "8081", "3001", "8080", "9090", "9091", "3000")
-	seen := map[string]bool{}
-	ports := []string{}
-	for _, p := range cands {
-		if p == "" || seen[p] {
-			continue
-		}
-		seen[p] = true
-		ports = append(ports, p)
-	}
-
-	// 2) Olası endpoint desenleri
-	patterns := []string{
-		"/api/address/balance?addr=%s",
-		"/api/wallet/balance/%s",
-		"/api/balance?addr=%s",
-		"/api/address/%s/balance",
-		"/api/address/%s",
-		"/address/%s/balance",
-		"/wallet/balance/%s",
-		"/balance/%s",
-	}
-
-	client := &http.Client{Timeout: 4 * time.Second}
-
-	for _, p := range ports {
-		base := "http://127.0.0.1:" + p
-
-		for _, pat := range patterns {
-			var esc string
-			if strings.Contains(pat, "?addr=%s") {
-				esc = url.QueryEscape(addr)
-			} else {
-				esc = url.PathEscape(addr)
-			}
-			u := base + fmt.Sprintf(pat, esc)
-
-			// -- no-cache istek --
-			req, _ := http.NewRequest("GET", noCacheURL(u), nil)
-			req.Header.Set("Cache-Control", "no-cache")
-			req.Header.Set("Pragma", "no-cache")
-			req.Header.Set("Expires", "0")
-
-			resp, err := client.Do(req)
-			if err != nil {
-				continue
-			}
-			ct := strings.ToLower(resp.Header.Get("Content-Type"))
-			body, _ := io.ReadAll(resp.Body)
-			_ = resp.Body.Close()
-
-			trim := strings.TrimSpace(string(body))
-			if len(trim) == 0 || strings.HasPrefix(trim, "<!doctype") || strings.HasPrefix(trim, "<html") || strings.Contains(ct, "text/html") {
-				continue
-			}
-
-			// JSON parse et; değilse metinden sayı çekmeyi dene
-			var anyval interface{}
-			if json.Unmarshal(body, &anyval) != nil {
-				re := regexp.MustCompile(`[-+]?\d+(\.\d+)?`)
-				if g := re.FindString(trim); g != "" {
-					if f, err := strconv.ParseFloat(g, 64); err == nil {
-						return f, 0, true
-					}
-				}
-				continue
-			}
-
-			switch v := anyval.(type) {
-			case map[string]interface{}:
-				// Adres alanını toleranslı kontrol et
-				gotAddr := getStringAnyKey(v, "address", "addr", "account", "wallet")
-				if gotAddr != "" && !strings.EqualFold(strings.TrimSpace(gotAddr), addr) {
-					break
-				}
-				c, pnd := findBalancesInMapTolerant(v)
-				if c > 0 || pnd > 0 {
-					return c, pnd, true
-				}
-				// Bazı API'ler "data": {...} içinde döner
-				if data, ok := v["data"].(map[string]interface{}); ok {
-					c, pnd := findBalancesInMapTolerant(data)
-					if c > 0 || pnd > 0 {
-						return c, pnd, true
-					}
-				}
-
-			case []interface{}:
-				for _, it := range v {
-					if m, ok := it.(map[string]interface{}); ok {
-						gotAddr := getStringAnyKey(m, "address", "addr", "account", "wallet")
-						if gotAddr != "" && !strings.EqualFold(strings.TrimSpace(gotAddr), addr) {
-							continue
-						}
-						c, pnd := findBalancesInMapTolerant(m)
-						if c > 0 || pnd > 0 {
-							return c, pnd, true
-						}
-					}
-				}
-
-			default:
-				if f, ok := numericFromAny(v); ok {
-					return f, 0, true
-				}
-			}
-		}
-	}
-
-	return 0, 0, false
-}
-
-/* ================== Tek adresli bonus_store helper ================== */
-
-func ensureBonusStore(addr string) {
-	p := filepath.Join(nodeDir(), "bonus_store.json")
-	if _, err := os.Stat(p); err == nil {
-		return
-	}
-
-	m := map[string]interface{}{
-		"community_address": addr,
-		"dev_fund_address":  addr,
-		"premine_address":   addr,
-		"reward_percentages": map[string]int{
-			"miner":     95,
-			"community": 5,
-			"dev":       0,
-			"premine":   0,
-		},
-	}
-
-	b, err := json.MarshalIndent(m, "", "  ")
+	client := apiclient.NewNodeClient(4 * time.Second)
+	defer client.CloseIdleConnections()
+	resp, err := authenticatedGetV1(client, apiBase()+"/api/wallet/balance/"+url.PathEscape(addr))
 	if err != nil {
-		fmt.Fprintf(
-			os.Stderr,
-			"wallet: bonus store encode failed: %v\n",
-			err,
-		)
-		return
+		return 0, 0, false
 	}
-
-	if err := os.WriteFile(p, b, 0644); err != nil {
-		fmt.Fprintf(
-			os.Stderr,
-			"wallet: bonus store write failed: %v\n",
-			err,
-		)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0, 0, false
 	}
+	var balance struct {
+		Total     string `json:"balanceQc"`
+		Spendable string `json:"spendableQc"`
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 65537))
+	if err != nil || len(raw) > 65536 || json.Unmarshal(raw, &balance) != nil {
+		return 0, 0, false
+	}
+	total, totalErr := consensus.ParseQCToAtomsV1(balance.Total)
+	spendable, spendableErr := consensus.ParseQCToAtomsV1(balance.Spendable)
+	if totalErr != nil || spendableErr != nil || spendable < 0 || total < spendable {
+		return 0, 0, false
+	}
+	unit := float64(consensus.CanonicalAtomsPerQCV1)
+	return float64(spendable) / unit, float64(total-spendable) / unit, true
 }
 
 /* ================== UI: Wallet ================== */
@@ -2005,92 +1090,70 @@ type canonicalSendRequest struct {
 	From    string `json:"from"`
 	To      string `json:"to"`
 	Amount  string `json:"amount"`
-	PrivHex string `json:"priv_hex"`
+	PrivHex string `json:"-"`
 }
 
-type canonicalSendResponse struct {
-	Success bool   `json:"success"`
-	TxID    string `json:"txid"`
-	Message string `json:"message"`
+func validateCanonicalSendResponse(statusCode int, raw []byte, expectedID string) (string, error) {
+	return walletsigner.ValidateSendResponseV1(statusCode, raw, expectedID)
 }
 
-func validateCanonicalSendResponse(
-	statusCode int,
-	raw []byte,
-) error {
-	if statusCode < http.StatusOK ||
-		statusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf(
-			"/api/tx/send http %d",
-			statusCode,
-		)
-	}
-
-	var out canonicalSendResponse
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return fmt.Errorf(
-			"invalid /api/tx/send response: %w",
-			err,
-		)
-	}
-
-	if !out.Success {
-		message := strings.TrimSpace(out.Message)
-		if message == "" {
-			message = "transaction rejected"
-		}
-
-		return fmt.Errorf(
-			"/api/tx/send rejected transaction: %s",
-			message,
-		)
-	}
-
-	return nil
+func apiSendTransactionV1(req canonicalSendRequest, timeout time.Duration) (string, error) {
+	return sendWalletRequestV1(req, filepath.Join(nodeDir(), "quantumcoin.exe"), apiBase()+"/api/tx/send", os.Getenv("QC_API_TOKEN"), timeout)
 }
 
-func apiSendTransactionV1(
-	req canonicalSendRequest,
-	timeout time.Duration,
-) error {
-	body, err := json.Marshal(req)
+// sendWalletRequestV1 is the same signing/submission path used by the Send button.
+// A read-only or unidentified node is rejected before opening the signing pipe.
+func sendWalletRequestV1(req canonicalSendRequest, executable, endpoint, token string, timeout time.Duration) (string, error) {
+	if timeout <= 0 {
+		return "", fmt.Errorf("send timeout must be positive")
+	}
+	origin, err := apiclient.ValidateNodeURL(endpoint)
 	if err != nil {
-		return err
+		return "", err
 	}
-
-	client := &http.Client{
-		Timeout: timeout,
+	if origin.Path != "/api/tx/send" || origin.RawQuery != "" {
+		return "", fmt.Errorf("canonical send endpoint required")
 	}
-
-	resp, err := client.Post(
-		apiBase()+"/api/tx/send",
-		"application/json",
-		bytes.NewReader(body),
-	)
+	origin.Path = apiclient.CanonicalHealthPathV1
+	origin.RawPath = ""
+	healthContext, cancelHealth := context.WithTimeout(context.Background(), timeout)
+	health, err := apiclient.ProbeHealth(healthContext, origin.String(), token)
+	cancelHealth()
 	if err != nil {
-		return err
+		return "", err
 	}
-	defer resp.Body.Close()
-
-	raw, err := io.ReadAll(
-		io.LimitReader(
-			resp.Body,
-			1<<20,
-		),
-	)
+	if !health.Authenticated {
+		return "", apiclient.ErrHealthUnauthorizedV1
+	}
+	if !health.ModeKnown || health.ReadOnly {
+		return "", fmt.Errorf("node is read-only or its mode is unknown; use the canonical run node for signed transfers")
+	}
+	signContext, cancelSign := context.WithTimeout(context.Background(), 2*time.Minute)
+	envelope, err := walletsigner.SignLocal(signContext, executable, req.From, req.To, req.Amount, req.PrivHex, false)
+	cancelSign()
 	if err != nil {
-		return fmt.Errorf(
-			"read /api/tx/send response: %w",
-			err,
-		)
+		return "", err
 	}
-
-	return validateCanonicalSendResponse(
-		resp.StatusCode,
-		raw,
-	)
+	expectedID, err := walletsigner.SignedTransactionIDV1(envelope)
+	if err != nil {
+		return "", err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	raw, status, err := walletsigner.Submit(ctx, endpoint, token, envelope)
+	if err != nil {
+		return "", fmt.Errorf("submission outcome unknown for transaction %s; check its status before retrying", expectedID)
+	}
+	id, err := validateCanonicalSendResponse(status, raw, expectedID)
+	if err != nil {
+		return "", fmt.Errorf("%w (txid: %s)", err, expectedID)
+	}
+	return id, nil
 }
 func detectPrivHex() string {
+	if selected, err := selectedRecovery(); err != nil || selected != nil {
+		return unlockedRecoveryKey()
+	}
 	// 1) yerel dosya
 	if v := loadText(walletPrivPath()); v != "" {
 		return v
@@ -2131,18 +1194,30 @@ func makeWalletTab(w fyne.Window, myAddrEntry, fromEntry *widget.Entry) fyne.Can
 	})
 	pasteToBtn := widget.NewButton(T("paste"), func() { toEntry.SetText(fyne.CurrentApp().Clipboard().Content()) })
 
-	genBtn := widget.NewButton(T("generate_wallet"), func() {
-		addr, priv, err := genAddressPrivViaNode()
-		if err != nil {
-			dialog.ShowError(err, w)
-			return
-		}
-		_ = saveText(walletAddressPath(), addr)
-		_ = saveText(minerAddressPath(), addr)
-		_ = saveText(walletPrivPath(), priv)
+	selectAddress := func(addr string) {
 		myAddrEntry.SetText(addr)
 		fromEntry.SetText(addr)
-		dialog.ShowInformation(T("ok"), addr, w)
+	}
+	genBtn := widget.NewButton(T("generate_wallet"), func() {
+		showCreateRecoveryWallet(w, selectAddress)
+	})
+	restoreWordsBtn := widget.NewButton(recoveryText("Restore words", "Kelimelerle kurtar"), func() {
+		showRestoreRecoveryWallet(w, myAddrEntry.Text, selectAddress)
+	})
+	unlockBtn := widget.NewButton(recoveryText("Unlock", "Kilidi aç"), func() { showUnlockRecoveryWallet(w, func() {}) })
+	lockBtn := widget.NewButton(recoveryText("Lock", "Kilitle"), lockRecoveryWallet)
+	wordsBtn := widget.NewButton(recoveryText("Show recovery words", "Kurtarma kelimelerini göster"), func() { showRecoveryWords(w) })
+	legacyBtn := widget.NewButton(recoveryText("Previous wallet / legacy backup", "Önceki cüzdan / eski yedek"), func() {
+		dialog.NewConfirm(recoveryText("Switch wallet profile", "Cüzdan profilini değiştir"), recoveryText("Switch to the previous local wallet or import its old encrypted backup? All recovery vaults are kept.", "Önceki yerel cüzdana geçilsin mi? Sonrasında eski şifreli yedeğinizi de içe aktarabilirsiniz. Tüm kurtarma kasaları korunur."), func(ok bool) {
+			if !ok {
+				return
+			}
+			if err := selectLegacyRecoveryProfile(); err != nil {
+				dialog.ShowError(err, w)
+				return
+			}
+			selectAddress(detectExistingAddress())
+		}, w).Show()
 	})
 	// ----- Bakiye yenileyici -----
 	doRefresh := func() {
@@ -2159,15 +1234,8 @@ func makeWalletTab(w fyne.Window, myAddrEntry, fromEntry *widget.Entry) fyne.Can
 			return
 		}
 
-		pendingLocal := getPendingForAddr(addr)
-
-		if confirmed, pendingAPI, ok := getBalanceUniversal(addr); ok {
-			// API + local pending birleşimi
-			pending := pendingAPI
-			if pendingLocal > pending {
-				pending = pendingLocal
-			}
-			total := confirmed + pending
+		if spendable, locked, ok := getBalanceUniversal(addr); ok {
+			total := spendable + locked
 			saveBalanceCache(addr, total)
 
 			ui(func() {
@@ -2181,10 +1249,10 @@ func makeWalletTab(w fyne.Window, myAddrEntry, fromEntry *widget.Entry) fyne.Can
 				}
 
 				// Metin
-				if pending > 1e-7 {
+				if locked > 1e-7 {
 					balanceText.Text = fmt.Sprintf(
-						"%s: %.8f QC   (confirmed: %.8f • pending: %.8f)",
-						T("balance"), total, confirmed, pending,
+						"%s: %.8f QC   (spendable: %.8f • locked: %.8f)",
+						T("balance"), total, spendable, locked,
 					)
 				} else {
 					balanceText.Text = fmt.Sprintf("%s: %.8f QC", T("balance"), total)
@@ -2200,7 +1268,7 @@ func makeWalletTab(w fyne.Window, myAddrEntry, fromEntry *widget.Entry) fyne.Can
 		if total, ok := loadBalanceCache(addr); ok {
 			ui(func() {
 				balanceText.Color = colInfo
-				balanceText.Text = fmt.Sprintf("%s: %.8f QC", T("balance"), total)
+				balanceText.Text = fmt.Sprintf("%s: %.8f QC (cached)", T("balance"), total)
 				canvas.Refresh(balanceText)
 				lastBalance = total
 			})
@@ -2261,12 +1329,13 @@ func makeWalletTab(w fyne.Window, myAddrEntry, fromEntry *widget.Entry) fyne.Can
 
 	// ----- Cüzdan Yedek / Geri Yükle -----
 	backupBtn := widget.NewButton(T("backup_wallet"), func() {
-		fs := dialog.NewFileSave(func(uc fyne.URIWriteCloser, err error) {
-			if err != nil || uc == nil {
+		// Select a directory, never open/truncate a wallet before password
+		// verification. Each backup receives a new unique filename.
+		fs := dialog.NewFolderOpen(func(folder fyne.ListableURI, err error) {
+			if err != nil || folder == nil {
 				return
 			}
-			path := uc.URI().Path()
-			uc.Close()
+			path := filepath.Join(folder.Path(), fmt.Sprintf("qc-wallet-backup-%d.qcbak", time.Now().UnixNano()))
 
 			pass := widget.NewEntry()
 			pass.Password = true
@@ -2276,14 +1345,16 @@ func makeWalletTab(w fyne.Window, myAddrEntry, fromEntry *widget.Entry) fyne.Can
 				T("cancel"),
 				container.NewVBox(widget.NewLabel(T("backup_password_prompt")), pass),
 				func(ok bool) {
+					secret := pass.Text
+					pass.SetText("")
 					if !ok {
 						return
 					}
-					if strings.TrimSpace(pass.Text) == "" {
+					if strings.TrimSpace(secret) == "" {
 						dialog.ShowError(fmt.Errorf("%s", T("password_empty_error")), w)
 						return
 					}
-					if err := createWalletBackup(path, pass.Text); err != nil {
+					if err := createWalletBackup(path, secret); err != nil {
 						dialog.ShowError(err, w)
 						return
 					}
@@ -2292,7 +1363,6 @@ func makeWalletTab(w fyne.Window, myAddrEntry, fromEntry *widget.Entry) fyne.Can
 				w,
 			).Show()
 		}, w)
-		fs.SetFileName("qc_wallet_backup.qcbak")
 		fs.Show()
 	})
 
@@ -2327,13 +1397,21 @@ func makeWalletTab(w fyne.Window, myAddrEntry, fromEntry *widget.Entry) fyne.Can
 		fo.Show()
 	})
 
-	sendBtn := widget.NewButton(T("send"), func() {
+	var sendBtn *widget.Button
+	sendBtn = widget.NewButton(T("send"), func() {
 		if err := startAPIBackground(); err != nil {
 			dialog.ShowError(fmt.Errorf("%s %v", T("api_timeout"), err), w)
 			return
 		}
 		privHex := strings.TrimSpace(detectPrivHex())
 		if privHex == "" {
+			if selected, err := selectedRecovery(); err != nil {
+				dialog.ShowError(err, w)
+				return
+			} else if selected != nil {
+				showUnlockRecoveryWallet(w, func() { sendBtn.OnTapped() })
+				return
+			}
 			dialog.ShowError(fmt.Errorf("%s", "Özel anahtar bulunamadı. 'Yeni Cüzdan Oluştur' ile anahtar üretin."), w)
 			return
 		}
@@ -2356,7 +1434,7 @@ func makeWalletTab(w fyne.Window, myAddrEntry, fromEntry *widget.Entry) fyne.Can
 		if fee != "" {
 			dialog.ShowError(
 				fmt.Errorf(
-					"Özel fee canonical /api/tx/send tarafından desteklenmiyor; fee alanını boş bırakın",
+					"özel fee canonical /api/tx/send tarafından desteklenmiyor; fee alanını boş bırakın",
 				),
 				w,
 			)
@@ -2373,13 +1451,14 @@ func makeWalletTab(w fyne.Window, myAddrEntry, fromEntry *widget.Entry) fyne.Can
 		// canonical send migration:
 		// There is one canonical transfer path. A retired transfer endpoint
 		// fallback must never be used.
-		if err := apiSendTransactionV1(
+		txID, err := apiSendTransactionV1(
 			req,
 			8*time.Second,
-		); err != nil {
+		)
+		if err != nil {
 			dialog.ShowError(
 				fmt.Errorf(
-					"Gönderilemedi: %v",
+					"gönderilemedi: %v",
 					err,
 				),
 				w,
@@ -2389,7 +1468,7 @@ func makeWalletTab(w fyne.Window, myAddrEntry, fromEntry *widget.Entry) fyne.Can
 
 		dialog.ShowInformation(
 			T("ok"),
-			T("tx_sent"),
+			T("tx_sent")+"\nTxID: "+txID,
 			w,
 		)
 		toEntry.SetText("")
@@ -2415,6 +1494,9 @@ func makeWalletTab(w fyne.Window, myAddrEntry, fromEntry *widget.Entry) fyne.Can
 	content := container.NewVBox(
 		headerRow,
 		buttonsRow,
+		container.NewHBox(restoreWordsBtn, unlockBtn, lockBtn),
+		wordsBtn,
+		legacyBtn,
 		form,
 		container.NewHBox(sendBtn, backupBtn, restoreBtn),
 	)
@@ -2441,10 +1523,14 @@ func deriveKey(pass string, salt []byte) ([]byte, error) {
 }
 
 func encryptJSONToFile(path string, data interface{}, pass string) error {
+	if len(pass) < 14 || len(pass) > 1024 {
+		return fmt.Errorf("use a backup password of 14 to 1024 bytes")
+	}
 	b, err := json.Marshal(data)
 	if err != nil {
 		return err
 	}
+	defer clear(b)
 	salt := make([]byte, 16)
 	if _, err := rand.Read(salt); err != nil {
 		return err
@@ -2453,6 +1539,7 @@ func encryptJSONToFile(path string, data interface{}, pass string) error {
 	if err != nil {
 		return err
 	}
+	defer clear(key)
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return err
@@ -2467,27 +1554,13 @@ func encryptJSONToFile(path string, data interface{}, pass string) error {
 	}
 	ct := gcm.Seal(nil, nonce, b, nil)
 
-	f, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	if _, err := f.Write(salt); err != nil {
-		return err
-	}
-	if _, err := f.Write(nonce); err != nil {
-		return err
-	}
-	if _, err := f.Write(ct); err != nil {
-		return err
-	}
-	return nil
+	blob := append(append(salt, nonce...), ct...)
+	return saveEncryptedRecoveryBlobNew(path, blob)
 }
 
-func decryptJSONFromFile(path string, pass string, out interface{}) error {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return err
+func decryptLegacyRecoveryBlob(b []byte, pass string, out interface{}) error {
+	if len(pass) > 1024 || len(b) > 1024*1024 {
+		return fmt.Errorf("legacy backup input too large")
 	}
 	if len(b) < 16 {
 		return fmt.Errorf("bozuk dosya")
@@ -2497,6 +1570,7 @@ func decryptJSONFromFile(path string, pass string, out interface{}) error {
 	if err != nil {
 		return err
 	}
+	defer clear(key)
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return err
@@ -2513,12 +1587,54 @@ func decryptJSONFromFile(path string, pass string, out interface{}) error {
 	ct := b[16+ns:]
 	pt, err := gcm.Open(nil, nonce, ct, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("legacy backup password or encrypted data is incorrect")
 	}
-	return json.Unmarshal(pt, out)
+	defer clear(pt)
+	if json.Unmarshal(pt, out) != nil {
+		return fmt.Errorf("invalid legacy wallet backup data")
+	}
+	return nil
 }
 
 func createWalletBackup(targetPath, pass string) error {
+	if selection, err := selectedRecovery(); err != nil {
+		return err
+	} else if selection != nil {
+		home, err := recoveryHome()
+		if err != nil {
+			return err
+		}
+		limit := int64(16384)
+		if selection.Version == legacyRecoverySelectionVersion {
+			limit = 1024 * 1024
+		}
+		blob, err := readRecoveryFile(filepath.Join(home, selection.File), limit)
+		if selection.Version == legacyRecoverySelectionVersion {
+			if err != nil {
+				return err
+			}
+			legacy, err := openLegacyRecoveryWallet(blob, pass)
+			if err != nil {
+				return err
+			}
+			defer utils.ZeroSecpPrivateV1(legacy.PrivateKey)
+			if legacy.GetAddress() != selection.Address {
+				return fmt.Errorf("wallet address mismatch")
+			}
+			return saveEncryptedRecoveryBlobNew(targetPath, blob)
+		}
+		if err != nil {
+			return err
+		}
+		material, err := qwallet.OpenRecoveryMaterial(blob, pass)
+		if err != nil {
+			return err
+		}
+		if material.Address != selection.Address {
+			return fmt.Errorf("wallet address mismatch")
+		}
+		return qwallet.SaveRecoveryVaultNew(targetPath, blob)
+	}
 	dir := nodeDir()
 	m := map[string]interface{}{}
 
@@ -2544,125 +1660,38 @@ func createWalletBackup(targetPath, pass string) error {
 		_ = json.Unmarshal(b, &tmp)
 		m["balance_cache"] = tmp
 	}
-	if b, err := os.ReadFile(filepath.Join(dir, "bonus_store.json")); err == nil {
-		var tmp interface{}
-		_ = json.Unmarshal(b, &tmp)
-		m["bonus_store"] = tmp
-	}
-	return encryptJSONToFile(targetPath, m, pass)
-}
-
-func writeRestoredFile(path string, data []byte) error {
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		return fmt.Errorf(
-			"write restored %s: %w",
-			filepath.Base(path),
-			err,
-		)
-	}
-	return nil
-}
-
-func writeRestoredJSON(path string, value interface{}) error {
-	b, err := json.MarshalIndent(value, "", "  ")
+	legacy, err := legacyRecoveryWallet(m)
 	if err != nil {
-		return fmt.Errorf(
-			"encode restored %s: %w",
-			filepath.Base(path),
-			err,
-		)
-	}
-	return writeRestoredFile(path, b)
-}
-func restoreWalletBackup(sourcePath, pass string) error {
-	var m map[string]interface{}
-	if err := decryptJSONFromFile(sourcePath, pass, &m); err != nil {
 		return err
 	}
-	dir := nodeDir()
-	if v, ok := m["wallet_address"].(string); ok {
-		if err := writeRestoredFile(
-			filepath.Join(dir, "wallet_address.txt"),
-			[]byte(strings.TrimSpace(v)),
-		); err != nil {
+	defer utils.ZeroSecpPrivateV1(legacy.PrivateKey)
+	m["wallet_address"] = legacy.GetAddress()
+	return encryptJSONToFile(targetPath, m, pass)
+}
+func restoreWalletBackup(sourcePath, pass string) error {
+	blob, err := readRecoveryFile(sourcePath, 1024*1024)
+	if err != nil {
+		return err
+	}
+	var header struct {
+		Version string `json:"version"`
+	}
+	if json.Unmarshal(blob, &header) == nil && header.Version == qwallet.RecoveryVaultVersionV1 {
+		material, err := qwallet.OpenRecoveryMaterial(blob, pass)
+		if err != nil {
 			return err
 		}
+		return selectRecoveryMaterial(material, pass)
 	}
-	if v, ok := m["miner_address"].(string); ok {
-		if err := writeRestoredFile(
-			filepath.Join(dir, "miner_address.txt"),
-			[]byte(strings.TrimSpace(v)),
-		); err != nil {
-			return err
-		}
+	if selection, err := selectedRecovery(); err != nil {
+		return err
+	} else if selection != nil {
+		return fmt.Errorf("legacy backup retained: import it in a separate legacy wallet profile; the selected recovery wallet will not be overwritten")
 	}
-	if v, ok := m["wallet_priv_hex"].(string); ok {
-		if err := writeRestoredFile(
-			filepath.Join(dir, "wallet_priv.hex"),
-			[]byte(strings.TrimSpace(v)),
-		); err != nil {
-			return err
-		}
-	}
-	if v, ok := m["wallet_recovery_words"].(string); ok {
-		if err := writeRestoredFile(
-			filepath.Join(dir, "wallet_recovery_words.txt"),
-			[]byte(strings.TrimSpace(v)),
-		); err != nil {
-			return err
-		}
-	}
-	if v, ok := m["wallet_recovery_manifest"]; ok {
-		if err := writeRestoredJSON(
-			filepath.Join(dir, "wallet_recovery_manifest.json"),
-			v,
-		); err != nil {
-			return err
-		}
-	}
-	if v, ok := m["balance_cache"]; ok {
-		if err := writeRestoredJSON(
-			filepath.Join(dir, "wallet_balance.cache.json"),
-			v,
-		); err != nil {
-			return err
-		}
-	}
-	if v, ok := m["bonus_store"]; ok {
-		if err := writeRestoredJSON(
-			filepath.Join(dir, "bonus_store.json"),
-			v,
-		); err != nil {
-			return err
-		}
-	}
-	return nil
+	return selectLegacyEncryptedBackup(blob, pass)
 }
 
 /* ================== Miner start/stop & log tail ================== */
-
-// panic / invalid base58 satırlarını kırmızı göstermek için
-var rePanic = regexp.MustCompile(`(?i)\b(panic|invalid base58)\b`)
-var (
-	// EN + TR varyasyonları: "block found", "block mined", "new block",
-	// "yeni blok", "blok bulundu", "blok kazıldı"
-	reBlock = regexp.MustCompile(`(?i)\b(block\s*(found|mined)|new\s*block|yeni\s*blok|blok\s*(bulundu|kazıldı))\b`)
-	reHash  = regexp.MustCompile(`(?i)\b([a-f0-9]{16,})\b`)
-)
-
-// --- Blok sonrası birkaç kez aralıklı yenile (eventual consistency için)
-func burstRefreshAfterBlock() {
-	if walletRefreshHook == nil {
-		return
-	}
-	for _, d := range []time.Duration{0, 1200 * time.Millisecond, 3 * time.Second, 6 * time.Second} {
-		delay := d
-		go func() {
-			time.Sleep(delay)
-			walletRefreshHook()
-		}()
-	}
-}
 
 // Base58 (BTC-style) — 0,O,I,l yasak; 26..50 uzunluk
 var base58RE = regexp.MustCompile(`^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{26,50}$`)
@@ -2693,363 +1722,52 @@ func cleanBase58(s string) string {
 	return b.String()
 }
 
-// Miner log dosyasını RichText’e canlı akıt
-func startMinerTailInto(rich *widget.RichText) {
-	minerTailMu.Lock()
-	defer minerTailMu.Unlock()
-
-	if minerTailStop != nil {
-		close(minerTailStop)
-		minerTailStop = nil
-	}
-	if minerLogPath == "" {
-		return
-	}
-	f, err := os.Open(minerLogPath)
-	if err != nil {
-		return
-	}
-	// dosyanın sonundan tail et
-	if _, err := f.Seek(0, io.SeekEnd); err != nil {
-		_ = f.Close()
-		return
-	}
-	stop := make(chan struct{})
-	minerTailStop = stop
-
-	go func() {
-		defer f.Close()
-		reader := bufio.NewReader(f)
-		for {
-			select {
-			case <-stop:
-				return
-			default:
-				line, err := reader.ReadString('\n')
-				if err != nil {
-					if err == io.EOF {
-						time.Sleep(200 * time.Millisecond)
-						continue
-					}
-					return
-				}
-
-				ui(func() { appendColoredLog(rich, line) })
-
-				// Loga bağlı otomatik bakiye yenileme (throttle'lı + burst)
-				if walletRefreshHook != nil {
-					if reBlock.MatchString(line) {
-						// Blok bulundu: aralıklı birkaç kez yenile (eventual consistency)
-						go burstRefreshAfterBlock()
-					} else {
-						// Diğer loglarda en fazla ~1.5 sn'de bir yenile
-						minerRefreshMu.Lock()
-						if time.Since(minerLastRefresh) > 1500*time.Millisecond {
-							minerLastRefresh = time.Now()
-							go walletRefreshHook()
-						}
-						minerRefreshMu.Unlock()
-					}
-				}
-			}
-		}
-	}()
-}
-
-func stopMinerTail() {
-	minerTailMu.Lock()
-	defer minerTailMu.Unlock()
-	if minerTailStop != nil {
-		close(minerTailStop)
-		minerTailStop = nil
-	}
-}
-
-// Log satırı renklendirme
-func appendColoredLog(rt *widget.RichText, line string) {
-	// önce ANSI kaçışlarını temizle
-	cleaned := stripANSI(line)
-
-	// panic/invalid base58 => kırmızı
-	if rePanic.MatchString(cleaned) {
-		rt.Segments = append(rt.Segments, &widget.TextSegment{
-			Text: cleaned + "\n",
-			Style: widget.RichTextStyle{
-				ColorName: theme.ColorNameError,
-			},
-		})
-		rt.Refresh()
-		return
-	}
-	// "block found/mined" kısımlarını yeşil yap (tema success)
-	segs := []widget.RichTextSegment{}
-	idx := 0
-	for _, loc := range reBlock.FindAllStringIndex(line, -1) {
-		if loc[0] > idx {
-			segs = append(segs, &widget.TextSegment{Text: line[idx:loc[0]]})
-		}
-		segs = append(segs, &widget.TextSegment{
-			Text: line[loc[0]:loc[1]],
-			Style: widget.RichTextStyle{
-				ColorName: theme.ColorNameSuccess,
-			},
-		})
-		idx = loc[1]
-	}
-	if idx < len(line) {
-		segs = append(segs, &widget.TextSegment{Text: line[idx:]})
-	}
-
-	// içindeki hash’leri (hex) mavi renge boya
-	colored := []widget.RichTextSegment{}
-	for _, s := range segs {
-		if txt, ok := s.(*widget.TextSegment); ok {
-			chunks := splitByRegex(txt.Text, reHash)
-			for _, c := range chunks {
-				if reHash.MatchString(c) {
-					colored = append(colored, &widget.TextSegment{
-						Text: c,
-						Style: widget.RichTextStyle{
-							ColorName: theme.ColorNamePrimary,
-						},
-					})
-				} else {
-					colored = append(colored, &widget.TextSegment{Text: c})
-				}
-			}
-		} else {
-			colored = append(colored, s)
-		}
-	}
-
-	rt.Segments = append(rt.Segments, colored...)
-	rt.Refresh()
-}
-
-func splitByRegex(s string, r *regexp.Regexp) []string {
-	out := []string{}
-	last := 0
-	for _, loc := range r.FindAllStringIndex(s, -1) {
-		if last < loc[0] {
-			out = append(out, s[last:loc[0]])
-		}
-		out = append(out, s[loc[0]:loc[1]])
-		last = loc[1]
-	}
-	if last < len(s) {
-		out = append(out, s[last:])
-	}
-	return out
-}
-
 /* ================== API bootstrap ================== */
 
 // API'yi arka planda doğrudan process olarak başlatır; logları api_out.log’a yazar.
-func walletAPIStartLockPath(port string) string {
-	safePort := strings.NewReplacer(
-		":", "_",
-		"/", "_",
-		"\\", "_",
-	).Replace(port)
-
-	return filepath.Join(
-		os.TempDir(),
-		"quantumcoin-api-"+safePort+".start.lock",
-	)
-}
-
-func acquireWalletAPIStartLease(
-	port string,
-) (*os.File, string, bool, error) {
-	lockPath := walletAPIStartLockPath(port)
-	deadline := time.Now().Add(20 * time.Second)
-
-	for {
-		lock, err := os.OpenFile(
-			lockPath,
-			os.O_CREATE|os.O_EXCL|os.O_WRONLY,
-			0600,
-		)
-
-		if err == nil {
-			_, _ = fmt.Fprintf(
-				lock,
-				"%d\n",
-				os.Getpid(),
-			)
-
-			return lock, lockPath, true, nil
-		}
-
-		if !os.IsExist(err) {
-			return nil, "", false, fmt.Errorf(
-				"acquire API startup lock: %w",
-				err,
-			)
-		}
-
-		if portHasAPI(port) {
-			return nil, "", false, nil
-		}
-
-		if st, statErr := os.Stat(lockPath); statErr == nil &&
-			time.Since(st.ModTime()) > 15*time.Second {
-			_ = os.Remove(lockPath)
-			continue
-		}
-
-		if time.Now().After(deadline) {
-			return nil, "", false, fmt.Errorf(
-				"API startup lock timeout",
-			)
-		}
-
-		time.Sleep(100 * time.Millisecond)
-	}
-}
-
-func releaseWalletAPIStartLease(
-	lock *os.File,
-	path string,
-) {
-	if lock != nil {
-		_ = lock.Close()
-	}
-
-	if path != "" {
-		_ = os.Remove(path)
-	}
-}
-
 func startAPIBackground() error {
-	if apiPort != "" {
-		apiPort = normalizeCanonicalAPIPort(apiPort)
-	}
-
-	// A stale legacy port must not cause a second/mismatched backend launch.
-	if apiPort == "" || !portHasAPI(apiPort) {
-		apiPort = detectAPIPort()
-	}
-
-	if portHasAPI(apiPort) {
-		return nil
-	}
-
-	if apiPort == "" {
-		apiPort = canonicalAPIDefaultPort
-	}
-
-	lease, leasePath, acquired, err :=
-		acquireWalletAPIStartLease(apiPort)
-	if err != nil {
-		return err
-	}
-
-	if !acquired {
-		return nil
-	}
-
-	defer releaseWalletAPIStartLease(
-		lease,
-		leasePath,
-	)
-
-	// Recheck after obtaining the cross-GUI startup lease.
-	if portHasAPI(apiPort) {
-		return nil
-	}
-
-	dir := nodeDir()
-	exe := filepath.Join(
-		dir,
-		"quantumcoin.exe",
-	)
-
-	if _, err := os.Stat(exe); err != nil {
-		return fmt.Errorf(
-			"quantumcoin.exe not found: %v",
-			err,
-		)
-	}
-
-	apiLog := filepath.Join(
-		dir,
-		"api_out.log",
-	)
-
-	f, err := os.OpenFile(
-		apiLog,
-		os.O_CREATE|os.O_WRONLY|os.O_APPEND,
-		0644,
-	)
-	if err != nil {
-		return err
-	}
-
-	cmd := exec.Command(
-		exe,
-		"api",
-	)
-	cmd.Dir = dir
-
-	cmd.Env = append(
-		os.Environ(),
-		"QC_NODE_DIR="+dir,
-		"QC_HTTP_PORT=:"+apiPort,
-		"QC_API_LISTEN=127.0.0.1:"+apiPort,
-	)
-
-	cmd.Stdout = f
-	cmd.Stderr = f
-
-	if runtime.GOOS == "windows" {
-		cmd.SysProcAttr = &syscall.SysProcAttr{
-			HideWindow: true,
+	port := walletAPIPortV1()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	return apiclient.EnsureLocalBackendV1(ctx, port, os.Getenv("QC_API_TOKEN"), func() (apiclient.BackendHandleV1, error) {
+		dir := nodeDir()
+		exe := filepath.Join(dir, "quantumcoin.exe")
+		if _, err := os.Stat(exe); err != nil {
+			return apiclient.BackendHandleV1{}, fmt.Errorf("quantumcoin.exe not found: %w", err)
 		}
-	}
-
-	if err := cmd.Start(); err != nil {
-		_ = f.Close()
-		return err
-	}
-
-	health := apiBase() + canonicalAPIHealthPath
-
-	deadline :=
-		time.Now().Add(
-			10 * time.Second,
-		)
-
-	for time.Now().Before(deadline) {
-		if ping(
-			health,
-			500*time.Millisecond,
-		) == nil {
-			go func() {
+		f, err := os.OpenFile(filepath.Join(dir, "api_out.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+		if err != nil {
+			return apiclient.BackendHandleV1{}, err
+		}
+		cmd := newWalletBackendCommandV1(exe, dir, port)
+		cmd.Stdout = f
+		cmd.Stderr = f
+		if err := cmd.Start(); err != nil {
+			_ = f.Close()
+			return apiclient.BackendHandleV1{}, err
+		}
+		return apiclient.BackendHandleV1{
+			Stop: func() {
+				if cmd.Process != nil {
+					_ = cmd.Process.Kill()
+				}
 				_ = cmd.Wait()
 				_ = f.Close()
-			}()
+			},
+			Release: func() error { go func() { _ = cmd.Wait(); _ = f.Close() }(); return nil },
+		}, nil
+	})
+}
 
-			return nil
-		}
-
-		time.Sleep(
-			300 * time.Millisecond,
-		)
+// Wallet transfers require the canonical writable node; run does not mine.
+func newWalletBackendCommandV1(executable, dir, port string) *exec.Cmd {
+	cmd := exec.Command(executable, "run")
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "QC_NODE_DIR="+dir, "QC_HTTP_PORT=:"+port, "QC_API_LISTEN=127.0.0.1:"+port)
+	if runtime.GOOS == "windows" {
+		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	}
-
-	// A backend that never reaches canonical health must not be left behind.
-	if cmd.Process != nil {
-		_ = cmd.Process.Kill()
-	}
-
-	_ = cmd.Wait()
-	_ = f.Close()
-
-	return fmt.Errorf(
-		"API /api/health timeout on 127.0.0.1:%s",
-		apiPort,
-	)
+	return cmd
 }
 
 /* ================== Miner starter (görünür CMD) ================== */
@@ -3058,20 +1776,11 @@ func startAPIBackground() error {
 // Windows: görünür CMD penceresi (UTF-8) + miner_out.log'a yazdırır (loop)
 // macOS/Linux: arka planda, miner_out.log'a yazar
 func startMinerInCmd(addr string) error {
-	addr = cleanBase58(strings.TrimSpace(addr))
-	if !isLikelyBase58Address(addr) {
-		return fmt.Errorf("invalid reward address (Base58)")
+	addr = strings.TrimSpace(addr)
+	if !qwallet.ValidateAddress(addr) {
+		return fmt.Errorf("valid QC reward address required")
 	}
-
-	dir := nodeDir()
-	runBat := filepath.Join(dir, "run_miner.cmd")
-	if _, err := os.Stat(runBat); err != nil {
-		return fmt.Errorf("run_miner.cmd not found in release: %w", err)
-	}
-
-	_ = saveText(minerAddressPath(), addr)
 	_ = os.Setenv("ADDR", addr)
-
 	return startMinerVisible()
 }
 
@@ -3098,36 +1807,49 @@ func makeMinerTab(w fyne.Window, defaultAddr string) fyne.CanvasObject {
 	}
 
 	// log dosyası (release/nodeDir ile aynı olmalı)
-	minerLogPath = filepath.Join(nodeDir(), "miner_out.log")
 
 	// Butonlar (onMinerStateUpdate içinde kullanacağız)
 	var startBtn, stopBtn *widget.Button
 
 	// UI state callback (TEK kez)
-	onMinerStateUpdate = func(running bool) {
-		ui(func() {
-			if running {
-				statusLab.SetText(T("running"))
-				if startBtn != nil {
-					startBtn.Disable()
-				}
-				if stopBtn != nil {
-					stopBtn.Enable()
-				}
-			} else {
-				statusLab.SetText(T("stopped"))
-				if startBtn != nil {
-					startBtn.Enable()
-				}
-				if stopBtn != nil {
-					stopBtn.Disable()
-				}
+	onMinerStateUpdate = nativeMiningUIStateHandlerV1(ui, func(running bool) {
+		if running {
+			statusLab.SetText(T("running"))
+			if startBtn != nil {
+				startBtn.Disable()
 			}
-			statusLab.Refresh()
-		})
-	}
+			if stopBtn != nil {
+				stopBtn.Enable()
+			}
+		} else {
+			statusLab.SetText(T("stopped"))
+			if startBtn != nil {
+				startBtn.Enable()
+			}
+			if stopBtn != nil {
+				stopBtn.Disable()
+			}
+		}
+		statusLab.Refresh()
+	})
 
 	// === START ===
+	guiMining.Lock()
+	var miningLog string
+	guiMining.log = func(message string) {
+		ui(func() {
+			miningLog += "\n" + message
+			if len(miningLog) > 32768 {
+				miningLog = miningLog[len(miningLog)-32768:]
+				if n := strings.IndexByte(miningLog, '\n'); n >= 0 {
+					miningLog = miningLog[n+1:]
+				}
+			}
+			logView.Segments = []widget.RichTextSegment{&widget.TextSegment{Text: miningLog}}
+			logView.Refresh()
+		})
+	}
+	guiMining.Unlock()
 	startBtn = widget.NewButton(T("miner_start"), func() {
 		addr, err := ensureRewardAddress(addrEntry.Text)
 		if err != nil {
@@ -3136,22 +1858,15 @@ func makeMinerTab(w fyne.Window, defaultAddr string) fyne.CanvasObject {
 		}
 		addrEntry.SetText(addr)
 
-		// run_miner.cmd ENV önceliği: ADDR
+		// The selected public reward address is passed to the native PoW client.
 		_ = os.Setenv("ADDR", addr)
 		// Miner başlat: tek canonical flow
 		if err := startMinerInCmd(addr); err != nil {
 			dialog.ShowError(err, w)
 			return
 		}
-		// API (varsa/kapalıysa) arka planda
-		_ = startAPIBackground()
-
-		// log tail
-		minerLogPath = filepath.Join(nodeDir(), "miner_out.log")
-		startMinerTailInto(logView)
 
 		// gerçek miner gerçekten ayağa kalktı mı?
-		time.Sleep(2 * time.Second)
 		if !qcMinerRunnerAlive() {
 			minerRunningState = false
 			if onMinerStateUpdate != nil {
@@ -3167,22 +1882,20 @@ func makeMinerTab(w fyne.Window, defaultAddr string) fyne.CanvasObject {
 			onMinerStateUpdate(true)
 		}
 
-		// Watchdog: CMD X ile kapanınca otomatik stop
-		go windowsMinerWatchdog()
-
-		// Ek garanti: poller varsa (idempotent)
-		startMinerStatePoller()
 	})
 
 	// === STOP ===
 	stopBtn = widget.NewButton(T("miner_stop"), func() {
-		writeMinerStopFlag()
-		_ = stopMinerVisible() // bu zaten UI’ı indirir
+		if err := stopMinerVisible(); err != nil {
+			dialog.ShowError(err, w)
+			return
+		}
 		dialog.ShowInformation(T("ok"), T("miner_stopped"), w)
 	})
 
-	// İlk açılışta miner kapalı
-	stopBtn.Disable()
+	// Reflect this GUI's native worker if the tab is rebuilt during mining.
+	qcResetStaleMinerState()
+	onMinerStateUpdate(minerRunningState)
 
 	// log klasörü
 	openLogBtn := widget.NewButton(T("open_log_folder"), func() {
@@ -3194,13 +1907,9 @@ func makeMinerTab(w fyne.Window, defaultAddr string) fyne.CanvasObject {
 		}
 	})
 
-	// manuel cmd
+	// The old batch launcher is an isolated local tool, not a network miner.
 	openManualCmdBtn := widget.NewButton(T("open_cmd_manual"), func() {
-		dir := nodeDir()
-		runBat := filepath.Join(dir, "run_miner.cmd")
-		if _, err := os.Stat(runBat); err == nil && runtime.GOOS == "windows" {
-			_ = exec.Command("cmd", "/c", "start", "QuantumCoin Miner", runBat).Start()
-		}
+		dialog.ShowInformation("Solo mining", "Use Start for device PoW on the selected network. Standalone operators can use cmd/miner with the same node origin, QC_API_TOKEN and reward address. Legacy local-release scripts do not join testnet/mainnet.", w)
 	})
 
 	top := widget.NewForm(
@@ -3227,265 +1936,10 @@ func ensureRewardAddress(cur string) (string, error) {
 	if v := detectExistingAddress(); isLikelyBase58Address(v) {
 		_ = saveText(walletAddressPath(), v)
 		_ = saveText(minerAddressPath(), v)
-		ensureBonusStore(v)
 		return v, nil
 	}
 
-	// 3) Node'dan yeni adres + priv üret
-	addr, privHex, err := genAddressPrivViaNode()
-	if err != nil {
-		return "", err
-	}
-	if !isLikelyBase58Address(addr) {
-		return "", fmt.Errorf("generated address looks invalid")
-	}
-
-	// 4) Kalıcı kaydet
-	_ = saveText(walletAddressPath(), addr)
-	_ = saveText(minerAddressPath(), addr)
-
-	// priv varsa kaydet
-	if strings.TrimSpace(privHex) != "" {
-		_ = saveText(walletPrivPath(), privHex)
-	}
-
-	ensureBonusStore(addr)
-	return addr, nil
-}
-
-func writeMinerStopFlag() {
-	f := filepath.Join(nodeDir(), "miner_stop.flag")
-	_ = os.WriteFile(f, []byte("stop"), 0644)
-}
-
-// --- Windows: PID'nin hangi process olduğunu hızlıca anlamak için ---
-func firstCSVField(line string) string {
-	line = strings.TrimSpace(line)
-	if line == "" {
-		return ""
-	}
-
-	// "cmd.exe","1234",...
-	if strings.HasPrefix(line, `"`) {
-		if j := strings.Index(line[1:], `"`); j >= 0 {
-			return line[1 : 1+j]
-		}
-	}
-
-	if j := strings.Index(line, ","); j >= 0 {
-		return strings.Trim(line[:j], `"`)
-	}
-
-	return strings.Trim(line, `"`)
-}
-
-func processImageName(pid int) string {
-	if pid <= 0 || runtime.GOOS != "windows" {
-		return ""
-	}
-
-	c := exec.Command(
-		"tasklist", "/v", "/fo", "csv", "/nh",
-		"/fi", "IMAGENAME eq cmd.exe",
-	)
-
-	c.SysProcAttr = &syscall.SysProcAttr{
-		HideWindow: true,
-	}
-
-	out, err := c.Output()
-	if err != nil {
-		return ""
-	}
-
-	line := strings.TrimSpace(string(out))
-	if line == "" {
-		return ""
-	}
-
-	if i := strings.IndexByte(line, '\n'); i >= 0 {
-		line = strings.TrimSpace(line[:i])
-	}
-
-	return strings.ToLower(firstCSVField(line))
-}
-
-func isCmdPID(pid int) bool {
-	return processImageName(pid) == "cmd.exe"
-}
-
-// PowerShell ile sadece "quantumcoin.exe mine" süreçlerini bulur ve kapatır.
-// API'yi öldürmez (api komutu farklı).
-func killQuantumcoinMineOnly() {
-	if runtime.GOOS != "windows" {
-		_ = exec.Command("pkill", "-f", "quantumcoin.*mine").Run()
-		return
-	}
-
-	ps := `Get-CimInstance Win32_Process | Where-Object { (($_.Name -eq 'quantumcoin.exe') -and ($_.CommandLine -match 'mine-forever| mine ') -and ($_.CommandLine -notmatch ' api')) -or (($_.Name -eq 'cmd.exe') -and ($_.CommandLine -match 'run_miner.cmd|QuantumCoin Miner')) -or (($_.Name -match 'powershell|pwsh') -and ($_.CommandLine -match '_qc_miner_stream|run_miner|quantumcoin.exe mine')) } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`
-
-	c := exec.Command("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps)
-	c.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	_ = c.Run()
-}
-
-// tasklist /v /fo csv ile PID'ye ait Window Title'ı okumaya çalışır.
-func cmdWindowTitleByPID(pid int) (title string, ok bool) {
-	if runtime.GOOS != "windows" || pid <= 0 {
-		return "", false
-	}
-
-	c := exec.Command(
-		"tasklist", "/v", "/fo", "csv", "/nh",
-		"/fi", fmt.Sprintf("PID eq %d", pid),
-	)
-
-	c.SysProcAttr = &syscall.SysProcAttr{
-		HideWindow: true,
-	}
-
-	out, err := c.Output()
-	if err != nil {
-		return "", false
-	}
-
-	s := strings.TrimSpace(string(out))
-	if s == "" {
-		return "", false
-	}
-
-	line := strings.TrimSpace(strings.Split(s, "\n")[0])
-	low := strings.ToLower(line)
-
-	if strings.HasPrefix(low, "info:") || strings.Contains(low, "no tasks are running") {
-		return "", false
-	}
-
-	r := csv.NewReader(strings.NewReader(line))
-	r.FieldsPerRecord = -1
-
-	rec, err := r.Read()
-	if err != nil || len(rec) < 2 {
-		return "", false
-	}
-
-	if len(rec) >= 9 {
-		return rec[8], true
-	}
-
-	return rec[len(rec)-1], true
-}
-
-// tasklist'ten "QuantumCoin Miner" title'lı cmd.exe PID'sini bulur.
-func findMinerCmdPIDByTitle() int {
-	if runtime.GOOS != "windows" {
-		return 0
-	}
-
-	c := exec.Command(
-		"tasklist", "/v", "/fo", "csv", "/nh",
-		"/fi", "IMAGENAME eq cmd.exe",
-	)
-
-	c.SysProcAttr = &syscall.SysProcAttr{
-		HideWindow: true,
-	}
-
-	out, err := c.Output()
-	if err != nil {
-		return 0
-	}
-
-	r := csv.NewReader(strings.NewReader(string(out)))
-	r.FieldsPerRecord = -1
-
-	for {
-		rec, err := r.Read()
-		if err != nil {
-			break
-		}
-
-		// Image Name, PID, ..., Window Title
-		if len(rec) < 2 {
-			continue
-		}
-
-		img := strings.ToLower(strings.TrimSpace(rec[0]))
-		if img != "cmd.exe" {
-			continue
-		}
-
-		pidStr := strings.TrimSpace(rec[1])
-
-		title := ""
-		if len(rec) >= 9 {
-			title = rec[8]
-		} else {
-			title = rec[len(rec)-1]
-		}
-
-		if strings.Contains(strings.ToLower(title), "quantumcoin miner") {
-			if pid, e := strconv.Atoi(pidStr); e == nil && pid > 0 {
-				return pid
-			}
-		}
-	}
-
-	return 0
-}
-
-// Miner penceresi (bizim CMD) yaşıyor mu?
-func minerWindowAlive() bool {
-	return qcMinerRunnerAlive()
-}
-
-// ===== Windows miner watchdog =====
-// CMD penceresi X ile kapanırsa UI durumunu "Stopped" yapar
-// ve arkada kalmış quantumcoin.exe mine süreçlerini temizler.
-func windowsMinerWatchdog() {
-	if runtime.GOOS != "windows" {
-		return
-	}
-
-	go func() {
-		time.Sleep(5 * time.Second)
-
-		for {
-			time.Sleep(2 * time.Second)
-
-			if !minerRunningState {
-				return
-			}
-
-			pid, err := readMinerPID()
-			if err != nil || pid <= 0 {
-				continue
-			}
-
-			if isProcessAlive(pid) {
-				continue
-			}
-
-			// CMD X ile kapandı: GUI state'i indir, flag/pid temizle
-			minerRunningState = false
-			clearMinerPID()
-			_ = os.Remove(filepath.Join(nodeDir(), "miner_pid.txt"))
-			_ = os.Remove(filepath.Join(nodeDir(), "miner_cmd_pid.txt"))
-			_ = os.WriteFile(filepath.Join(nodeDir(), "miner_stop.flag"), []byte("stop"), 0644)
-
-			ui(func() {
-				if onMinerStateUpdate != nil {
-					onMinerStateUpdate(false)
-				}
-			})
-
-			if walletRefreshHook != nil {
-				go walletRefreshHook()
-			}
-
-			return
-		}
-	}()
+	return "", fmt.Errorf("create or restore your QC wallet in the Wallet tab before mining")
 }
 
 /* ================== Web Wallet & API bootstrap ================== */
@@ -3711,15 +2165,10 @@ func buildUI(w fyne.Window) {
 		fromEntry.SetText(addr)
 
 		// Ortam değişkenleri
-		_ = os.Setenv("QC_COMMUNITY_ADDRESS", addr)
-		_ = os.Setenv("QC_DEV_FUND_ADDRESS", addr)
-		_ = os.Setenv("QC_PREMINE_ADDRESS", addr)
 		_ = os.Setenv("QC_NODE_DIR", nodeDir())
 		_ = os.Setenv("QC_MINED_PATH", filepath.Join(nodeDir(), "mined_balance.json"))
 		_ = os.Setenv("ADDR", addr) // ← EKLEDİĞİMİZ TEK SATIR
 
-		// bonus/NFT store hazırlanması
-		go ensureBonusStore(addr)
 	}
 
 	// --- SEKMEler ---
@@ -3825,15 +2274,21 @@ func makeAICallbacks(win fyne.Window) AICallbacks {
 
 					hasMetric := false
 					if height != "" {
-						b.WriteString("Height : " + height + "\n")
+						b.WriteString("Height : ")
+						b.WriteString(height)
+						b.WriteByte('\n')
 						hasMetric = true
 					}
 					if peers != "" {
-						b.WriteString("Peers  : " + peers + "\n")
+						b.WriteString("Peers  : ")
+						b.WriteString(peers)
+						b.WriteByte('\n')
 						hasMetric = true
 					}
 					if mempool != "" {
-						b.WriteString("Mempool: " + mempool + " tx\n")
+						b.WriteString("Mempool: ")
+						b.WriteString(mempool)
+						b.WriteString(" tx\n")
 						hasMetric = true
 					}
 
@@ -3932,14 +2387,9 @@ func pollLoop(ctx context.Context, url string, interval time.Duration, fn func(s
 }
 
 func httpGetAsString(url string) (string, error) {
-	req, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		return "", err
-	}
-	client := &http.Client{
-		Timeout: 3 * time.Second,
-	}
-	resp, err := client.Do(req)
+	client := apiclient.NewNodeClient(3 * time.Second)
+	defer client.CloseIdleConnections()
+	resp, err := authenticatedGetV1(client, url)
 	if err != nil {
 		return "", err
 	}
@@ -3984,6 +2434,7 @@ func main() {
 	}
 
 	w := a.NewWindow(title)
+	w.SetOnClosed(func() { _ = stopNativeMining() })
 
 	// daha küçük sabit pencere
 	w.Resize(fyne.NewSize(760, 480))
@@ -4006,136 +2457,18 @@ func main() {
 
 // Eski kullanım için tek sayı döndüren sarmalayıcı.
 // Mevcut tolerant fonksiyonu kullanır ve (confirmed+pending) toplamını verir.
-func getBalanceUniversalInt(addr string) (int64, error) {
-	confirmed, pending, ok := getBalanceUniversal(addr)
-	if !ok {
-		return 0, fmt.Errorf("balance not found")
-	}
-	total := confirmed + pending
-	return int64(total), nil
+
+func withAPIAuthV1(req *http.Request) *http.Request {
+	req.Header.Set("X-QC-API-KEY", strings.TrimSpace(os.Getenv("QC_API_TOKEN")))
+	return req
 }
-
-// *Legacy* geri-dönüş uyumluluğu: Bazı bilinen uçları tek tek yoklar,
-// JSON içinden "balance" anahtarını toleranslı biçimde çıkarır.
-func getBalanceUniversalLegacy(addr string) (int64, error) {
-	addr = strings.TrimSpace(addr)
-	if addr == "" {
-		return 0, fmt.Errorf("address empty")
+func authenticatedGetV1(client *http.Client, endpoint string) (*http.Response, error) {
+	if _, err := apiclient.ValidateNodeURL(endpoint); err != nil {
+		return nil, err
 	}
-
-	ports := []int{8082, 8081, 8080, 3001, 9090}
-	patterns := []string{
-		"/api/wallet/balance/%s",
+	req, err := http.NewRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, err
 	}
-
-	client := &http.Client{Timeout: 4 * time.Second}
-
-	for _, p := range ports {
-		base := fmt.Sprintf("http://127.0.0.1:%d", p)
-		for _, pat := range patterns {
-			var esc string
-			if strings.Contains(pat, "?addr=%s") {
-				esc = url.QueryEscape(addr)
-			} else {
-				esc = url.PathEscape(addr)
-			}
-			u := fmt.Sprintf(base+pat, esc)
-
-			resp, err := client.Get(u)
-			if err != nil {
-				continue
-			}
-			b, _ := io.ReadAll(resp.Body)
-			_ = resp.Body.Close()
-			if resp.StatusCode != http.StatusOK {
-				continue
-			}
-			if val, ok := parseBalanceJSONLegacy(b); ok {
-				return val, nil
-			}
-		}
-	}
-	return 0, fmt.Errorf("balance not found")
+	return client.Do(withAPIAuthV1(req))
 }
-
-func parseBalanceJSONLegacy(b []byte) (int64, bool) {
-	// Düz sayı (örn: 2872)
-	var n float64
-	if err := json.Unmarshal(b, &n); err == nil {
-		return int64(n), true
-	}
-
-	// Düz string sayı (örn: "2872")
-	var s string
-	if err := json.Unmarshal(b, &s); err == nil {
-		if f, err := strconv.ParseFloat(strings.TrimSpace(s), 64); err == nil {
-			return int64(f), true
-		}
-	}
-
-	// Genel JSON, iç içe "balance" ara
-	var any map[string]interface{}
-	if err := json.Unmarshal(b, &any); err == nil {
-		if v, ok := walkBalanceLegacy(any); ok {
-			return v, true
-		}
-	}
-	return 0, false
-}
-
-func walkBalanceLegacy(m map[string]interface{}) (int64, bool) {
-	if v, ok := m["balance"]; ok {
-		switch t := v.(type) {
-		case float64:
-			return int64(t), true
-		case json.Number:
-			if f, err := t.Float64(); err == nil {
-				return int64(f), true
-			}
-		case string:
-			if f, err := strconv.ParseFloat(strings.TrimSpace(t), 64); err == nil {
-				return int64(f), true
-			}
-		}
-	}
-	for _, v := range m {
-		if mm, ok := v.(map[string]interface{}); ok {
-			if out, ok := walkBalanceLegacy(mm); ok {
-				return out, true
-			}
-		}
-	}
-	return 0, false
-}
-
-/*** --- END: universal balance fetch (legacy-compatible) --- ***/
-
-// --- keep legacy wrappers referenced to silence linters ---
-var (
-	_ = getBalanceUniversalInt
-	_ = getBalanceUniversalLegacy
-)
-
-// --- HTTP no-cache helper: her çağrıda benzersiz query ekle
-func noCacheURL(u string) string {
-	sep := "?"
-	if strings.Contains(u, "?") {
-		sep = "&"
-	}
-	return u + sep + "_ts=" + strconv.FormatInt(time.Now().UnixNano(), 10)
-}
-
-// QC_STATICCHECK_KEEP_GUI_MINER_HELPERS keeps intentionally retained GUI/miner helpers reachable without changing runtime behavior.
-var (
-	_ = markMinerStoppedFromWatcher
-	_ = &minerStatePollerMu
-	_ = &minerStatePollerRun
-	_ = minerActiveViaAPI
-	_ = minerActiveHeuristic
-	_ = stopMinerTail
-	_ = firstCSVField
-	_ = processImageName
-	_ = isCmdPID
-	_ = cmdWindowTitleByPID
-	_ = minerWindowAlive
-)

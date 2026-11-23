@@ -1,6 +1,7 @@
 # QuantumCoin Watch & Earn Testnet / Final Lock
 
-Status: WATCH_EARN_TESTNET_FINAL_LOCK_V1
+Document ID: `WATCH_EARN_TESTNET_FINAL_LOCK_V1`\
+Evidence stage: **Implementation**. See [scope and release status](POLICY_EVIDENCE_REGISTER.md).
 
 Date: 20260618_213251
 

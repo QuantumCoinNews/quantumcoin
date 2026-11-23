@@ -8,8 +8,7 @@ import (
 
 // CORS_PUBLIC_MODE_SECURITY_V1
 //
-// Public testnet mode must not use wildcard CORS.
-// Local/dev mode keeps the old wildcard behavior to avoid breaking local tools.
+// Exposed listeners use an exact allowlist, including on local-release and mainnet.
 
 func corsAllowedOriginsFromEnvV1() []string {
 	raw := strings.TrimSpace(os.Getenv("QC_CORS_ALLOWED_ORIGINS"))
@@ -31,10 +30,10 @@ func corsAllowedOriginsFromEnvV1() []string {
 	return out
 }
 
-func corsAllowedOriginV1(origin string) (string, bool) {
+func corsAllowedOriginV1(origin string, restricted bool, allowedOrigins []string) (string, bool) {
 	origin = strings.TrimSpace(origin)
 
-	if !isPublicTestnetAPITokenRequired() {
+	if !restricted {
 		return "*", true
 	}
 
@@ -42,7 +41,7 @@ func corsAllowedOriginV1(origin string) (string, bool) {
 		return "", false
 	}
 
-	for _, allowed := range corsAllowedOriginsFromEnvV1() {
+	for _, allowed := range allowedOrigins {
 		if origin == allowed {
 			return origin, true
 		}
@@ -51,17 +50,38 @@ func corsAllowedOriginV1(origin string) (string, bool) {
 	return "", false
 }
 
-func applyCORSHeadersV1(w http.ResponseWriter, r *http.Request) bool {
-	origin := strings.TrimSpace(r.Header.Get("Origin"))
-	allowedOrigin, ok := corsAllowedOriginV1(origin)
+// corsRequestOriginV1 distinguishes omission (native clients) from an explicit
+// empty or ambiguous Origin. Header.Get alone hides repeated header values.
+func corsRequestOriginV1(r *http.Request) (origin string, present bool, valid bool) {
+	for name, values := range r.Header {
+		if !strings.EqualFold(name, "Origin") {
+			continue
+		}
+		if present || len(values) != 1 {
+			return "", true, false
+		}
+		present = true
+		origin = strings.TrimSpace(values[0])
+		if origin == "" {
+			return "", true, false
+		}
+	}
+	return origin, present, true
+}
+
+func applyCORSHeadersV1(w http.ResponseWriter, r *http.Request, restricted bool, allowedOrigins []string) (bool, bool) {
+	origin, present, valid := corsRequestOriginV1(r)
+	allowedOrigin, ok := corsAllowedOriginV1(origin, restricted, allowedOrigins)
+	ok = ok && valid
 
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-QC-API-KEY")
-	w.Header().Set("Vary", "Origin")
+	w.Header().Add("Vary", "Origin")
+	w.Header().Del("Access-Control-Allow-Origin")
 
 	if ok {
 		w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
 	}
 
-	return ok
+	return ok, present
 }

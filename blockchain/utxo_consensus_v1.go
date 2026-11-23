@@ -208,7 +208,7 @@ func (bc *Blockchain) validateTransactionAgainstUTXOStateV1(
 			err,
 		)
 	}
-	if !tx.Verify() {
+	if !bc.verifyTransactionLockedV2(tx) {
 		return result, fmt.Errorf(
 			"%s: invalid transaction signature",
 			UTXOConsensusVersionV1,

@@ -2,7 +2,7 @@ package blockchain
 
 import (
 	"fmt"
-	"os"
+	"io"
 )
 
 // CommitValidatedBlockAndPersist owns the local-miner block commit boundary.
@@ -25,6 +25,9 @@ func (bc *Blockchain) CommitValidatedBlockAndPersist(
 
 	bc.stateMu.Lock()
 	defer bc.stateMu.Unlock()
+	if err := bc.validateBoundNetworkIdentityLockedV1(); err != nil {
+		return err
+	}
 
 	candidate := cloneBlockV1(block)
 
@@ -55,13 +58,9 @@ func (bc *Blockchain) CommitValidatedBlockAndPersist(
 	// The caller already owns stateMu exclusively here.
 	bc.UpdateUTXOSet()
 
-	tmp := filename + ".tmp"
-
-	if err := os.WriteFile(
-		tmp,
-		SerializeBlockchain(bc),
-		0o600,
-	); err != nil {
+	if err := persistChainFileV1(filename, func(writer io.Writer) error {
+		return encodeDiskChainV1(writer, bc)
+	}, bc.networkIdentity); err != nil {
 		bc.Blocks = bc.Blocks[:oldLength]
 		bc.UpdateUTXOSet()
 
@@ -71,22 +70,21 @@ func (bc *Blockchain) CommitValidatedBlockAndPersist(
 		)
 	}
 
-	if err := os.Rename(
-		tmp,
-		filename,
-	); err != nil {
-		_ = os.Remove(tmp)
-
-		bc.Blocks = bc.Blocks[:oldLength]
-		bc.UpdateUTXOSet()
-
-		return fmt.Errorf(
-			"install committed blockchain file: %w",
-			err,
-		)
-	}
-
 	bc.indexConfirmedBlockTransactionsLocked(candidate)
+	// Work may contain mempool transactions. Remove confirmed entries while
+	// retaining transactions admitted after this particular template was issued.
+	confirmed := make(map[string]bool)
+	for _, tx := range candidate.Transactions {
+		confirmed[transactionLocationIndexKey(tx.ID)] = true
+	}
+	remaining := make([]*Transaction, 0, len(bc.pendingTxs))
+	for _, tx := range bc.pendingTxs {
+		if !confirmed[transactionLocationIndexKey(tx.ID)] {
+			remaining = append(remaining, tx)
+		}
+	}
+	bc.pendingTxs = remaining
+	bc.rebuildTransactionLocationIndexesLocked()
 
 	return nil
 }

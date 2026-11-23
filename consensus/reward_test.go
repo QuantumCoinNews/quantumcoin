@@ -39,13 +39,14 @@ func TestValidateBlockRewardV1(t *testing.T) {
 			wantError:     true,
 		},
 		{
-			name:          "normal block rejects completed emission",
+			name:          "completed emission accepts verified fees only",
 			height:        100,
 			coinbaseTotal: 3,
 			subsidy:       0,
 			fees:          3,
 			totalSupply:   1_000,
-			wantError:     true,
+			wantFees:      3,
+			wantTotal:     3,
 		},
 		{
 			name:          "normal block rejects subsidy plus fee overflow",

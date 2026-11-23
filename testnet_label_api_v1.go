@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 
+	"quantumcoin/blockchain"
 	qcconfig "quantumcoin/config"
 )
 
@@ -18,13 +19,23 @@ func handleNetworkLabelV1(w http.ResponseWriter, r *http.Request) {
 	}
 
 	chainFile := ""
-	if cfg != nil {
-		chainFile = cfg.ChainFile
+	chain, runtimeConfig := nodeRuntime.Snapshot()
+	if runtimeConfig != nil {
+		chainFile = runtimeConfig.ChainFile
+	}
+	info := qcconfig.NetworkLabelForIdentityV1(chainFile, "", false)
+	if id := chain.NetworkIdentitySnapshotV1(); id != nil {
+		info = qcconfig.NetworkLabelForIdentityV1(chainFile, id.Network, id.GenesisDomain == blockchain.IsolatedLocalGenesisDomainV1)
+		info.GenesisHash = id.GenesisHash
+		if magic, ok := id.DomainMagicV2(); ok {
+			info.NetMagic = magic
+		}
 	}
 
-	info := qcconfig.GetNetworkLabelInfoV1(chainFile)
-
+	// Identity is public; the operator's filesystem location is not.
+	info.ChainFile = ""
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-QuantumCoin-Network", info.Network)
 	w.Header().Set("X-QuantumCoin-Network-Label", info.Label)
 	if info.IsTestnet {

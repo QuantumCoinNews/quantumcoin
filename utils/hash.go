@@ -3,7 +3,6 @@ package utils
 
 import (
 	"crypto/sha256"
-	"log"
 
 	//lint:ignore SA1019 QuantumCoin address compatibility requires RIPEMD-160.
 	"golang.org/x/crypto/ripemd160"
@@ -29,10 +28,7 @@ func DoubleSHA256(data []byte) []byte {
 func Hash160(data []byte) []byte {
 	shaHash := sha256.Sum256(data)
 	ripemd := ripemd160.New()
-	_, err := ripemd.Write(shaHash[:])
-	if err != nil {
-		log.Panicf("RIPEMD160 hashing failed: %v", err)
-	}
+	_, _ = ripemd.Write(shaHash[:])
 	return ripemd.Sum(nil)
 }
 

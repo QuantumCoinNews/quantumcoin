@@ -22,7 +22,7 @@ func devMinerEndpointAllowedV1(r *http.Request) bool {
 		return false
 	}
 
-	if isPublicTestnetAPITokenRequired() {
+	if apiRestrictedBindV1(getAPIListenAddr()) {
 		return false
 	}
 
@@ -62,12 +62,9 @@ func minerControlHasForwardingHeaders(r *http.Request) bool {
 		return true
 	}
 
-	for _, name := range []string{
-		"Forwarded",
-		"X-Forwarded-For",
-		"X-Real-IP",
-	} {
-		if strings.TrimSpace(r.Header.Get(name)) != "" {
+	for name := range r.Header {
+		name = strings.ToLower(name)
+		if name == "forwarded" || name == "x-real-ip" || name == "via" || strings.HasPrefix(name, "x-forwarded-") {
 			return true
 		}
 	}
@@ -94,6 +91,13 @@ func minerControlBrowserOriginAllowed(r *http.Request) bool {
 
 		if parsed.Scheme != "http" &&
 			parsed.Scheme != "https" {
+			return false
+		}
+		scheme := "http"
+		if r.TLS != nil {
+			scheme = "https"
+		}
+		if parsed.Scheme != scheme || parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.ForceQuery || strings.Contains(origin, "#") || parsed.Opaque != "" {
 			return false
 		}
 
@@ -134,26 +138,8 @@ func minerControlHeaderTokenValid(r *http.Request) bool {
 		return false
 	}
 
-	token := strings.TrimSpace(
-		r.Header.Get("X-QC-API-KEY"),
-	)
-
-	if token == "" {
-		auth := strings.TrimSpace(
-			r.Header.Get("Authorization"),
-		)
-
-		if strings.HasPrefix(
-			strings.ToLower(auth),
-			"bearer ",
-		) {
-			token = strings.TrimSpace(
-				auth[len("Bearer "):],
-			)
-		}
-	}
-
-	if token == "" {
+	token, valid := apiTokenFromHeadersV1(r)
+	if !valid {
 		return false
 	}
 

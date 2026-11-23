@@ -1,6 +1,7 @@
 # QuantumCoin Invalid Address Panic Hardening
 
-Status: QC_INVALID_ADDRESS_NO_PANIC_V1
+Document ID: `QC_INVALID_ADDRESS_NO_PANIC_V1`\
+Evidence stage: **Tested**. See [scope and release status](POLICY_EVIDENCE_REGISTER.md).
 
 Date: 20260617_221758
 

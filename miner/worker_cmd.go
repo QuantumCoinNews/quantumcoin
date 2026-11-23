@@ -3,7 +3,9 @@ package miner
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math/big"
 	"math/rand"
@@ -23,6 +25,11 @@ type Work struct {
 	Height   int
 	Miner    string
 	Template *blockchain.Block
+	// Header is the node-issued canonical preimage with a trailing nonce.
+	Header      []byte
+	PrevHash    string
+	GenesisHash string
+	ExpiresAt   time.Time
 }
 type Backend interface {
 	GetWork(ctx context.Context, address string) (*Work, error)
@@ -33,6 +40,9 @@ type WorkerConfig struct {
 	Threads      int
 	Address      string
 	GreenOnFound bool
+	// Zero selects a two-second tip check for backends supporting WorkCurrent.
+	RefreshInterval time.Duration
+	OnAccepted      func(height int, hash string)
 }
 
 type Worker struct {
@@ -40,6 +50,7 @@ type Worker struct {
 	cfg       WorkerConfig
 	HashCount uint64
 	found     uint64
+	initial   *Work
 }
 
 func NewWorker(backend Backend, cfg WorkerConfig) *Worker {
@@ -55,9 +66,21 @@ func (w *Worker) Run(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		work, err := w.backend.GetWork(ctx, w.cfg.Address)
+		work := w.initial
+		w.initial = nil
+		var err error
+		if work == nil {
+			work, err = w.backend.GetWork(ctx, w.cfg.Address)
+		}
+		if errors.Is(err, errNodeMiningDenied) {
+			return err
+		}
 		if err != nil || work == nil || work.Target == nil {
-			time.Sleep(300 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(300 * time.Millisecond):
+			}
 			continue
 		}
 		if err := w.solve(ctx, work); err != nil && ctx.Err() == nil {
@@ -84,6 +107,54 @@ func (w *Worker) solve(
 		once     sync.Once
 		resultCh = make(chan error, 1)
 	)
+	// Both the refresh path and winner serialize their final decision. Once
+	// submission starts, a tip update must not cancel an in-flight receipt.
+	var phaseMu sync.Mutex
+	submitting := false
+	watchCtx, stopWatch := context.WithCancel(ctx)
+	defer stopWatch()
+	watchDone := make(chan struct{})
+	if source, ok := w.backend.(interface {
+		WorkCurrent(context.Context, *Work) (bool, error)
+	}); ok {
+		interval := w.cfg.RefreshInterval
+		if interval <= 0 {
+			interval = 2 * time.Second
+		}
+		go func() {
+			defer close(watchDone)
+			ticker := time.NewTicker(interval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-watchCtx.Done():
+					return
+				case <-ticker.C:
+					current, err := source.WorkCurrent(watchCtx, work)
+					if err != nil && !errors.Is(err, errNodeMiningDenied) && (work.ExpiresAt.IsZero() || time.Now().Before(work.ExpiresAt)) {
+						continue
+					}
+					if current && err == nil {
+						continue
+					}
+					phaseMu.Lock()
+					if !submitting {
+						once.Do(func() {
+							close(stopCh)
+							if errors.Is(err, errNodeMiningDenied) {
+								resultCh <- err
+							}
+						})
+					}
+					phaseMu.Unlock()
+					return
+				}
+			}
+		}()
+	} else {
+		close(watchDone)
+	}
+	defer func() { stopWatch(); <-watchDone }()
 
 	wg.Add(w.cfg.Threads)
 
@@ -120,6 +191,7 @@ func (w *Worker) solve(
 				)
 
 				if err != nil {
+					phaseMu.Lock()
 					once.Do(func() {
 						close(stopCh)
 
@@ -128,6 +200,7 @@ func (w *Worker) solve(
 							err,
 						)
 					})
+					phaseMu.Unlock()
 
 					return
 				}
@@ -140,58 +213,64 @@ func (w *Worker) solve(
 					hash[:],
 				)
 
-				once.Do(func() {
-					close(stopCh)
+				phaseMu.Lock()
+				won := false
+				once.Do(func() { submitting = true; close(stopCh); won = true })
+				phaseMu.Unlock()
+				if !won {
+					return
+				}
 
-					submitted, submitErr :=
-						w.backend.Submit(
-							ctx,
-							work,
-							nonce,
-							hashHex,
-						)
+				submitted, submitErr :=
+					w.backend.Submit(
+						ctx,
+						work,
+						nonce,
+						hashHex,
+					)
 
-					if submitErr != nil {
-						resultCh <- fmt.Errorf(
-							"worker submit: %w",
-							submitErr,
-						)
+				if submitErr != nil {
+					resultCh <- fmt.Errorf(
+						"worker submit: %w",
+						submitErr,
+					)
 
-						return
+					return
+				}
+
+				if submitted {
+					atomic.AddUint64(
+						&w.found,
+						1,
+					)
+					if w.cfg.OnAccepted != nil {
+						w.cfg.OnAccepted(work.Height, hashHex)
 					}
 
-					if submitted {
-						atomic.AddUint64(
-							&w.found,
-							1,
-						)
-
-						if w.cfg.GreenOnFound {
-							fmt.Print("\x1b[32m")
-						}
-
-						fmt.Printf(
-							"\n[BLOK BULUNDU] h=%d nonce=%d hash=%s height=%d\n",
-							atomic.LoadUint64(
-								&w.HashCount,
-							),
-							nonce,
-							hashHex,
-							work.Height,
-						)
-
-						if w.cfg.GreenOnFound {
-							fmt.Print("\x1b[0m")
-						}
-					} else {
-						fmt.Printf(
-							"\n[GEÇERSİZ] nonce=%d hash=%s\n",
-							nonce,
-							hashHex,
-						)
+					if w.cfg.GreenOnFound {
+						fmt.Print("\x1b[32m")
 					}
-				})
 
+					fmt.Printf(
+						"\n[BLOK BULUNDU] h=%d nonce=%d hash=%s height=%d\n",
+						atomic.LoadUint64(
+							&w.HashCount,
+						),
+						nonce,
+						hashHex,
+						work.Height,
+					)
+
+					if w.cfg.GreenOnFound {
+						fmt.Print("\x1b[0m")
+					}
+				} else {
+					fmt.Printf(
+						"\n[GEÇERSİZ] nonce=%d hash=%s\n",
+						nonce,
+						hashHex,
+					)
+				}
 				return
 			}
 		}()
@@ -226,6 +305,16 @@ func hashWorkCandidateV1(
 		return false, zero, fmt.Errorf(
 			"worker: nil work target",
 		)
+	}
+
+	if len(work.Header) != 0 {
+		if len(work.Header) < 8 || nonce > blockchain.MaxConsensusNonceV1 {
+			return false, zero, fmt.Errorf("worker: invalid canonical header or nonce")
+		}
+		header := append([]byte(nil), work.Header...)
+		binary.BigEndian.PutUint64(header[len(header)-8:], nonce)
+		hash := sha256.Sum256(header)
+		return new(big.Int).SetBytes(hash[:]).Cmp(work.Target) < 0, hash, nil
 	}
 
 	if work.Template != nil {

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -20,7 +19,7 @@ func readLifecycleSource(
 ) string {
 	t.Helper()
 
-	data, err := os.ReadFile(path)
+	data, err := readNodeContractSourceV1(path)
 	if err != nil {
 		t.Fatalf(
 			"read %s: %v",
@@ -62,7 +61,8 @@ func TestAPICommandUsesDedicatedGracefulShutdown(t *testing.T) {
 
 	for _, required := range []string{
 		"apiReadOnlyMode = true",
-		"go trapAPIShutdown()",
+		"nodeRuntime.SetAPIReadOnly(true)",
+		"go trapAPIShutdown(shutdownBarrier)",
 		"startHTTPAPI()",
 	} {
 		if !strings.Contains(
@@ -75,10 +75,13 @@ func TestAPICommandUsesDedicatedGracefulShutdown(t *testing.T) {
 			)
 		}
 	}
+	if strings.Index(region, "nodeRuntime.SetAPIReadOnly(true)") > strings.Index(region, "startHTTPAPI()") {
+		t.Fatal("API runtime read-only policy is installed after serving starts")
+	}
 
 	if strings.Contains(
 		region,
-		"go trapAndShutdown()",
+		"go trapAndShutdown(shutdownBarrier)",
 	) {
 		t.Fatal(
 			"api command uses full node shutdown trap",
@@ -87,7 +90,7 @@ func TestAPICommandUsesDedicatedGracefulShutdown(t *testing.T) {
 
 	if strings.Index(
 		region,
-		"go trapAPIShutdown()",
+		"go trapAPIShutdown(shutdownBarrier)",
 	) > strings.Index(
 		region,
 		"startHTTPAPI()",
@@ -232,10 +235,9 @@ func TestBrowserGUILaunchersSerializeBackendStartup(t *testing.T) {
 	}
 
 	required := []string{
-		"/api/health",
-		"os.O_CREATE|os.O_EXCL|os.O_WRONLY",
-		"quantumcoin-api-",
-		".start.lock",
+		"apiclient.EnsureLocalBackendV1",
+		"apiclient.ConfiguredAPIPortV1",
+		`os.Getenv("QC_API_TOKEN")`,
 		"Process.Kill()",
 		"cmd.Wait()",
 		"Process.Release()",
@@ -288,10 +290,9 @@ func TestWalletGUIUsesSharedStartupLeaseAndFailedChildCleanup(
 		)
 
 	required := []string{
-		`canonicalAPIHealthPath = "/api/health"`,
-		"os.O_CREATE|os.O_EXCL|os.O_WRONLY",
-		"quantumcoin-api-",
-		".start.lock",
+		"apiclient.CanonicalHealthPathV1",
+		"apiclient.EnsureLocalBackendV1",
+		"apiclient.ProbeHealth",
 		"cmd.Process.Kill()",
 		"_ = cmd.Wait()",
 	}

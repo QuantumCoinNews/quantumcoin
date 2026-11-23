@@ -69,6 +69,49 @@ func TestWithCORSDevModeKeepsWildcard(t *testing.T) {
 	}
 }
 
+func TestExposedBindRequiresTokenAndExactOriginsRegardlessOfNetwork(t *testing.T) {
+	clearCORSTestEnv(t)
+	for _, network := range []string{"local-release", "mainnet", "unrecognized"} {
+		for _, bind := range []string{"0.0.0.0:8082", "[::]:8082", "node.example:8082"} {
+			t.Run(network+"/"+bind, func(t *testing.T) {
+				t.Setenv("QC_NETWORK", network)
+				t.Setenv("QC_API_TOKEN", "")
+				t.Setenv("QC_CORS_ALLOWED_ORIGINS", "*,https://wallet.example")
+				if err := validateAPIBindAuthV1(bind); err == nil {
+					t.Fatal("exposed bind accepted missing token")
+				}
+				handler := newHTTPAPIHandlerForListenV1(nil, NewEndpointLimiter(), bind)
+				send := func(method, origin string) *httptest.ResponseRecorder {
+					req := httptest.NewRequest(method, "/api/health", nil)
+					if origin != "" {
+						req.Header.Set("Origin", origin)
+					}
+					w := httptest.NewRecorder()
+					handler.ServeHTTP(w, req)
+					return w
+				}
+				// Changing environment bind or network labels cannot loosen the pinned middleware.
+				t.Setenv("QC_API_LISTEN", "127.0.0.1:8082")
+				if w := send(http.MethodGet, "https://untrusted.example"); w.Code != http.StatusForbidden ||
+					w.Header().Get("Access-Control-Allow-Origin") != "" {
+					t.Fatalf("unknown browser origin was allowed: %d %v", w.Code, w.Header())
+				}
+				if w := send(http.MethodOptions, "https://wallet.example"); w.Code != http.StatusNoContent ||
+					w.Header().Get("Access-Control-Allow-Origin") != "https://wallet.example" {
+					t.Fatalf("approved preflight failed: %d %v", w.Code, w.Header())
+				}
+				if w := send(http.MethodGet, ""); w.Code != http.StatusUnauthorized {
+					t.Fatalf("missing token was accepted: %d", w.Code)
+				}
+				t.Setenv("QC_API_TOKEN", "test-only")
+				if err := validateAPIBindAuthV1(bind); err != nil {
+					t.Fatal(err)
+				}
+			})
+		}
+	}
+}
+
 func TestWithCORSPublicTestnetRejectsUnknownPreflight(t *testing.T) {
 	clearCORSTestEnv(t)
 	t.Setenv("QC_PUBLIC_TESTNET", "1")

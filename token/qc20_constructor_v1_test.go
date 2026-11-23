@@ -1,10 +1,14 @@
 package token
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestQC20ConstructorV1OwnerlessHasNoPhantomSupply(
 	t *testing.T,
 ) {
+	t.Setenv("QC_NODE_DIR", t.TempDir())
 	const requestedSupply uint64 = 1_000_000
 
 	subject := NewQC20Token(
@@ -100,10 +104,10 @@ func TestQC20ConstructorV1ExplicitEmptyOwnerHasNoPhantomSupply(
 func TestQC20ConstructorV1OwnerReceivesFixedInitialSupply(
 	t *testing.T,
 ) {
-	const (
-		owner         = "token-owner"
-		initialSupply = uint64(1_000_000)
-	)
+	t.Setenv("QC_NODE_DIR", t.TempDir())
+	const initialSupply = uint64(1_000_000)
+	owner := canonicalAddressFixture("initial-supply-owner")
+	recipient := canonicalAddressFixture("initial-supply-recipient")
 
 	subject := NewQC20TokenWithOwner(
 		"Fixed Token",
@@ -155,10 +159,10 @@ func TestQC20ConstructorV1OwnerReceivesFixedInitialSupply(
 
 	if err := subject.MintByOwner(
 		owner,
-		"other",
+		recipient,
 		1,
-	); err == nil {
-		t.Fatal("mint above fixed initial supply unexpectedly succeeded")
+	); !errors.Is(err, ErrQC20FixedSupplyMintDisabled) {
+		t.Fatalf("mint error = %v, want fixed-supply rejection", err)
 	}
 
 	if got := subject.TotalSupply(); got != initialSupply {
@@ -167,7 +171,7 @@ func TestQC20ConstructorV1OwnerReceivesFixedInitialSupply(
 			got,
 		)
 	}
-	if got := subject.BalanceOf("other"); got != 0 {
+	if got := subject.BalanceOf(recipient); got != 0 {
 		t.Fatalf(
 			"rejected mint created recipient balance %d",
 			got,

@@ -1,6 +1,7 @@
 # QuantumCoin Testnet Faucet / Premine Security
 
-Status: QC_TESTNET_FAUCET_PREMINE_SECURITY_V1
+Document ID: `QC_TESTNET_FAUCET_PREMINE_SECURITY_V1`\
+Evidence stage: **Runtime wired**. See [scope and release status](POLICY_EVIDENCE_REGISTER.md).
 
 Date: 20260617_230052
 

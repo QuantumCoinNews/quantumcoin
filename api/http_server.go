@@ -1,6 +1,7 @@
 // Package api contains compatibility helpers retained after standalone HTTP retirement.
 //
-// QuantumCoin's canonical HTTP API is assembled and served by package main.
+// QuantumCoin's command adapters assemble the canonical HTTP API; node.Runtime
+// owns its server and lifecycle.
 // The former standalone package-api HTTP server is permanently retired.
 package api
 

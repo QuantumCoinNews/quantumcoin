@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"encoding/gob"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"quantumcoin/blockchain"
@@ -15,9 +17,14 @@ import (
 
 // peer: aynı bağlantı üzerinden eşzamanlı Encode yarışlarını önlemek için
 type peer struct {
-	conn net.Conn
-	enc  *gob.Encoder
-	mu   sync.Mutex // send lock
+	outbound        bool
+	rangeSync       atomic.Bool
+	syncAttempted   atomic.Bool
+	validatedHeight int
+	heightObserved  time.Time
+	conn            net.Conn
+	enc             *gob.Encoder
+	mu              sync.Mutex // send lock
 }
 
 func (p *peer) send(msg Message) error {
@@ -156,11 +163,16 @@ func HandleConnection(conn net.Conn, bc *blockchain.Blockchain) {
 		conn,
 		heartbeatStop,
 		PeerHeartbeatIntervalV1,
+		bc,
 	)
 	defer close(heartbeatStop)
 
-	dec := gob.NewDecoder(conn)
+	// Bound bytes consumed by one decoded message, including Gob framing and
+	// type definitions. Keep the decoder for its stream type table.
+	wireBudget := &io.LimitedReader{R: conn}
+	dec := gob.NewDecoder(wireBudget)
 	for {
+		wireBudget.N = MaxMessageSize + (64 << 10)
 		if err := conn.SetReadDeadline(
 			time.Now().Add(PeerReadIdleTimeoutV1),
 		); err != nil {
@@ -215,7 +227,8 @@ func HandleConnection(conn net.Conn, bc *blockchain.Blockchain) {
 			return
 		}
 
-		go handleMessage(msg, bc, conn)
+		// Preserve handshake and range order, and avoid a goroutine per packet.
+		handleMessage(msg, bc, conn)
 	}
 }
 
@@ -376,7 +389,7 @@ func handleMessage(msg Message, bc *blockchain.Blockchain, src net.Conn) {
 			return
 		}
 
-		expectedMagic := networkMagic()
+		expectedMagic := networkMagicForChainV1(bc)
 		if hs.Magic == "" || hs.Magic != expectedMagic {
 			ip := ""
 			if src != nil && src.RemoteAddr() != nil {
@@ -423,6 +436,16 @@ func handleMessage(msg Message, bc *blockchain.Blockchain, src net.Conn) {
 
 		setHandshakeOK(remoteAddr)
 		log.Printf("p2p: handshake OK from %s (magic=%s, version=%s)", remoteAddr, hs.Magic, hs.Version)
+		if p := registeredPeer(src); p != nil {
+			p.rangeSync.Store(hs.SyncVersion == 1)
+			if hs.SyncVersion == 1 {
+				if err := startChainSync(bc, src); err != nil {
+					logP2PReject("P2P_SYNC_START_FAILED", remoteAddr, err.Error(), nil)
+				}
+			} else if p.outbound {
+				sendToPeer(src, RequestMessage())
+			}
+		}
 
 	case MsgBlock:
 		// --- Peer'dan gelen blok ---
@@ -442,6 +465,7 @@ func handleMessage(msg Message, bc *blockchain.Blockchain, src net.Conn) {
 			return
 		}
 
+		recordValidatedPeerHeight(remoteAddr, blk.Index)
 		fmt.Printf("✓ New block accepted from peer %s (height=%d)\n", remoteAddr, blk.Index)
 
 		// Bu bloğu diğer peer’lara yay ama göndereni hariç tut
@@ -514,19 +538,7 @@ func handleMessage(msg Message, bc *blockchain.Blockchain, src net.Conn) {
 			return
 		}
 
-		if peerBC.BestHeightSnapshot() <= bc.BestHeightSnapshot() {
-			logP2PReject(
-				"P2P_CHAIN_NOT_LONGER_IGNORED",
-				remoteAddr,
-				"Peer chain is not longer than local chain; ignored.",
-				map[string]any{
-					"peerHeight":  peerBC.BestHeightSnapshot(),
-					"localHeight": bc.BestHeightSnapshot(),
-				},
-			)
-			return
-		}
-
+		recordValidatedPeerHeight(remoteAddr, peerBC.BestHeightSnapshot())
 		if err := bc.ReplaceChainFromPeerSynchronizedV1(
 			peerBC.AllBlocksSnapshot(),
 		); err != nil {
@@ -540,11 +552,33 @@ func handleMessage(msg Message, bc *blockchain.Blockchain, src net.Conn) {
 			return
 		}
 
-		fmt.Println("✓ Replaced chain with longer valid peer chain")
+		fmt.Println("✓ Replaced chain with valid peer chain carrying greater cumulative work")
 
 	case MsgRequest:
-		// Sadece istekte bulunan peer'a yanıt
-		sendToPeer(src, ChainMessage(bc))
+		// Compatibility for old peers. Never send an oversized legacy payload.
+		legacy := ChainMessage(bc)
+		if err := ValidateP2PMessageSizeStrictV1(legacy); err != nil {
+			sendToPeer(src, Message{Type: MsgError, Data: []byte("bounded range synchronization required")})
+		} else {
+			sendToPeer(src, legacy)
+		}
+
+	case MsgSyncRequest, MsgSyncChunk, MsgSyncReset:
+		var err error
+		switch msg.Type {
+		case MsgSyncRequest:
+			err = respondSyncRange(bc, src, msg.Data)
+		case MsgSyncChunk:
+			err = acceptSyncChunk(bc, src, msg.Data)
+		case MsgSyncReset:
+			err = resetChainSync(bc, src, msg.Data)
+		}
+		if err != nil {
+			logP2PReject("P2P_SYNC_REJECTED", remoteAddr, err.Error(), nil)
+			if src != nil {
+				_ = src.Close()
+			}
+		}
 
 	case MsgPing:
 		sendToPeer(src, PongMessage())
@@ -564,24 +598,31 @@ func handleMessage(msg Message, bc *blockchain.Blockchain, src net.Conn) {
 // DİKKAT: OnConnect/ban kontrolü artık node.go / ConnectToPeer içinde.
 // Burada sadece peers map'i ve handshake state'i yönetiyoruz.
 
-func registerPeer(conn net.Conn) {
+func registerPeer(conn net.Conn, outbound ...bool) {
 	peersMu.Lock()
 	defer peersMu.Unlock()
 	peers[conn.RemoteAddr().String()] = &peer{
-		conn: conn,
-		enc:  gob.NewEncoder(conn),
+		outbound: len(outbound) > 0 && outbound[0],
+		conn:     conn,
+		enc:      gob.NewEncoder(conn),
 	}
 }
 
 func unregisterPeer(conn net.Conn) {
 	peersMu.Lock()
-	defer peersMu.Unlock()
 
 	addr := conn.RemoteAddr().String()
-	if p, ok := peers[addr]; ok {
+	p := peers[addr]
+	if p != nil && p.conn != conn {
+		peersMu.Unlock()
+		return
+	}
+	if p != nil {
 		_ = p.conn.Close()
 		delete(peers, addr)
 	}
+	peersMu.Unlock()
+	releaseSyncOwner(p)
 
 	// Güvenlik tarafında connection sayısını düşür
 	if DefaultPeerSecurity != nil {
@@ -645,6 +686,7 @@ func runPeerHeartbeatV1(
 	conn net.Conn,
 	stop <-chan struct{},
 	interval time.Duration,
+	chains ...*blockchain.Blockchain,
 ) {
 	if conn == nil {
 		return
@@ -692,6 +734,9 @@ func runPeerHeartbeatV1(
 				)
 				_ = conn.Close()
 				return
+			}
+			if len(chains) > 0 {
+				retryChainSync(chains[0], p)
 			}
 		}
 	}

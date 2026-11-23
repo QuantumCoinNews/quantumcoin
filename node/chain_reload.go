@@ -25,14 +25,29 @@ func (r *Runtime) ReloadChainFromDiskIfChanged() (
 		)
 	}
 
+	// Lock order matches mining: mining -> reload metadata -> runtime.
+	// Capture the chain/stat only after serialization, never before waiting.
+	r.miningMu.Lock()
+	r.ChainReloadMu.Lock()
+	locked := true
+	defer func() {
+		if locked {
+			r.ChainReloadMu.Unlock()
+			r.miningMu.Unlock()
+		}
+	}()
 	r.mu.RLock()
 	readOnly := r.APIReadOnly
 	cfg := r.Config
 	current := r.Blockchain
+	busy := r.stopping || r.minerStop != nil || r.p2pChainPinned
 	r.mu.RUnlock()
 
 	if !readOnly {
 		return false, nil
+	}
+	if busy {
+		return false, fmt.Errorf("%s: chain is pinned by mining or P2P services", ChainReloadVersionV1)
 	}
 
 	if cfg == nil {
@@ -62,9 +77,6 @@ func (r *Runtime) ReloadChainFromDiskIfChanged() (
 		)
 	}
 
-	r.ChainReloadMu.Lock()
-	defer r.ChainReloadMu.Unlock()
-
 	if !r.ChainLastModifiedAt.IsZero() &&
 		r.ChainLastModifiedAt.Equal(
 			stat.ModTime(),
@@ -90,7 +102,7 @@ func (r *Runtime) ReloadChainFromDiskIfChanged() (
 	// Trusted loading has already restored local policies and maturity.
 
 	r.mu.Lock()
-	if r.Blockchain != current {
+	if r.Blockchain != current || !r.APIReadOnly || r.minerStop != nil || r.p2pChainPinned {
 		r.mu.Unlock()
 		return false, fmt.Errorf("%s: runtime chain changed during trusted reload", ChainReloadVersionV1)
 	}
@@ -99,6 +111,9 @@ func (r *Runtime) ReloadChainFromDiskIfChanged() (
 
 	r.ChainLastModifiedAt = stat.ModTime()
 	r.ChainLastSize = stat.Size()
+	r.ChainReloadMu.Unlock()
+	r.miningMu.Unlock()
+	locked = false
 
 	r.EmitEvent(
 		NodeEvent{

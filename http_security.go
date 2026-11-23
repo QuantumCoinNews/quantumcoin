@@ -33,13 +33,16 @@ const (
 	endpointLimiterMaxKeysPerShard        = 256
 	httpLimiterSweepEvery          uint64 = 64
 	httpSecurityEventCooldown             = time.Second
-	httpGuardStateRetention               = httpBanDuration + httpRateWindow
-	endpointLimiterMinRetention           = time.Minute
+	httpGuardStateRetention               = httpRateWindow
+	httpLimiterMaxKeyBytes                = 256
+	endpointLimiterMaxTimestamps          = 256
+	endpointLimiterMaxWindow              = 24 * time.Hour
 )
 
 var (
-	ErrHTTPBanned    = errors.New("http guard: banned")
-	ErrHTTPRateLimit = errors.New("http guard: too many requests")
+	ErrHTTPBanned          = errors.New("http guard: banned")
+	ErrHTTPRateLimit       = errors.New("http guard: too many requests")
+	ErrHTTPLimiterCapacity = errors.New("http guard: state or key budget exhausted")
 )
 
 type httpClientState struct {
@@ -57,8 +60,9 @@ type httpGuardShard struct {
 type HTTPGuard struct {
 	shards [httpLimiterShardCount]httpGuardShard
 
-	eventMu     sync.Mutex
-	nextEventAt time.Time
+	eventMu       sync.Mutex
+	nextEventAt   time.Time
+	eventInFlight bool
 }
 
 var defaultHTTPGuard = NewHTTPGuard()
@@ -106,63 +110,9 @@ func pruneHTTPGuardShardLocked(
 		}
 
 		if state.lastSeen.IsZero() ||
-			state.lastSeen.Before(cutoff) {
+			!state.lastSeen.After(cutoff) {
 			delete(shard.clients, key)
 		}
-	}
-}
-
-func evictOldestHTTPGuardKeyLocked(
-	shard *httpGuardShard,
-	now time.Time,
-) {
-	if shard == nil || len(shard.clients) == 0 {
-		return
-	}
-
-	oldestKey := ""
-	var oldestSeen time.Time
-
-	for key, state := range shard.clients {
-		if state == nil {
-			delete(shard.clients, key)
-			return
-		}
-
-		if !state.bannedUntil.IsZero() &&
-			now.Before(state.bannedUntil) {
-			continue
-		}
-
-		if oldestKey == "" ||
-			state.lastSeen.Before(oldestSeen) {
-			oldestKey = key
-			oldestSeen = state.lastSeen
-		}
-	}
-
-	if oldestKey != "" {
-		delete(shard.clients, oldestKey)
-		return
-	}
-
-	// If every retained record is currently banned, bounded memory still
-	// wins over indefinite key growth.
-	for key, state := range shard.clients {
-		if state == nil {
-			delete(shard.clients, key)
-			return
-		}
-
-		if oldestKey == "" ||
-			state.lastSeen.Before(oldestSeen) {
-			oldestKey = key
-			oldestSeen = state.lastSeen
-		}
-	}
-
-	if oldestKey != "" {
-		delete(shard.clients, oldestKey)
 	}
 }
 
@@ -195,11 +145,17 @@ func clientIPFromRequest(r *http.Request) string {
 }
 
 func (g *HTTPGuard) allow(ip string) error {
+	return g.allowAtV1(ip, time.Now())
+}
+
+func (g *HTTPGuard) allowAtV1(ip string, now time.Time) error {
 	if g == nil || ip == "" {
 		return nil
 	}
 
-	now := time.Now()
+	if len(ip) > httpLimiterMaxKeyBytes {
+		return ErrHTTPLimiterCapacity
+	}
 	windowStart := now.Add(-httpRateWindow)
 
 	shard := &g.shards[httpLimiterShardIndex(ip)]
@@ -231,17 +187,15 @@ func (g *HTTPGuard) allow(ip string) error {
 		}
 
 		if len(shard.clients) >= httpGuardMaxKeysPerShard {
-			evictOldestHTTPGuardKeyLocked(
-				shard,
-				now,
-			)
+			return ErrHTTPLimiterCapacity
 		}
 
 		state = &httpClientState{
-			lastSeen: now,
+			lastSeen:   now,
+			timestamps: make([]time.Time, 0, httpMaxRequestsPerIPInWindow+1),
 		}
 
-		shard.clients[ip] = state
+		shard.clients[strings.Clone(ip)] = state
 	} else {
 		state.lastSeen = now
 	}
@@ -313,20 +267,28 @@ func (g *HTTPGuard) Wrap(next http.Handler) http.Handler {
 		ip := clientIPFromRequest(r)
 
 		if err := g.allow(ip); err != nil {
-			logEvent := g.shouldLogEvent(time.Now())
+			logEvent := g.beginEventV1(time.Now())
+			if logEvent {
+				defer g.finishEventV1()
+			}
 
 			switch err {
+			case ErrHTTPLimiterCapacity:
+				if logEvent {
+					_ = security.AppendEvent(".", security.NewEvent("HTTP_LIMITER_CAPACITY_REACHED", security.SeverityWarning, "http_guard", httpLimiterEventLabelV1(ip), "HTTP limiter state/key budget exhausted; request denied.", map[string]any{"keysPerShard": httpGuardMaxKeysPerShard, "path": httpLimiterEventLabelV1(r.URL.Path)}))
+				}
+				writeError(w, http.StatusTooManyRequests, "Too Many Requests")
 			case ErrHTTPBanned:
 				if logEvent {
 					_ = security.AppendEvent(".", security.NewEvent(
 						"HTTP_BANNED_REQUEST",
 						security.SeverityHigh,
 						"http_guard",
-						ip,
+						httpLimiterEventLabelV1(ip),
 						"Blocked request from temporarily banned IP.",
 						map[string]any{
-							"path":   r.URL.Path,
-							"method": r.Method,
+							"path":   httpLimiterEventLabelV1(r.URL.Path),
+							"method": httpLimiterEventLabelV1(r.Method),
 						},
 					))
 				}
@@ -339,11 +301,11 @@ func (g *HTTPGuard) Wrap(next http.Handler) http.Handler {
 						"HTTP_RATE_LIMIT_TRIGGERED",
 						security.SeverityWarning,
 						"http_guard",
-						ip,
+						httpLimiterEventLabelV1(ip),
 						"HTTP rate limit triggered and temporary ban applied.",
 						map[string]any{
-							"path":   r.URL.Path,
-							"method": r.Method,
+							"path":   httpLimiterEventLabelV1(r.URL.Path),
+							"method": httpLimiterEventLabelV1(r.Method),
 							"window": httpRateWindow.String(),
 							"limit":  httpMaxRequestsPerIPInWindow,
 						},
@@ -358,11 +320,11 @@ func (g *HTTPGuard) Wrap(next http.Handler) http.Handler {
 						"HTTP_GUARD_ERROR",
 						security.SeverityWarning,
 						"http_guard",
-						ip,
+						httpLimiterEventLabelV1(ip),
 						err.Error(),
 						map[string]any{
-							"path":   r.URL.Path,
-							"method": r.Method,
+							"path":   httpLimiterEventLabelV1(r.URL.Path),
+							"method": httpLimiterEventLabelV1(r.Method),
 						},
 					))
 				}
@@ -399,6 +361,7 @@ func (g *HTTPGuard) Wrap(next http.Handler) http.Handler {
 type endpointHitState struct {
 	timestamps []time.Time
 	lastSeen   time.Time
+	expiresAt  time.Time
 }
 
 type endpointLimiterShard struct {
@@ -410,8 +373,9 @@ type endpointLimiterShard struct {
 type EndpointLimiter struct {
 	shards [httpLimiterShardCount]endpointLimiterShard
 
-	eventMu     sync.Mutex
-	nextEventAt time.Time
+	eventMu       sync.Mutex
+	nextEventAt   time.Time
+	eventInFlight bool
 }
 
 func NewEndpointLimiter() *EndpointLimiter {
@@ -424,18 +388,6 @@ func NewEndpointLimiter() *EndpointLimiter {
 	return limiter
 }
 
-func endpointLimiterRetention(
-	window time.Duration,
-) time.Duration {
-	retention := 2 * window
-
-	if retention < endpointLimiterMinRetention {
-		retention = endpointLimiterMinRetention
-	}
-
-	return retention
-}
-
 func pruneEndpointLimiterShardLocked(
 	shard *endpointLimiterShard,
 	now time.Time,
@@ -445,42 +397,18 @@ func pruneEndpointLimiterShardLocked(
 		return
 	}
 
-	cutoff := now.Add(-endpointLimiterRetention(window))
-
-	for key, state := range shard.hits {
-		if state == nil ||
-			state.lastSeen.IsZero() ||
-			state.lastSeen.Before(cutoff) {
-			delete(shard.hits, key)
-		}
-	}
-}
-
-func evictOldestEndpointLimiterKeyLocked(
-	shard *endpointLimiterShard,
-) {
-	if shard == nil || len(shard.hits) == 0 {
-		return
-	}
-
-	oldestKey := ""
-	var oldestSeen time.Time
-
 	for key, state := range shard.hits {
 		if state == nil {
 			delete(shard.hits, key)
-			return
+			continue
 		}
-
-		if oldestKey == "" ||
-			state.lastSeen.Before(oldestSeen) {
-			oldestKey = key
-			oldestSeen = state.lastSeen
+		expires := state.expiresAt
+		if expires.IsZero() {
+			expires = state.lastSeen.Add(window)
 		}
-	}
-
-	if oldestKey != "" {
-		delete(shard.hits, oldestKey)
+		if state.lastSeen.IsZero() || !now.Before(expires) {
+			delete(shard.hits, key)
+		}
 	}
 }
 
@@ -513,14 +441,21 @@ func (el *EndpointLimiter) allow(
 	window time.Duration,
 	max int,
 ) bool {
-	if el == nil ||
-		ip == "" ||
-		key == "" ||
-		max <= 0 {
+	return el.allowAtV1(ip, key, window, max, time.Now())
+}
+
+func (el *EndpointLimiter) allowAtV1(ip, key string, window time.Duration, max int, now time.Time) bool {
+	if el == nil {
 		return true
 	}
+	if ip == "" ||
+		key == "" ||
+		max <= 0 || max > endpointLimiterMaxTimestamps ||
+		window <= 0 || window > endpointLimiterMaxWindow ||
+		len(ip) > httpLimiterMaxKeyBytes || len(key) > httpLimiterMaxKeyBytes || len(ip)+len(key)+1 > httpLimiterMaxKeyBytes {
+		return false
+	}
 
-	now := time.Now()
 	windowStart := now.Add(-window)
 	compoundKey := ip + "|" + key
 
@@ -555,13 +490,12 @@ func (el *EndpointLimiter) allow(
 		}
 
 		if len(shard.hits) >= endpointLimiterMaxKeysPerShard {
-			evictOldestEndpointLimiterKeyLocked(
-				shard,
-			)
+			return false
 		}
 
 		state = &endpointHitState{
-			lastSeen: now,
+			lastSeen:   now,
+			timestamps: make([]time.Time, 0, max),
 		}
 
 		shard.hits[compoundKey] = state
@@ -578,12 +512,18 @@ func (el *EndpointLimiter) allow(
 	}
 
 	h = h[:j]
+	state.timestamps = h
+	state.lastSeen = now
+	if len(h) >= max {
+		return false
+	}
 	h = append(h, now)
 
 	state.timestamps = h
 	state.lastSeen = now
+	state.expiresAt = now.Add(window)
 
-	return len(h) <= max
+	return true
 }
 
 // WrapFunc documents the QuantumCoin component used by this module.
@@ -603,7 +543,8 @@ func (el *EndpointLimiter) WrapFunc(
 			window,
 			max,
 		) {
-			if el.shouldLogEvent(time.Now()) {
+			if el.beginEventV1(time.Now()) {
+				defer el.finishEventV1()
 				_ = security.AppendEvent(".", security.NewEvent(
 					"ENDPOINT_RATE_LIMIT_TRIGGERED",
 					security.SeverityWarning,
@@ -611,9 +552,9 @@ func (el *EndpointLimiter) WrapFunc(
 					ip,
 					"Critical endpoint rate limit triggered.",
 					map[string]any{
-						"endpointKey": key,
-						"path":        r.URL.Path,
-						"method":      r.Method,
+						"endpointKey": httpLimiterEventLabelV1(key),
+						"path":        httpLimiterEventLabelV1(r.URL.Path),
+						"method":      httpLimiterEventLabelV1(r.Method),
 						"window":      window.String(),
 						"limit":       max,
 					},

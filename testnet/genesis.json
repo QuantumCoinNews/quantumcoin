@@ -1,10 +1,22 @@
 {
+  "genesisHash": "1a710405a46b2d3e4d1efd113bb53fdbe12dc5419a7c5125e0ebe042ccd3b098",
+  "genesisTransactionID": "3f05733e0567f4a4d253d6160b1c8d0c3e6cd8e78e33874eab77be0abe0218ab",
+  "genesisMintedQC": 0,
+  "genesisTimestamp": 1725158400,
+  "genesisDomain": "QC_TESTNET_GENESIS_V4",
+  "version": "QC_TESTNET_GENESIS_FINGERPRINT_V4",
   "network": "testnet",
-  "genesisTime": "2025-09-01T00:00:00Z",
-  "initialDifficulty": 1,
-  "blockReward": 50,
-  "halvingIntervalBlocks": 1051200,
-  "premine": [
-    { "address": "QCTESTPREMINE1111111111111111111111111", "amount": 250000 }
-  ]
+  "genesisProfile": "network-v4",
+  "transactionEncoding": "QC_TX_CONTENT_V2",
+  "totalSupplyCapQC": 25500000,
+  "initialMiningRewardQC": 50,
+  "coinbaseMaturityBlocks": 10,
+  "initialNetworkDifficultyBits": 8,
+  "genesisQCDistribution": "none",
+  "qcBonusPayoutEnabled": false,
+  "extraBonusMintEnabled": false,
+  "status": "testnet-code-fingerprint-not-live-launch",
+  "mainnetFinalized": false,
+  "blocksPerHalving": 2102400,
+  "premineEnabled": false
 }

@@ -39,10 +39,9 @@ func canonicalTransactionIDPayloadV1(
 	return buffer.Bytes(), nil
 }
 
-// CanonicalTransactionIDV1 returns a stable transaction ID. Input signatures
-// and public keys are deliberately excluded, preserving the ID assigned to an
-// unsigned transaction after it is signed while binding all spend outpoints,
-// outputs, timestamp and transaction convenience fields.
+// CanonicalTransactionIDV1 preserves the historical Gob ID for legacy chains.
+// Gob type allocation order is process-local; fresh network-v4 consensus uses
+// CanonicalTransactionIDV2 instead. Signatures/public keys remain excluded.
 func CanonicalTransactionIDV1(
 	tx *Transaction,
 ) ([]byte, error) {
@@ -110,26 +109,6 @@ func transactionHalfCurveOrderV1() *big.Int {
 		transactionCurveOrderV1(),
 		1,
 	)
-}
-
-func normalizeTransactionLowSV1(
-	s *big.Int,
-) *big.Int {
-	return qconsensus.NormalizeTransactionLowSV1(s)
-}
-
-func isMinimalPositiveIntegerEncodingV1(
-	encoded []byte,
-) bool {
-	if len(encoded) == 0 {
-		return false
-	}
-
-	if len(encoded) > 1 && encoded[0] == 0 {
-		return false
-	}
-
-	return true
 }
 
 func decodeCanonicalTransactionSignatureV1(

@@ -147,7 +147,7 @@ func TestRuntimeReadinessRejectsCorruptBackup(
 	}
 }
 
-func TestRuntimeReadinessRejectsExistingRestoreTarget(
+func TestRuntimeReadinessRejectsCorruptRestoredArtifact(
 	t *testing.T,
 ) {
 	plan, cfg, evidence, hooks := runtimeReadinessFixtureV1(t)
@@ -450,6 +450,18 @@ func runtimeReadinessFixtureV1(
 		)
 	}
 
+	for _, item := range evidence {
+		if err := os.MkdirAll(filepath.Dir(item.RestoreTarget), 0700); err != nil {
+			t.Fatal(err)
+		}
+		data, err := os.ReadFile(item.BackupManifest.Backup)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(item.RestoreTarget, data, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	hooks := RuntimeValidationHooksV1{
 		VerifySchema: func(
 			domain DataDomain,

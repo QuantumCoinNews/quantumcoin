@@ -6,9 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/hex"
 	"errors"
-	"math/big"
-
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+	"quantumcoin/utils"
 )
 
 /*
@@ -38,16 +36,7 @@ func ImportPrivateKeyHex(h string) (*ecdsa.PrivateKey, error) {
 
 	// 3) Ham 32 bayt (secp256k1)
 	if len(raw) == 32 {
-		curve := secp256k1.S256()
-		d := new(big.Int).SetBytes(raw)
-		if d.Sign() == 0 || d.Cmp(curve.Params().N) >= 0 {
-			return nil, errors.New("invalid raw secp256k1 key")
-		}
-		priv := new(ecdsa.PrivateKey)
-		priv.D = d
-		priv.PublicKey.Curve = curve
-		priv.PublicKey.X, priv.PublicKey.Y = curve.ScalarBaseMult(raw)
-		return priv, nil
+		return utils.ImportRawSecpKeyV1(raw)
 	}
 
 	return nil, errors.New("unknown private key format")

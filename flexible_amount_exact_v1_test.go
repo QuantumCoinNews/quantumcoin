@@ -6,7 +6,9 @@ import (
 )
 
 func TestFlexibleAmountPreservesExactJSONNumberV1(t *testing.T) {
-	var req SendRequest
+	var req struct {
+		Amount FlexibleAmount `json:"amount"`
+	}
 
 	err := json.Unmarshal(
 		[]byte(`{"from":"a","to":"b","amount":0.000001}`),
@@ -26,7 +28,9 @@ func TestFlexibleAmountPreservesExactJSONNumberV1(t *testing.T) {
 }
 
 func TestFlexibleAmountPreservesExactJSONStringV1(t *testing.T) {
-	var req SendRequest
+	var req struct {
+		Amount FlexibleAmount `json:"amount"`
+	}
 
 	err := json.Unmarshal(
 		[]byte(`{"from":"a","to":"b","amount":"0.000010"}`),
@@ -46,7 +50,9 @@ func TestFlexibleAmountPreservesExactJSONStringV1(t *testing.T) {
 }
 
 func TestFlexibleAmountPreservesWholeQCNumberV1(t *testing.T) {
-	var req SendRequest
+	var req struct {
+		Amount FlexibleAmount `json:"amount"`
+	}
 
 	err := json.Unmarshal(
 		[]byte(`{"from":"a","to":"b","amount":1}`),
@@ -66,7 +72,9 @@ func TestFlexibleAmountPreservesWholeQCNumberV1(t *testing.T) {
 }
 
 func TestFlexibleAmountDoesNotFloatRoundV1(t *testing.T) {
-	var req SendRequest
+	var req struct {
+		Amount FlexibleAmount `json:"amount"`
+	}
 
 	err := json.Unmarshal(
 		[]byte(`{"from":"a","to":"b","amount":123.456789}`),
@@ -91,7 +99,9 @@ func TestFlexibleAmountRejectsNonNumberNonStringV1(t *testing.T) {
 		`{"amount":{}}`,
 		`{"amount":[]}`,
 	} {
-		var req SendRequest
+		var req struct {
+			Amount FlexibleAmount `json:"amount"`
+		}
 
 		if err := json.Unmarshal(
 			[]byte(body),
@@ -117,7 +127,9 @@ func TestFlexibleAmountRejectsInvalidQCAmountsV1(
 		`{"amount":"0.0000001"}`,
 		`{"amount":"1e-6"}`,
 	} {
-		var req SendRequest
+		var req struct {
+			Amount FlexibleAmount `json:"amount"`
+		}
 
 		if err := json.Unmarshal(
 			[]byte(body),

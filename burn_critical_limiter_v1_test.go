@@ -1,7 +1,6 @@
 package main
 
 import (
-	"os"
 	"strings"
 	"testing"
 )
@@ -9,7 +8,7 @@ import (
 // QMA-0062: explicit burn is a critical HTTP action.
 // This is API anti-abuse only; it is not a consensus identity rule.
 func TestCanonicalBurnRouteUsesCriticalLimiterV1(t *testing.T) {
-	data, err := os.ReadFile("main.go")
+	data, err := readNodeApplicationSourcesV1()
 	if err != nil {
 		t.Fatalf("read main.go: %v", err)
 	}

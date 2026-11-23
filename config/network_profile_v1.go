@@ -16,6 +16,13 @@ const (
 	QCNetworkProfileMainnetV1       NetworkProfileV1 = "mainnet"
 )
 
+const (
+	QCTestnetDefaultDifficultyBitsV1 = 8
+	QCIsolatedLocalChainFileV1       = "chain_data_local.dat"
+	QCIsolatedLocalHTTPPortV1        = ":28082"
+	QCIsolatedLocalP2PPortV1         = ":23001"
+)
+
 type NetworkProfileInfoV1 struct {
 	Profile                        NetworkProfileV1 `json:"profile"`
 	IsTestnet                      bool             `json:"is_testnet"`
@@ -39,39 +46,39 @@ func ResolveNetworkProfileV1(
 
 	chainLooksTestnet := strings.Contains(base, "testnet")
 
-	publicTestnet :=
-		networkProfileEnvBoolV1("QC_PUBLIC_TESTNET") ||
-			networkProfileEnvBoolV1("QC_TESTNET_PUBLIC_API")
-
-	testnetRequested :=
-		publicTestnet ||
-			IsTestnetModeEnvV1() ||
-			chainLooksTestnet
-
-	mainnetRequested :=
-		networkProfileEnvBoolV1("QC_MAINNET") ||
-			networkProfileEnvContainsV1(
-				"QC_NETWORK",
-				"mainnet",
-			) ||
-			networkProfileEnvContainsV1(
-				"QC_NETWORK_MODE",
-				"mainnet",
-			) ||
-			networkProfileEnvContainsV1(
-				"QC_CHAIN_MODE",
-				"mainnet",
-			) ||
-			networkProfileEnvContainsV1(
-				"QC_MODE",
-				"mainnet",
-			) ||
-			strings.EqualFold(
-				strings.TrimSpace(
-					os.Getenv("QC_NET_MAGIC"),
-				),
-				QCMainnetMagicV1,
-			)
+	publicTestnet := networkProfileEnvBoolV1("QC_PUBLIC_TESTNET") ||
+		networkProfileEnvBoolV1("QC_API_PUBLIC_TESTNET") ||
+		networkProfileEnvBoolV1("QC_TESTNET_PUBLIC_API")
+	testnetRequested := publicTestnet || networkProfileEnvBoolV1("QC_TESTNET") ||
+		strings.EqualFold(strings.TrimSpace(os.Getenv("QC_NET_MAGIC")), QCTestnetMagicV1) || chainLooksTestnet
+	mainnetRequested := networkProfileEnvBoolV1("QC_MAINNET") ||
+		strings.EqualFold(strings.TrimSpace(os.Getenv("QC_NET_MAGIC")), QCMainnetMagicV1)
+	localRequested := false
+	for _, name := range networkSelectorKeysV1 {
+		switch networkSelectorV1(name) {
+		case "":
+		case "local", "local-release":
+			localRequested = true
+		case "testnet", "testnet-local":
+			testnetRequested = true
+		case "testnet-public":
+			testnetRequested, publicTestnet = true, true
+		case "mainnet":
+			mainnetRequested = true
+		default:
+			return NetworkProfileInfoV1{}, fmt.Errorf("%s contains an unknown network profile", name)
+		}
+	}
+	for _, name := range []string{"QC_MAINNET", "QC_TESTNET", "QC_PUBLIC_TESTNET", "QC_API_PUBLIC_TESTNET", "QC_TESTNET_PUBLIC_API"} {
+		switch networkSelectorV1(name) {
+		case "", "1", "true", "yes", "on", "0", "false", "no", "off":
+		default:
+			return NetworkProfileInfoV1{}, fmt.Errorf("%s requires a boolean value", name)
+		}
+	}
+	if localRequested && (testnetRequested || mainnetRequested) {
+		return NetworkProfileInfoV1{}, fmt.Errorf("conflicting local and public network runtime signals")
+	}
 
 	if testnetRequested && mainnetRequested {
 		return NetworkProfileInfoV1{}, fmt.Errorf(
@@ -97,9 +104,13 @@ func ResolveNetworkProfileV1(
 		), nil
 	}
 
-	return networkProfileInfoV1(
-		QCNetworkProfileLocalReleaseV1,
-	), nil
+	profile := networkProfileInfoV1(QCNetworkProfileLocalReleaseV1)
+	if base == QCIsolatedLocalChainFileV1 {
+		profile.ExpectedChainFile = QCIsolatedLocalChainFileV1
+		profile.ExpectedHTTPPort = QCIsolatedLocalHTTPPortV1
+		profile.ExpectedP2PPort = QCIsolatedLocalP2PPortV1
+	}
+	return profile, nil
 }
 
 func networkProfileInfoV1(
@@ -113,7 +124,7 @@ func networkProfileInfoV1(
 			ExpectedChainFile:              QCTestnetChainFileV1,
 			ExpectedHTTPPort:               ":18082",
 			ExpectedP2PPort:                ":13001",
-			CanonicalDefaultDifficultyBits: 8,
+			CanonicalDefaultDifficultyBits: QCTestnetDefaultDifficultyBitsV1,
 			AllowsFixedDifficultyOverride:  false,
 		}
 
@@ -125,7 +136,7 @@ func networkProfileInfoV1(
 			ExpectedChainFile:              QCTestnetChainFileV1,
 			ExpectedHTTPPort:               ":18082",
 			ExpectedP2PPort:                ":13001",
-			CanonicalDefaultDifficultyBits: 8,
+			CanonicalDefaultDifficultyBits: QCTestnetDefaultDifficultyBitsV1,
 			AllowsFixedDifficultyOverride:  false,
 		}
 
@@ -163,14 +174,8 @@ func networkProfileEnvBoolV1(key string) bool {
 	}
 }
 
-func networkProfileEnvContainsV1(
-	key string,
-	needle string,
-) bool {
-	return strings.Contains(
-		strings.ToLower(
-			strings.TrimSpace(os.Getenv(key)),
-		),
-		strings.ToLower(needle),
-	)
+var networkSelectorKeysV1 = [...]string{"QC_NETWORK", "QC_NETWORK_MODE", "QC_CHAIN_MODE", "QC_MODE"}
+
+func networkSelectorV1(key string) string {
+	return strings.ToLower(strings.TrimSpace(os.Getenv(key)))
 }

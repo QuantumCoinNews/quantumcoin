@@ -327,9 +327,8 @@ func TestTokenAddressPolicyV1PersistenceRejectsAtomically(
 			100,
 			owner,
 		)
-		if err := target.Mint(owner, owner, 7); err != nil {
-			t.Fatalf("prepare Token target: %v", err)
-		}
+		target.balances[owner] = 7
+		target.totalSupply = 7
 
 		invalid := New(
 			"BAD",

@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math/big"
+	"quantumcoin/utils"
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
@@ -370,28 +371,11 @@ func ParseUncompressedPublicKeyV1(
 		)
 	}
 
-	curve := secp256k1.S256()
-
-	x := new(big.Int).SetBytes(
-		publicKey[1:33],
-	)
-
-	y := new(big.Int).SetBytes(
-		publicKey[33:65],
-	)
-
-	if !curve.IsOnCurve(x, y) {
-		return nil, fmt.Errorf(
-			"%s: public key is not on secp256k1 curve",
-			TransactionConsensusVersionV1,
-		)
+	parsed, err := secp256k1.ParsePubKey(publicKey)
+	if err != nil {
+		return nil, fmt.Errorf("invalid secp256k1 public key: %w", err)
 	}
-
-	return &ecdsa.PublicKey{
-		Curve: curve,
-		X:     x,
-		Y:     y,
-	}, nil
+	return parsed.ToECDSA(), nil
 }
 
 // UncompressedPublicKeyV1 private key içindeki public keyi
@@ -399,48 +383,10 @@ func ParseUncompressedPublicKeyV1(
 func UncompressedPublicKeyV1(
 	privateKey *ecdsa.PrivateKey,
 ) ([]byte, error) {
-	if privateKey == nil ||
-		privateKey.PublicKey.X == nil ||
-		privateKey.PublicKey.Y == nil {
-		return nil, fmt.Errorf(
-			"%s: private key is unavailable",
-			TransactionConsensusVersionV1,
-		)
+	if privateKey == nil {
+		return nil, fmt.Errorf("private key unavailable")
 	}
-
-	if !secp256k1.S256().IsOnCurve(
-		privateKey.PublicKey.X,
-		privateKey.PublicKey.Y,
-	) {
-		return nil, fmt.Errorf(
-			"%s: private key public point is not on secp256k1",
-			TransactionConsensusVersionV1,
-		)
-	}
-
-	publicKey := make(
-		[]byte,
-		0,
-		65,
-	)
-
-	publicKey = append(publicKey, 0x04)
-
-	publicKey = append(
-		publicKey,
-		padTransactionCoordinateV1(
-			privateKey.PublicKey.X.Bytes(),
-		)...,
-	)
-
-	publicKey = append(
-		publicKey,
-		padTransactionCoordinateV1(
-			privateKey.PublicKey.Y.Bytes(),
-		)...,
-	)
-
-	return publicKey, nil
+	return utils.SecpPublicBytesV1(&privateKey.PublicKey)
 }
 
 // SignTransactionDigestV1 32 byte transaction input özetini
@@ -534,21 +480,4 @@ func isMinimalPositiveIntegerEncodingV1(
 	}
 
 	return true
-}
-
-func padTransactionCoordinateV1(
-	value []byte,
-) []byte {
-	if len(value) >= 32 {
-		return append([]byte(nil), value...)
-	}
-
-	padded := make([]byte, 32)
-
-	copy(
-		padded[32-len(value):],
-		value,
-	)
-
-	return padded
 }

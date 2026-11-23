@@ -18,6 +18,9 @@ func ComposeMiningRewardUnitsV1(
 	totalSupplyQC int,
 	verifiedFees int,
 ) (subsidyUnits int, coinbaseTotal int, err error) {
+	if totalSupplyQC > 0 && totalMintedQC > totalSupplyQC {
+		return 0, 0, fmt.Errorf("%s: issued supply exceeds cap", MiningRewardDenominationVersionV1)
+	}
 	if verifiedFees < 0 {
 		return 0, 0, fmt.Errorf(
 			"%s: verified fees cannot be negative: %d",
@@ -41,8 +44,8 @@ func ComposeMiningRewardUnitsV1(
 		)
 	}
 
-	if subsidyUnits <= 0 {
-		return subsidyUnits, 0, nil
+	if subsidyUnits < 0 {
+		return 0, 0, fmt.Errorf("%s: negative subsidy", MiningRewardDenominationVersionV1)
 	}
 
 	if verifiedFees > math.MaxInt-subsidyUnits {

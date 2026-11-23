@@ -17,9 +17,9 @@ func newCoinbaseTxWithRewardV1(
 		return nil, ErrMinerAddressEmpty
 	}
 
-	if reward <= 0 {
+	if reward < 0 {
 		return nil, fmt.Errorf(
-			"coinbase reward must be positive",
+			"coinbase reward cannot be negative",
 		)
 	}
 
@@ -41,16 +41,4 @@ func newCoinbaseTxWithRewardV1(
 	transaction.ID = transaction.Hash()
 
 	return transaction, nil
-}
-
-// Retained only for source compatibility. Consensus mining paths pass an
-// explicit height-derived reward through newCoinbaseTxWithRewardV1.
-func newCoinbaseTx(
-	miner string,
-) (*Transaction, error) {
-	return newCoinbaseTxWithRewardV1(
-		miner,
-		GetCurrentReward(),
-		time.Now().UTC(),
-	)
 }

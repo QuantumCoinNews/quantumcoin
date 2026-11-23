@@ -51,12 +51,10 @@ func TestQMA0059RuntimePolicyGateDoesNotMutatePolicyInputV1(
 		t.Fatal("fresh runtime policy sets differ before validation")
 	}
 
-	// The runtime gate may pass or fail depending on the selected test
-	// configuration/network profile. This contract is specifically about
-	// ownership: validation must not rewrite caller-owned declarations.
-	//
-	// The existing runtime-policy tests cover acceptance/rejection behavior.
-	_ = policies
+	cfg := defaultRuntimePolicyConfigV1(t)
+	if err := ValidateRuntimePolicyGateV1(cfg, policies); err != nil {
+		t.Fatalf("valid policy gate rejected: %v", err)
+	}
 
 	after := policies
 
@@ -71,6 +69,10 @@ func TestQMA0059CorruptedRuntimePolicySetCannotMasqueradeAsCanonicalV1(
 	policies := DefaultRuntimePolicySetV1()
 
 	policies.Burn.SafeBoundary["doesNotMint"] = false
+	cfg := defaultRuntimePolicyConfigV1(t)
+	if err := ValidateRuntimePolicyGateV1(cfg, policies); err == nil {
+		t.Fatal("gate accepted corrupted burn boundary")
+	}
 
 	if reflect.DeepEqual(
 		policies,
@@ -81,6 +83,9 @@ func TestQMA0059CorruptedRuntimePolicySetCannotMasqueradeAsCanonicalV1(
 
 	policies = DefaultRuntimePolicySetV1()
 	policies.Economy.SafeBoundary["unexpectedQMA0059Key"] = true
+	if err := ValidateRuntimePolicyGateV1(cfg, policies); err == nil {
+		t.Fatal("gate accepted an unknown economy boundary key")
+	}
 
 	if reflect.DeepEqual(
 		policies,

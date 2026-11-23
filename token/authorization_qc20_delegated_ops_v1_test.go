@@ -94,7 +94,7 @@ func TestQC20DelegatedOperationsV1ApproveTransferAndRevoke(
 	spender := wallet.NewWallet()
 	recipient := wallet.NewWallet()
 
-	subject := NewQC20TokenWithOwner(
+	subject := newTestAuthorizedQC20Token(t,
 		"Delegated Token",
 		"DLG",
 		1000,
@@ -207,7 +207,7 @@ func TestQC20DelegatedOperationsV1LegacyMethodsAreLocked(
 	spender := wallet.NewWallet()
 	recipient := wallet.NewWallet()
 
-	subject := NewQC20TokenWithOwner(
+	subject := newTestAuthorizedQC20Token(t,
 		"Locked Delegation",
 		"LDG",
 		1000,
@@ -275,7 +275,7 @@ func TestQC20DelegatedOperationsV1RejectTamperingAndReplay(
 	recipient := wallet.NewWallet()
 	otherRecipient := wallet.NewWallet()
 
-	subject := NewQC20TokenWithOwner(
+	subject := newTestAuthorizedQC20Token(t,
 		"Tamper Token",
 		"TMP",
 		1000,
@@ -397,7 +397,7 @@ func TestQC20DelegatedOperationsV1FailureDoesNotConsumeNonce(
 	spender := wallet.NewWallet()
 	recipient := wallet.NewWallet()
 
-	subject := NewQC20TokenWithOwner(
+	subject := newTestAuthorizedQC20Token(t,
 		"Failure Token",
 		"FLR",
 		1000,
@@ -482,7 +482,7 @@ func TestQC20DelegatedOperationsV1SerializeSameSpenderNonce(
 	firstRecipient := wallet.NewWallet()
 	secondRecipient := wallet.NewWallet()
 
-	subject := NewQC20TokenWithOwner(
+	subject := newTestAuthorizedQC20Token(t,
 		"Concurrent Delegation",
 		"CDG",
 		1000,

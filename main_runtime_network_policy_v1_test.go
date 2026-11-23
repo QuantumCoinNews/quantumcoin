@@ -36,14 +36,14 @@ func setMainRuntimeConfigV1(
 	t.Helper()
 
 	oldCfg := cfg
-	oldBC := bc
+	oldRuntime := nodeRuntime
 
 	cfg = c
-	bc = nil
+	nodeRuntime = nil
 
 	t.Cleanup(func() {
 		cfg = oldCfg
-		bc = oldBC
+		nodeRuntime = oldRuntime
 	})
 }
 

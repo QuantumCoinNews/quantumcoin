@@ -1,0 +1,729 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "name": "empty-node",
+      "service": "node",
+      "environment": {},
+      "errors": {}
+    },
+    {
+      "name": "empty-game",
+      "service": "game",
+      "environment": {},
+      "errors": {}
+    },
+    {
+      "name": "empty-publisher",
+      "service": "publisher",
+      "environment": {},
+      "errors": {}
+    },
+    {
+      "name": "empty-tooling",
+      "service": "tooling",
+      "environment": {},
+      "errors": {}
+    },
+    {
+      "name": "boolean-0",
+      "service": "tooling",
+      "environment": {
+        "QC_TESTNET": "0"
+      },
+      "errors": {}
+    },
+    {
+      "name": "boolean-1",
+      "service": "tooling",
+      "environment": {
+        "QC_TESTNET": "1"
+      },
+      "errors": {}
+    },
+    {
+      "name": "boolean-true",
+      "service": "tooling",
+      "environment": {
+        "QC_TESTNET": "true"
+      },
+      "errors": {}
+    },
+    {
+      "name": "boolean-FALSE",
+      "service": "tooling",
+      "environment": {
+        "QC_TESTNET": "FALSE"
+      },
+      "errors": {}
+    },
+    {
+      "name": "boolean-yes",
+      "service": "tooling",
+      "environment": {
+        "QC_TESTNET": "yes"
+      },
+      "errors": {}
+    },
+    {
+      "name": "boolean-off",
+      "service": "tooling",
+      "environment": {
+        "QC_TESTNET": "off"
+      },
+      "errors": {}
+    },
+    {
+      "name": "unknown-boolean",
+      "service": "tooling",
+      "environment": {
+        "QC_TESTNET": "perhaps"
+      },
+      "errors": {
+        "QC_TESTNET": "invalid-boolean"
+      }
+    },
+    {
+      "name": "invalid-integer--1",
+      "service": "tooling",
+      "environment": {
+        "QC_TOTAL_SUPPLY": "-1"
+      },
+      "errors": {
+        "QC_TOTAL_SUPPLY": "invalid-integer"
+      }
+    },
+    {
+      "name": "invalid-integer-NaN",
+      "service": "tooling",
+      "environment": {
+        "QC_TOTAL_SUPPLY": "NaN"
+      },
+      "errors": {
+        "QC_TOTAL_SUPPLY": "invalid-integer"
+      }
+    },
+    {
+      "name": "invalid-integer-1.5",
+      "service": "tooling",
+      "environment": {
+        "QC_TOTAL_SUPPLY": "1.5"
+      },
+      "errors": {
+        "QC_TOTAL_SUPPLY": "invalid-integer"
+      }
+    },
+    {
+      "name": "invalid-integer-9007199254740992",
+      "service": "tooling",
+      "environment": {
+        "QC_TOTAL_SUPPLY": "9007199254740992"
+      },
+      "errors": {
+        "QC_TOTAL_SUPPLY": "invalid-integer"
+      }
+    },
+    {
+      "name": "invalid-integer-1e3",
+      "service": "tooling",
+      "environment": {
+        "QC_TOTAL_SUPPLY": "1e3"
+      },
+      "errors": {
+        "QC_TOTAL_SUPPLY": "invalid-integer"
+      }
+    },
+    {
+      "name": "valid-integer",
+      "service": "tooling",
+      "environment": {
+        "QC_TOTAL_SUPPLY": "25500000"
+      },
+      "errors": {}
+    },
+    {
+      "name": "invalid-difficulty",
+      "service": "tooling",
+      "environment": {
+        "QC_DIFFICULTY_BITS": "256"
+      },
+      "errors": {
+        "QC_DIFFICULTY_BITS": "invalid-integer"
+      }
+    },
+    {
+      "name": "port-zero",
+      "service": "tooling",
+      "environment": {
+        "QC_HTTP_PORT": "0"
+      },
+      "errors": {
+        "QC_HTTP_PORT": "invalid-port"
+      }
+    },
+    {
+      "name": "valid-ipv6-bind",
+      "service": "tooling",
+      "environment": {
+        "QC_API_LISTEN": "[::1]:8082"
+      },
+      "errors": {}
+    },
+    {
+      "name": "valid-uppercase-localhost-bind",
+      "service": "tooling",
+      "environment": {
+        "QC_API_LISTEN": "LOCALHOST:8082"
+      },
+      "errors": {}
+    },
+    {
+      "name": "bad-ipv6-bind",
+      "service": "tooling",
+      "environment": {
+        "QC_API_LISTEN": "::1:8082"
+      },
+      "errors": {
+        "QC_API_LISTEN": "invalid-bind"
+      }
+    },
+    {
+      "name": "public-needs-token",
+      "service": "tooling",
+      "environment": {
+        "QC_API_LISTEN": "0.0.0.0:8082"
+      },
+      "errors": {
+        "QC_API_TOKEN": "required-for-non-loopback-bind"
+      }
+    },
+    {
+      "name": "public-with-test-token",
+      "service": "tooling",
+      "environment": {
+        "QC_API_LISTEN": "0.0.0.0:8082",
+        "QC_API_TOKEN": "test-only-config-token"
+      },
+      "errors": {}
+    },
+    {
+      "name": "port-conflict",
+      "service": "tooling",
+      "environment": {
+        "QC_API_LISTEN": "127.0.0.1:8082",
+        "QC_HTTP_PORT": ":18082"
+      },
+      "errors": {
+        "QC_API_LISTEN": "http-port-conflict"
+      }
+    },
+    {
+      "name": "legacy-port-agrees",
+      "service": "tooling",
+      "environment": {
+        "QC_HTTP_PORT": ":18082",
+        "HTTP_PORT": "18082"
+      },
+      "errors": {}
+    },
+    {
+      "name": "legacy-port-conflicts",
+      "service": "tooling",
+      "environment": {
+        "QC_HTTP_PORT": ":18082",
+        "HTTP_PORT": "8082"
+      },
+      "errors": {
+        "QC_HTTP_PORT": "conflicting-alias",
+        "HTTP_PORT": "conflicting-alias"
+      }
+    },
+    {
+      "name": "remote-http",
+      "service": "tooling",
+      "environment": {
+        "QC_API_BASE": "http://example.invalid"
+      },
+      "errors": {
+        "QC_API_BASE": "invalid-origin"
+      }
+    },
+    {
+      "name": "origin-userinfo",
+      "service": "tooling",
+      "environment": {
+        "QC_API_BASE": "https://test-user:test-only-password@example.invalid"
+      },
+      "errors": {
+        "QC_API_BASE": "invalid-origin"
+      }
+    },
+    {
+      "name": "origin-path",
+      "service": "tooling",
+      "environment": {
+        "QC_API_BASE": "https://example.invalid/api"
+      },
+      "errors": {
+        "QC_API_BASE": "invalid-origin"
+      }
+    },
+    {
+      "name": "origin-query",
+      "service": "tooling",
+      "environment": {
+        "QC_API_BASE": "https://example.invalid/?token=test-only"
+      },
+      "errors": {
+        "QC_API_BASE": "invalid-origin"
+      }
+    },
+    {
+      "name": "origin-zero-port",
+      "service": "tooling",
+      "environment": {
+        "QC_API_BASE": "https://example.invalid:0"
+      },
+      "errors": {
+        "QC_API_BASE": "invalid-origin"
+      }
+    },
+    {
+      "name": "remote-https",
+      "service": "tooling",
+      "environment": {
+        "QC_API_BASE": "https://example.invalid"
+      },
+      "errors": {}
+    },
+    {
+      "name": "loopback-ipv6-origin",
+      "service": "tooling",
+      "environment": {
+        "QC_API_BASE": "http://[::1]:18082"
+      },
+      "errors": {}
+    },
+    {
+      "name": "origin-alias-agrees",
+      "service": "tooling",
+      "environment": {
+        "QC_API_BASE": "http://127.0.0.1:18082/",
+        "QC_NODE_API": "http://127.0.0.1:18082"
+      },
+      "errors": {}
+    },
+    {
+      "name": "origin-alias-conflicts",
+      "service": "tooling",
+      "environment": {
+        "QC_API_BASE": "https://one.invalid",
+        "QC_NODE_API": "https://two.invalid"
+      },
+      "errors": {
+        "QC_API_BASE": "conflicting-alias",
+        "QC_NODE_API": "conflicting-alias"
+      }
+    },
+    {
+      "name": "bot-alias-conflicts",
+      "service": "tooling",
+      "environment": {
+        "TELEGRAM_BOT_TOKEN": "test-only-a",
+        "QC_TELEGRAM_BOT_TOKEN": "test-only-b"
+      },
+      "errors": {
+        "TELEGRAM_BOT_TOKEN": "conflicting-alias",
+        "QC_TELEGRAM_BOT_TOKEN": "conflicting-alias"
+      }
+    },
+    {
+      "name": "admin-alias-conflicts",
+      "service": "tooling",
+      "environment": {
+        "TELEGRAM_GAME_ADMIN_TOKEN": "test-only-a",
+        "ADMIN_TOKEN": "test-only-b"
+      },
+      "errors": {
+        "TELEGRAM_GAME_ADMIN_TOKEN": "conflicting-alias",
+        "ADMIN_TOKEN": "conflicting-alias"
+      }
+    },
+    {
+      "name": "network-agrees",
+      "service": "tooling",
+      "environment": {
+        "QC_TESTNET": "1",
+        "QC_NETWORK": "testnet",
+        "QC_NET_MAGIC": "QC_TESTNET_V1",
+        "TELEGRAM_GAME_NETWORK": "testnet-local"
+      },
+      "errors": {}
+    },
+    {
+      "name": "network-conflict",
+      "service": "tooling",
+      "environment": {
+        "QC_TESTNET": "1",
+        "QC_MAINNET": "1"
+      },
+      "errors": {
+        "QC_TESTNET": "conflicting-network",
+        "QC_MAINNET": "conflicting-network"
+      }
+    },
+    {
+      "name": "game-node-network-conflict",
+      "service": "tooling",
+      "environment": {
+        "QC_NETWORK": "mainnet",
+        "TELEGRAM_GAME_CHAIN_MODE": "testnet"
+      },
+      "errors": {
+        "QC_NETWORK": "conflicting-network",
+        "TELEGRAM_GAME_CHAIN_MODE": "conflicting-network"
+      }
+    },
+    {
+      "name": "unknown-network",
+      "service": "tooling",
+      "environment": {
+        "QC_CHAIN_MODE": "test-net"
+      },
+      "errors": {
+        "QC_CHAIN_MODE": "invalid-network"
+      }
+    },
+    {
+      "name": "unknown-magic",
+      "service": "tooling",
+      "environment": {
+        "QC_NET_MAGIC": "QC_UNKNOWN_V1"
+      },
+      "errors": {
+        "QC_NET_MAGIC": "invalid-enum"
+      }
+    },
+    {
+      "name": "testnet-main-port",
+      "service": "tooling",
+      "environment": {
+        "QC_TESTNET": "1",
+        "QC_API_BASE": "http://127.0.0.1:8082"
+      },
+      "errors": {
+        "QC_API_BASE": "network-port-conflict"
+      }
+    },
+    {
+      "name": "testnet-main-port-explicit-compatibility",
+      "service": "tooling",
+      "environment": {
+        "QC_TESTNET": "1",
+        "QC_API_BASE": "http://127.0.0.1:8082",
+        "TELEGRAM_GAME_ALLOW_TESTNET_MAIN_PORT": "1"
+      },
+      "errors": {}
+    },
+    {
+      "name": "mainnet-test-port",
+      "service": "tooling",
+      "environment": {
+        "QC_MAINNET": "1",
+        "QC_API_BASE": "http://127.0.0.1:18082"
+      },
+      "errors": {
+        "QC_API_BASE": "network-port-conflict"
+      }
+    },
+    {
+      "name": "game-alias-mode-agrees",
+      "service": "tooling",
+      "environment": {
+        "QC_GAME_MINING_MODE": "SIMULATED",
+        "TELEGRAM_GAME_MINING_MODE": "TESTNET_SIMULATED"
+      },
+      "errors": {}
+    },
+    {
+      "name": "game-alias-mode-conflicts",
+      "service": "tooling",
+      "environment": {
+        "QC_GAME_MINING_MODE": "DISABLED",
+        "TELEGRAM_GAME_MINING_MODE": "REAL_CHAIN"
+      },
+      "errors": {
+        "QC_GAME_MINING_MODE": "conflicting-alias",
+        "TELEGRAM_GAME_MINING_MODE": "conflicting-alias"
+      }
+    },
+    {
+      "name": "unknown-game-mode",
+      "service": "game",
+      "environment": {
+        "QC_GAME_MINING_MODE": "typo-real"
+      },
+      "errors": {
+        "QC_GAME_MINING_MODE": "invalid-enum"
+      }
+    },
+    {
+      "name": "relative-game-db",
+      "service": "tooling",
+      "environment": {
+        "QC_GAME_DB": "db.sqlite"
+      },
+      "errors": {
+        "QC_GAME_DB": "invalid-absolute-path"
+      }
+    },
+    {
+      "name": "windows-absolute-game-db",
+      "service": "tooling",
+      "environment": {
+        "QC_GAME_DB": "C:/test-only-quantumcoin/db.sqlite"
+      },
+      "errors": {}
+    },
+    {
+      "name": "retired-ledger-db",
+      "service": "game",
+      "environment": {
+        "QC_TGWT_DB": "C:/test-only/db.sqlite"
+      },
+      "errors": {
+        "QC_TGWT_DB": "retired-setting"
+      }
+    },
+    {
+      "name": "monitor-auth-required",
+      "service": "tooling",
+      "environment": {
+        "QC_PUBLISHER_MONITOR_ORIGIN": "http://127.0.0.1:8082"
+      },
+      "errors": {
+        "QC_PUBLISHER_MONITOR_TOKEN": "required-with-monitor-origin"
+      }
+    },
+    {
+      "name": "monitor-remote-forbidden",
+      "service": "tooling",
+      "environment": {
+        "QC_PUBLISHER_MONITOR_ORIGIN": "https://example.invalid",
+        "QC_PUBLISHER_MONITOR_TOKEN": "test-only"
+      },
+      "errors": {
+        "QC_PUBLISHER_MONITOR_ORIGIN": "invalid-monitor-origin"
+      }
+    },
+    {
+      "name": "publisher-duplicate-platform",
+      "service": "publisher",
+      "environment": {
+        "QC_PUBLISHER_PLATFORMS": "youtube, youtube"
+      },
+      "errors": {
+        "QC_PUBLISHER_PLATFORMS": "invalid-platforms"
+      }
+    },
+    {
+      "name": "publisher-unknown-platform",
+      "service": "publisher",
+      "environment": {
+        "QC_PUBLISHER_PLATFORMS": "youtube,unknown"
+      },
+      "errors": {
+        "QC_PUBLISHER_PLATFORMS": "invalid-platforms"
+      }
+    },
+    {
+      "name": "publisher-language",
+      "service": "publisher",
+      "environment": {
+        "CONTENT_LANG": "tr"
+      },
+      "errors": {
+        "CONTENT_LANG": "invalid-enum"
+      }
+    },
+    {
+      "name": "publisher-cron",
+      "service": "publisher",
+      "environment": {
+        "QC_PUBLISHER_SCHEDULER": "cron"
+      },
+      "errors": {}
+    },
+    {
+      "name": "publisher-schedule",
+      "service": "publisher",
+      "environment": {
+        "QC_PUBLISHER_CRON": "* * * * *"
+      },
+      "errors": {
+        "QC_PUBLISHER_CRON": "invalid-enum"
+      }
+    },
+    {
+      "name": "node-ignores-publisher-setting",
+      "service": "node",
+      "environment": {
+        "QC_PUBLISHER_PLATFORMS": "unknown"
+      },
+      "errors": {}
+    },
+    {
+      "name": "publisher-ignores-game-setting",
+      "service": "publisher",
+      "environment": {
+        "QC_GAME_DB": "relative.sqlite"
+      },
+      "errors": {}
+    },
+    {
+      "name": "game-ignores-node-economic-setting",
+      "service": "game",
+      "environment": {
+        "QC_TOTAL_SUPPLY": "NaN"
+      },
+      "errors": {}
+    },
+    {
+      "name": "literal-feature-flag-required",
+      "service": "publisher",
+      "environment": {
+        "QC_PUBLISHER_AI_ENABLED": "true"
+      },
+      "errors": {
+        "QC_PUBLISHER_AI_ENABLED": "invalid-boolean-01"
+      }
+    },
+    {
+      "name": "literal-feature-flag-accepted",
+      "service": "publisher",
+      "environment": {
+        "QC_PUBLISHER_AI_ENABLED": "1"
+      },
+      "errors": {}
+    },
+    {
+      "name": "public-placeholder-rejected",
+      "service": "node",
+      "environment": {
+        "QC_API_LISTEN": "0.0.0.0:8082",
+        "QC_API_TOKEN": "__SET_TEST_ONLY_PLACEHOLDER__"
+      },
+      "errors": {
+        "QC_API_TOKEN": "placeholder-credential"
+      }
+    },
+    {
+      "name": "bracketed-ipv4-bind-rejected",
+      "service": "node",
+      "environment": {
+        "QC_API_LISTEN": "[127.0.0.1]:8082"
+      },
+      "errors": {
+        "QC_API_LISTEN": "invalid-bind"
+      }
+    },
+    {
+      "name": "bracketed-localhost-bind-rejected",
+      "service": "node",
+      "environment": {
+        "QC_API_LISTEN": "[localhost]:8082"
+      },
+      "errors": {
+        "QC_API_LISTEN": "invalid-bind"
+      }
+    },
+    {
+      "name": "padded-network-origin-port",
+      "service": "game",
+      "environment": {
+        "QC_MAINNET": "1",
+        "QC_API_BASE": "http://127.0.0.1:018082"
+      },
+      "errors": {
+        "QC_API_BASE": "network-port-conflict"
+      }
+    },
+    {
+      "name": "mapped-http-origin-rejected",
+      "service": "game",
+      "environment": {
+        "QC_API_BASE": "http://[::ffff:127.0.0.1]:8082"
+      },
+      "errors": {
+        "QC_API_BASE": "invalid-origin"
+      }
+    },
+    {
+      "name": "noncanonical-network-magic-rejected",
+      "service": "node",
+      "environment": {
+        "QC_NET_MAGIC": "qc_testnet_v1",
+        "QC_TESTNET": "true"
+      },
+      "errors": {
+        "QC_NET_MAGIC": "invalid-enum"
+      }
+    },
+    {
+      "name": "unknown-qc-setting-rejected",
+      "service": "node",
+      "environment": {
+        "QC_TYPO_NETWORK": "testnet"
+      },
+      "errors": {
+        "QC_TYPO_NETWORK": "unknown-setting"
+      }
+    },
+    {
+      "name": "incomplete-unc-path",
+      "service": "game",
+      "environment": {
+        "QC_GAME_DB": "\\\\test-only-server"
+      },
+      "errors": {
+        "QC_GAME_DB": "invalid-absolute-path"
+      }
+    },
+    {
+      "name": "absolute-unc-path",
+      "service": "game",
+      "environment": {
+        "QC_GAME_DB": "\\\\test-only-server\\share\\db.sqlite"
+      },
+      "errors": {}
+    },
+    {
+      "name": "unicode-whitespace-origin",
+      "service": "game",
+      "environment": {
+        "QC_API_BASE": "https://exam\u00a0ple.invalid"
+      },
+      "errors": {
+        "QC_API_BASE": "invalid-origin"
+      }
+    },
+    {
+      "name": "expanded-ipv6-loopback-origin",
+      "service": "game",
+      "environment": {
+        "QC_API_BASE": "http://[0:0:0:0:0:0:0:1]:8082"
+      },
+      "errors": {}
+    },
+    {
+      "name": "noncanonical-qc-key-case",
+      "service": "node",
+      "environment": {
+        "qc_mining_delay_ms": "not-an-integer"
+      },
+      "errors": {
+        "qc_mining_delay_ms": "noncanonical-key-case"
+      }
+    }
+  ]
+}

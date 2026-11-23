@@ -1,111 +1,32 @@
-# QuantumCoin Active Source Standard
+# QuantumCoin active source standard
 
-Status: QC_ACTIVE_SOURCE_STANDARD_V1
+Document ID: `QC_ACTIVE_SOURCE_STANDARD_V1`\
+Evidence stage: **Source verification**. See [scope and release status](POLICY_EVIDENCE_REGISTER.md).
 
-This document defines what is treated as active source, local-only data, runtime data, archive/backup material, or review material before testnet preparation.
+| Classification | Current scope |
+| --- | --- |
+| Node runtime | The root Go package and its transitive imports. The actual HTTP routes are registered in `node_app_router.go`. |
+| Embedded node WebUI | The explicit file list in `webui/embed.go` and its Go handler. The landing and operator miner ship with the node. |
+| Native GUI and wallet | `cmd/quantumcoin-gui` and `cmd/wallet` are separate desktop targets. `cmd/gui-smoke` is an optional diagnostic target. |
+| Separate browser application | `webwallet/src`, the HTML/Vite entrypoint and the npm manifest/lockfile build a read-only balance viewer. The resulting dist is generated. |
+| Separate services | The Telegram Game uses its documented Python entrypoint and data directory. Autopublisher uses its own documented command, configuration and package lock. |
+| Verification and tooling | Go `*_test.go`, actual Python and Node test entrypoints, `scripts/`, and audit/release `tools/` are maintained for their respective checks. |
+| Retired and historical | Root `src/` was an orphan game prototype. The old `gui/`, `ui/` and binary-only `qc-desktop/` layouts are retired. The old i18n loader and three top-level demonstration scripts have `.go.disabled` suffixes. The language JSON files are historical references. |
+| Generated and local runtime | `bin/`, `node_modules/`, `webwallet/dist/`, packaged executables, logs, chain data and databases are local outputs or release artifacts. |
+| Documentation | `docs/` is maintained reference material. Policy evidence and deployment boundaries are tracked separately in [the policy register](POLICY_EVIDENCE_REGISTER.md). |
 
-## Active source
+Use `go list -deps .` to inspect the node import graph and `go list ./...` to
+inspect buildable Go packages. Package presence is separate from a runtime import.
+Use each service's launch command and router to verify its active entrypoints.
+Actual faucet policy, testnet profile and transaction signature regressions
+live in the `config` and `blockchain` Go test packages.
 
-Active source means files/folders that can be used for build, test, review, or maintained project logic.
+Store actual environment files, wallet keys, recovery words, API credentials and
+chain/database files in local custody. Example environment templates contain
+placeholders. Release candidates require a manifest verified against an external
+trusted signer and the matching clean source commit.
 
-Core active source includes:
-
-- main.go
-- http_security.go
-- go.mod
-- go.sum
-- README.md
-- config examples
-- ai/
-- api/
-- blockchain/
-- cmd/
-- config/
-- consolefx/
-- docs/
-- game/
-- gui/
-- i18n/
-- internal/
-- miner/
-- nft/
-- p2p/
-- qc-desktop/
-- security/
-- src/
-- telegram_game/telegram_game/
-- testnet/
-- tests/
-- token/
-- tools/
-- ui/
-- utils/
-- wallet/
-- webui/
-- webwallet/
-- autopublisher/src/ and autopublisher source/config templates only
-
-## Local-only sensitive material
-
-These must never be committed or included in public audit/share packages:
-
-- .env
-- .wallet
-- wallet_priv.hex
-- miner_priv.hex
-- private keys
-- credentials.json
-- token.json
-- api keys
-- secrets
-
-## Runtime/generated material
-
-These are not active source:
-
-- chain_data.dat
-- chain_data_testnet.dat
-- qc_blockchain.db
-- *.db
-- *.dat
-- *.log
-- *.exe
-- *.dll
-- *.pdb
-- *.zip
-- node_modules/
-- cache/
-- tmp/
-- build outputs
-- release runtime outputs
-
-## Archive/backup material
-
-These are not active source:
-
-- *.bak
-- *.before_*
-- main.go.before_*
-- dev_api_before_*
-- old_working_release/
-- release_backup_*/
-- release_clean_test*/
-- _legacy_runtime_*/
-- _checkpoints/
-- _root_exe_quarantine/
-- _wm_review/
-
-## Rule
-
-Before testnet, active source must be distinguishable from local/runtime/archive material. Local/runtime/archive material may remain on the developer machine, but it must not be treated as active source or pushed to GitHub.
-
-## Environment template rule
-
-.env and .env.* files are local-only sensitive, except .env.example template files.
-
-Allowed example templates:
-- .env.example
-- autopublisher/.env.example
-- telegram_game/.env.example
-
-These files must not contain real keys, tokens, passwords, private keys, wallet secrets, or production credentials.
+Historical runtime directories include `old_working_release/`,
+`_legacy_runtime_*/`, `_wm_review/`, and local checkpoints. Keep them outside
+source/release inventories. See [legacy runtime custody](LEGACY_RUNTIME_CUSTODY.md)
+for snapshot and recovery handling.

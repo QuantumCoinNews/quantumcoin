@@ -13,7 +13,7 @@ type nftMonthlyProgramBindingStateV1 struct {
 	policy qconsensus.NFTMonthlyProgramPolicyV1
 }
 
-// This binds validated policy shape from trusted local game configuration,
+// BindLocalNFTMonthlyProgramSynchronizedV1 This binds validated policy shape from trusted local game configuration,
 // never from a peer or an award. It does not authenticate a program release,
 // select a user or enable block admission. No date or real keys are chosen.
 func (bc *Blockchain) BindLocalNFTMonthlyProgramSynchronizedV1(policy qconsensus.NFTMonthlyProgramPolicyV1) error {

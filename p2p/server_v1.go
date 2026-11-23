@@ -162,7 +162,7 @@ func (s *ServerV1) Serve(
 
 		sendToPeer(
 			conn,
-			HandshakeMessage(),
+			HandshakeMessage(s.blockchain),
 		)
 
 		go HandleConnection(

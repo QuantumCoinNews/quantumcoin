@@ -43,7 +43,7 @@ func TestCanonicalSendSourceAuthorityHasNoParallelArtifacts(
 func TestCanonicalSendSourceAuthorityRemainsRootOwned(
 	t *testing.T,
 ) {
-	mainBytes, err := os.ReadFile("main.go")
+	mainBytes, err := readNodeApplicationSourcesV1()
 	if err != nil {
 		t.Fatalf(
 			"read main.go: %v",

@@ -308,6 +308,17 @@ func validateQueuePolicyV1(
 				name,
 		)
 	}
+	// Monitoring is the only queue kind permitted to run without review.
+	if policy.Kind != QueueKindMonitoring &&
+		(!policy.RequiresAdminApproval || policy.AutoExecAllowed) {
+		return fmt.Errorf("non-monitoring queue requires approval and forbids auto-execution: %s", name)
+	}
+	// A required queue cannot acquire different permissions by relabeling its kind.
+	for _, required := range defaultQueuePoliciesV1() {
+		if required.Name == name && required.Kind != policy.Kind {
+			return fmt.Errorf("required queue kind mismatch: %s", name)
+		}
+	}
 
 	return nil
 }

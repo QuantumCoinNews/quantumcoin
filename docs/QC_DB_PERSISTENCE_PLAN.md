@@ -1,6 +1,7 @@
 # QuantumCoin DB Persistence Plan
 
-Status: QC_DB_PERSISTENCE_PLAN_V1
+Document ID: `QC_DB_PERSISTENCE_PLAN_V1`\
+Evidence stage: **Design**. See [scope and release status](POLICY_EVIDENCE_REGISTER.md).
 
 Date: 20260619_173735
 

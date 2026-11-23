@@ -12,22 +12,25 @@ type Effect struct {
 }
 
 func NewEffect(symbol string) *Effect {
-	return &Effect{symbol: symbol, last: time.Now()}
+	return &Effect{symbol: symbol}
 }
 
 // Frame documents the QuantumCoin component used by this module.
 // Frame: terminalde hafif animasyon (CPU dostu)
 func (e *Effect) Frame(step, nextHeight, difficulty int, hashrate float64) {
+	now := time.Now()
+	if now.Sub(e.last) < time.Second {
+		return
+	}
+	e.last = now
 	spin := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}[step%10]
 	bar := progressBar(step, 24)
-	line := fmt.Sprintf("\r%s %s Mining h=%d diff=%d %s  ~%.2f H/s",
+	fmt.Printf("%s %s Mining h=%d diff=%d %s  ~%.2f H/s\n",
 		spin, e.symbol, nextHeight, difficulty, bar, hashrate)
-	fmt.Print(line)
 }
 
-func (e *Effect) Clear() {
-	fmt.Print("\r" + strings.Repeat(" ", 90) + "\r")
-}
+// Clear is retained for callers of the previous in-place display.
+func (e *Effect) Clear() {}
 
 func progressBar(step, width int) string {
 	pos := step % width

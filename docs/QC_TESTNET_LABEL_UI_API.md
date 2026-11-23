@@ -1,34 +1,18 @@
-# QuantumCoin TESTNET Label UI/API
+# Network label API and UI
 
-Status: QC_TESTNET_LABEL_UI_API_V1
+Document ID: `QC_TESTNET_LABEL_UI_API_V1`\
+Evidence stage: **Tested**. See [scope and release status](POLICY_EVIDENCE_REGISTER.md).
 
-Date: 20260617_231316
+The public `GET /api/network/label` returns the node's bound network identity
+with `version`, `network`, `label`, `is_testnet` and `genesis_hash` when known.
+It sends `Cache-Control: no-store` and the network, label and testnet headers.
 
-UI/API must visibly expose the active network label.
+The active embedded landing loads `/network-label.mjs`. It starts at
+`UNVERIFIED` and renders a visible `TESTNET` badge when the label, network and
+genesis fields agree. The separate React balance viewer reads the same endpoint.
+The API obtains identity from the live runtime. See
+[runtime identity](RUNTIME_CONFIG_AND_NETWORK_IDENTITY.md).
 
-## API
-
-- GET /api/network/label
-- Response includes:
-  - version
-  - network
-  - label
-  - is_testnet
-  - badge
-  - warning
-  - chain_file
-  - net_magic
-- Headers include:
-  - X-QuantumCoin-Network
-  - X-QuantumCoin-Network-Label
-  - X-QuantumCoin-Testnet
-
-## UI
-
-- Web UI includes QC_TESTNET_LABEL_UI_V1 badge script.
-- In testnet mode, the UI displays a visible TESTNET badge.
-- Page title is prefixed with TESTNET when testnet is detected.
-
-## Safety boundary
-
-This does not mine, transfer, mint, change balances, change consensus, change rewards, or change total supply.
+The embedded module test checks testnet, mainnet, missing genesis, inconsistent
+labels and API failure. The root Go test verifies that a late environment
+change leaves the running testnet label intact.

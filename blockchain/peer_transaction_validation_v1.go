@@ -25,6 +25,12 @@ func (bc *Blockchain) ValidatePeerTransactionStrictV1(tx *Transaction) error {
 	if bc == nil {
 		return fmt.Errorf("peer tx strict validation: nil blockchain")
 	}
+	bc.stateMu.Lock()
+	defer bc.stateMu.Unlock()
+	return bc.validatePeerTransactionLockedV1(tx)
+}
+
+func (bc *Blockchain) validatePeerTransactionLockedV1(tx *Transaction) error {
 	if tx == nil {
 		return ErrNilTransaction
 	}
@@ -47,7 +53,7 @@ func (bc *Blockchain) ValidatePeerTransactionStrictV1(tx *Transaction) error {
 		return fmt.Errorf("peer tx has no outputs")
 	}
 
-	if err := peerTxVerifyNoPanicV1(tx); err != nil {
+	if err := bc.peerTxVerifyNoPanicV1(tx); err != nil {
 		return err
 	}
 
@@ -64,14 +70,14 @@ func (bc *Blockchain) ValidatePeerTransactionStrictV1(tx *Transaction) error {
 
 // peerTxVerifyNoPanicV1 converts malformed peer transaction panics into normal
 // reject errors. Peer input is untrusted and must never be able to crash the node.
-func peerTxVerifyNoPanicV1(tx *Transaction) (err error) {
+func (bc *Blockchain) peerTxVerifyNoPanicV1(tx *Transaction) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("peer tx invalid signature: %v", r)
 		}
 	}()
 
-	if !tx.Verify() {
+	if !bc.verifyTransactionLockedV2(tx) {
 		return fmt.Errorf("peer tx invalid signature")
 	}
 

@@ -1,6 +1,7 @@
 package blockchain
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
@@ -56,10 +57,12 @@ func TestCanonicalBurnMempoolAcceptsOwnerSignedAtomV3V1(
 		)
 	}
 
-	if bc.pendingTxs[0] != tx {
-		t.Fatal(
-			"accepted canonical burn transaction not found in mempool",
-		)
+	if bc.pendingTxs[0] == tx || !bytes.Equal(bc.pendingTxs[0].ID, tx.ID) {
+		t.Fatal("mempool did not store a detached copy of the accepted burn")
+	}
+	tx.Outputs[0].Amount++
+	if !bc.pendingTxs[0].Verify() {
+		t.Fatal("mutating the submitted transaction changed the accepted burn")
 	}
 }
 

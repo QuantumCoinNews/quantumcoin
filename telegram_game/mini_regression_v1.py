@@ -58,8 +58,9 @@ all_ok &= check("Withdraw list / ADMIN_REVIEW present", ok and data.get("ok") is
 })
 
 print("\n===== FILE MARKERS =====")
-html = Path("telegram_game/dev_ui/space_miner_prototype.html").read_text(encoding="utf-8")
-api = Path("telegram_game/dev_api.py").read_text(encoding="utf-8")
+source = Path(__file__).resolve().parent / "telegram_game"
+html = (source / "dev_ui/space_miner_prototype.html").read_text(encoding="utf-8")
+api = (source / "dev_api.py").read_text(encoding="utf-8")
 
 markers = [
     ("TGWT_API_PANEL_MINIMUM_V1", html),
@@ -79,7 +80,9 @@ for marker, src in markers:
 
 print("\n===== DATABASE CHECK =====")
 try:
-    conn = sqlite3.connect("dev_api_state.db")
+    from telegram_game.persistence import database_path
+    # Diagnostics must never create a cwd-relative empty replacement database.
+    conn = sqlite3.connect(Path(database_path()).as_uri() + "?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
 
     pool = conn.execute("SELECT total_u, distributed_u FROM tgwt_pool WHERE id=1").fetchone()

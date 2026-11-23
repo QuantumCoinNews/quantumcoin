@@ -109,21 +109,14 @@ func TestFungibleModelContractV1SnapshotsAreDefensive(
 		"owner",
 	)
 
-	controlled := New(
+	controlled := newTestTokenWithAllocations(t,
 		"MINE",
 		"Mineable Token",
 		8,
 		1000,
 		owner,
+		map[string]uint64{owner: 25},
 	)
-
-	if err := controlled.Mint(
-		owner,
-		owner,
-		25,
-	); err != nil {
-		t.Fatalf("mint controlled token: %v", err)
-	}
 
 	fixed := NewQC20TokenWithOwner(
 		"Fixed Token",

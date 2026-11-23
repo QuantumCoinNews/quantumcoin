@@ -1,6 +1,7 @@
 # QuantumCoin Founder Vesting Policy
 
-Status: QC_FOUNDER_VESTING_POLICY_V1
+Document ID: `QC_FOUNDER_VESTING_POLICY_V1`\
+Evidence stage: **Partial implementation**. See [scope and release status](POLICY_EVIDENCE_REGISTER.md).
 
 Date: 20260619_204927
 

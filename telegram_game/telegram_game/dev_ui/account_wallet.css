@@ -1,0 +1,24 @@
+/* Account controls share the Space Miner palette without global style overrides. */
+#qcRealSendCard { margin-top: 16px; }
+#qcRealSendCard label, #tgwtRewardsMount .account-actions label {
+  display: flex; flex-direction: column; gap: 7px; font-size: 13px; color: #cbd5e1;
+}
+#qcRealSendCard textarea, #tgwtRewardsMount .account-actions input {
+  width: 100%; box-sizing: border-box; padding: 11px 12px; border-radius: 10px;
+  border: 1px solid #38bdf84d; background: #020617b3; color: #f1f5f9;
+  font: inherit; outline-offset: 3px;
+}
+#qcRealSendCard textarea { margin-bottom: 12px; resize: vertical; }
+#qcRealSendCard button { margin: 6px 8px 14px 0; }
+#tgwtRewardsMount .account-actions {
+  display: grid; grid-template-columns: minmax(0,2fr) minmax(0,1fr) auto;
+  gap: 12px; align-items: end; margin: 16px 0;
+}
+#tgwtRewardsMount .account-actions button { min-height: 42px; }
+#qcRealSendCard [role=status], #tgwtRewardsMount [role=status] {
+  overflow-wrap: anywhere; color: #bae6fd; line-height: 1.5;
+}
+@media(max-width:700px) {
+  #tgwtRewardsMount .account-actions { grid-template-columns: 1fr; }
+  #tgwtRewardsMount .tgwt-ledger-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}

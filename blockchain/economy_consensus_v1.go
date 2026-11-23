@@ -10,12 +10,12 @@ import (
 const (
 	EconomyConsensusVersionV1 = "QC_ECONOMY_CONSENSUS_V1"
 
-	CanonicalGenesisUnixV1         int64 = 1_725_158_400
-	CanonicalBlockTimeSecondsV1    int64 = 30
-	CanonicalHalvingIntervalSecsV1 int64 = 63_072_000
+	CanonicalGenesisUnixV1         int64 = qconsensus.CanonicalGenesisUnixV1
+	CanonicalBlockTimeSecondsV1    int64 = qconsensus.CanonicalBlockTimeSecondsV1
+	CanonicalHalvingIntervalSecsV1 int64 = qconsensus.CanonicalHalvingIntervalSecondsV1
 	CanonicalBlocksPerHalvingV1          = int(CanonicalHalvingIntervalSecsV1 / CanonicalBlockTimeSecondsV1)
 	CanonicalInitialMiningRewardV1       = int(qconsensus.CanonicalInitialMiningRewardQCV1)
-	CanonicalMinimumMiningRewardV1       = 1
+	CanonicalMinimumMiningRewardV1       = int(qconsensus.CanonicalMinimumSubsidyQCV1)
 )
 
 func CanonicalGenesisTimeV1() time.Time {
@@ -145,6 +145,10 @@ func blockCoinbaseTotalV1(
 		for outputIndex, output := range transaction.Outputs {
 			outputAmounts[outputIndex] = int64(output.Amount)
 		}
+		if allowMultiple && block.Index == 0 && transactionIndex == 0 && isNetworkGenesisMarkerV1(transaction) {
+			// Structural commitment only. The trusted genesis hash pins its bytes.
+			outputAmounts = nil
+		}
 
 		transactions[transactionIndex] =
 			&qconsensus.CoinbaseTransactionViewV1{
@@ -203,9 +207,9 @@ func ValidateBlockSubsidyAgainstMintedV1(
 		totalSupply,
 	)
 
-	if expected <= 0 {
+	if expected < 0 {
 		return 0, fmt.Errorf(
-			"emission is complete at block height %d",
+			"negative subsidy at block height %d",
 			block.Index,
 		)
 	}

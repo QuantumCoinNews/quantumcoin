@@ -107,8 +107,8 @@ func TestMainServicesRequireRuntimePolicyBootstrapV1(
 ) {
 	mainFunction := runtimePolicyFunctionV1(
 		t,
-		"main.go",
-		"main",
+		"node_app_cli.go",
+		"runNodeCLI",
 	)
 
 	bootstrapPosition := runtimePolicyFirstCallV1(
@@ -220,5 +220,31 @@ func TestBootstrapUsesOnlyCanonicalHardforkReleaseV1(t *testing.T) {
 	}
 	if runtimePolicyFirstCallV1(f, "bootstrapWithHardforkReleaseV1") == token.NoPos {
 		t.Fatal("public bootstrap bypassed verified startup path")
+	}
+}
+
+func TestBootstrapValidatesChainUnconditionallyBeforePublishingRuntime(t *testing.T) {
+	function := runtimePolicyFunctionV1(t, "node/bootstrap.go", "bootstrapWithNFTStartupV1")
+	validation := token.NoPos
+	for _, statement := range function.Body.List {
+		guard, ok := statement.(*ast.IfStmt)
+		if !ok || guard.Init == nil {
+			continue
+		}
+		ast.Inspect(guard.Init, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if ok && runtimePolicyCallNameV1(call.Fun) == "chain.ValidateBlockchainSynchronized" {
+				validation = call.Pos()
+			}
+			return true
+		})
+	}
+	publication := runtimePolicyFirstCallV1(function, "NewRuntime")
+	if validation == token.NoPos || publication == token.NoPos || validation > publication {
+		t.Fatal("full chain validation must be unconditional and precede runtime construction")
+	}
+	loader := runtimePolicyFunctionV1(t, "node/bootstrap.go", "loadOrCreateBlockchainWithContextV1")
+	if runtimePolicyFirstCallV1(loader, "blockchain.LoadBlockchainFromFileWithLocalContextV1") == token.NoPos || runtimePolicyFirstCallV1(loader, "blockchain.LoadBlockchainFromFile") != token.NoPos {
+		t.Fatal("startup must validate persisted history against trusted local context")
 	}
 }

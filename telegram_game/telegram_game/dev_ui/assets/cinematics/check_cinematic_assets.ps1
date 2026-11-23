@@ -1,4 +1,26 @@
-$ErrorActionPreference = "Stop"
+﻿
+
+function Write-QcInfo {
+    param(
+        [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
+        [object[]] $Object,
+        [switch] $NoNewline,
+        [object] $Separator = " ",
+        [ConsoleColor] $ForegroundColor,
+        [ConsoleColor] $BackgroundColor
+    )
+
+    $null = $ForegroundColor
+    $null = $BackgroundColor
+
+
+    $null = $NoNewline
+
+    $text = ($Object | ForEach-Object { [string] $_ }) -join [string] $Separator
+
+    Write-Output $text
+}
+$null = "Stop"
 
 # Bu script assets\cinematics içinden çalışır.
 # PSScriptRoot = ...\dev_ui\assets\cinematics
@@ -23,22 +45,22 @@ $files = @(
   "cinematics\README_CINEMATICS.md"
 )
 
-Write-Host "`n===== Cinematic Asset Check =====" -ForegroundColor Cyan
-Write-Host "Base: $base" -ForegroundColor DarkGray
+Write-QcInfo "`n===== Cinematic Asset Check =====" -ForegroundColor Cyan
+Write-QcInfo "Base: $base" -ForegroundColor DarkGray
 
 foreach ($relative in $files) {
-  $path = Join-Path $base $relative
+  $path = Join-Path -Path $base -ChildPath $relative
 
   if (!(Test-Path $path)) {
-    Write-Host "MISSING: $relative" -ForegroundColor Red
+    Write-QcInfo "MISSING: $relative" -ForegroundColor Red
     continue
   }
 
   $item = Get-Item $path
 
   if ($item.Length -eq 0 -and ($item.Extension -in ".mp4", ".mp3", ".wav")) {
-    Write-Host "PLACEHOLDER: $relative is empty" -ForegroundColor Yellow
+    Write-QcInfo "PLACEHOLDER: $relative is empty" -ForegroundColor Yellow
   } else {
-    Write-Host "OK: $relative ($($item.Length) bytes)" -ForegroundColor Green
+    Write-QcInfo "OK: $relative ($($item.Length) bytes)" -ForegroundColor Green
   }
 }

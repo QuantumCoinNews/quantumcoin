@@ -1,34 +1,32 @@
-# QuantumCoin WebUI Embed / Dist Standard
+# Browser balance viewer and embedded node UI
 
-Status: QC_WEBUI_EMBED_DIST_STANDARD_V1
+Document ID: `QC_WEBUI_EMBED_DIST_STANDARD_V1`\
+Evidence stage: **Tested**. See [scope and release status](POLICY_EVIDENCE_REGISTER.md).
 
-This document defines how WebUI files are checked before testnet preparation.
+The node serves the files listed in `webui/embed.go`. The landing is
+informational and the browser miner is an operator tool. Both are served
+directly by the Go node.
 
-## Purpose
+The independent React balance viewer lives in `webwallet/`. On Node 22 with npm
+10, enter that directory and run:
 
-The WebUI must not be ambiguous before testnet.
+```sh
+npm ci
+npm test
+npm run build
+```
 
-We need to know:
+Distribute the resulting `webwallet/dist/` on a dedicated trusted origin with
+same-origin forwarding for `GET /api/network/label` and
+`GET /api/wallet/balance/{address}`. The balance endpoint requires the node's API
+token in the `X-QC-API-KEY` header. Use HTTPS for remote access. The development
+server binds to 127.0.0.1 and proxies these two paths to 127.0.0.1:8082.
 
-- where the WebUI source lives
-- whether Go uses //go:embed
-- whether embedded files exist
-- whether root index.html is active or legacy/static
-- whether go build . works without touching release outputs
+Use exact `balanceQc` and `spendableQc` strings from the response. The viewer
+clears the token field on submit and keeps wallet creation and signing with the
+native wallet or CLI. The node landing and independent viewer each show network
+identity from the same public API.
 
-## Expected safe rule
-
-- webui/ can be active source if it is imported by root main.go or a Go package.
-- webwallet/ can be active source if it is maintained separately.
-- root index.html must be classified later if it is not used by embed/runtime.
-- dist/build/generated folders must not be confused with source.
-- audit builds must go only to _local_audit_reports.
-- release/wallet-gui.exe and release/quantumcoin.exe must not be overwritten.
-
-## Testnet rule
-
-Before public testnet:
-
-- WebUI static serving must be explicit.
-- Missing embed/dist files must fail the check.
-- WebUI must clearly show TESTNET later in item 21.
+Keep npm's lockfile and source files in Git. Build output and dependencies are
+generated. Compare the SHA-256 values of the output tree when verifying two
+clean builds on the same toolchain and platform.

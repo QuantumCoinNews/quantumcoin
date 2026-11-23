@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 )
@@ -162,7 +161,7 @@ func TestStakeStatusUnavailableIsNotSuccessfulHTTP(t *testing.T) {
 		t,
 		rec,
 		http.StatusNotImplemented,
-		"stake status endpoint coming soon",
+		"staking is not implemented; no stake was created",
 	)
 }
 
@@ -196,7 +195,7 @@ func TestActiveResponseSourcesAvoidLegacyWriters(t *testing.T) {
 	}
 
 	for _, check := range checks {
-		src, err := os.ReadFile(check.path)
+		src, err := readNodeContractSourceV1(check.path)
 		if err != nil {
 			t.Fatalf(
 				"read %s: %v",

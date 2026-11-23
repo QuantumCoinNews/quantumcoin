@@ -5,8 +5,8 @@ package ai
 
 import "time"
 
-// TxLite documents the QuantumCoin component used by this module.
-// tx'leri hafifletilmiş halde AI'ye veriyoruz
+// TxLite is a detached advisory observation. Runtime callers obtain it from
+// canonical blockchain snapshots, never from an API body or peer message.
 type TxLite struct {
 	TxID          string    `json:"tx_id"`
 	WalletAddress string    `json:"wallet_address"`

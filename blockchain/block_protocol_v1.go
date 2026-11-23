@@ -1,6 +1,7 @@
 package blockchain
 
 import (
+	"context"
 	"fmt"
 	"math/big"
 	"time"
@@ -19,6 +20,14 @@ func NewBlockAtProtocolV1(
 	nftRecords []NFTMintRecordV1,
 	protocol qconsensus.ProtocolVersion,
 ) (*Block, error) {
+	return newBlockAtProtocolAndTimeV1(index, txs, prevHash, miner, difficulty, nftRecords, protocol, time.Now().Unix())
+}
+
+func newBlockAtProtocolAndTimeV1(index int, txs []*Transaction, prevHash []byte, miner string, difficulty int, nftRecords []NFTMintRecordV1, protocol qconsensus.ProtocolVersion, timestamp int64) (*Block, error) {
+	return newBlockAtProtocolAndTimeContextV1(context.Background(), index, txs, prevHash, miner, difficulty, nftRecords, protocol, timestamp)
+}
+
+func newBlockAtProtocolAndTimeContextV1(ctx context.Context, index int, txs []*Transaction, prevHash []byte, miner string, difficulty int, nftRecords []NFTMintRecordV1, protocol qconsensus.ProtocolVersion, timestamp int64) (*Block, error) {
 	switch protocol {
 	case qconsensus.ProtocolLegacyV1,
 		qconsensus.ProtocolContinuityV2,
@@ -29,24 +38,17 @@ func NewBlockAtProtocolV1(
 				protocol,
 			)
 		}
-		return NewBlock(index, txs, prevHash, miner, difficulty)
+		return newBlockAtTimeContextV1(ctx, index, txs, prevHash, miner, difficulty, timestamp)
 
 	case qconsensus.ProtocolNFTV4:
-		return newNFTV4BlockV1(index, txs, prevHash, miner, difficulty, nftRecords)
+		return newNFTV4BlockContextV1(ctx, index, txs, prevHash, miner, difficulty, nftRecords, timestamp)
 
 	default:
 		return nil, fmt.Errorf("unsupported block protocol %q", protocol)
 	}
 }
 
-func newNFTV4BlockV1(
-	index int,
-	txs []*Transaction,
-	prevHash []byte,
-	miner string,
-	difficulty int,
-	nftRecords []NFTMintRecordV1,
-) (*Block, error) {
+func newNFTV4BlockContextV1(ctx context.Context, index int, txs []*Transaction, prevHash []byte, miner string, difficulty int, nftRecords []NFTMintRecordV1, timestamp int64) (*Block, error) {
 	if _, err := NFTMintRecordsDigestV1(nftRecords); err != nil {
 		return nil, fmt.Errorf("create NFT V4 block: %w", err)
 	}
@@ -62,7 +64,7 @@ func newNFTV4BlockV1(
 
 	block := &Block{
 		Index:            index,
-		Timestamp:        time.Now().Unix(),
+		Timestamp:        timestamp,
 		Transactions:     txs,
 		PrevHash:         append([]byte(nil), prevHash...),
 		Miner:            miner,
@@ -81,6 +83,9 @@ func newNFTV4BlockV1(
 	}
 
 	for nonce := uint64(0); ; nonce++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		hash, err := qconsensus.ComputePoWHashV4(header, nonce)
 		if err != nil {
 			return nil, fmt.Errorf("create NFT V4 block PoW: %w", err)
@@ -89,6 +94,9 @@ func newNFTV4BlockV1(
 		var hashValue big.Int
 		hashValue.SetBytes(hash[:])
 		if hashValue.Cmp(target) < 0 {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			nonceInt, err := ConsensusNonceIntV1(nonce)
 			if err != nil {
 				return nil, fmt.Errorf("create NFT V4 block nonce: %w", err)

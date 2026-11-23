@@ -1,7 +1,12 @@
 package ai
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
+	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -27,9 +32,17 @@ type AIAlert struct {
 }
 
 var (
-	alertsMu     sync.RWMutex
-	alertsBuffer []AIAlert
-	maxAlerts    = 100
+	alertsMu      sync.RWMutex
+	alertsBuffer  []AIAlert
+	maxAlerts     = 100
+	alertSequence atomic.Uint64
+	alertPrefix   = func() string {
+		var nonce [16]byte
+		if _, err := rand.Read(nonce[:]); err == nil {
+			return hex.EncodeToString(nonce[:])
+		}
+		return fmt.Sprintf("%d-%d", os.Getpid(), time.Now().UnixNano())
+	}()
 )
 
 // PushAlert documents the QuantumCoin component used by this module.
@@ -44,9 +57,9 @@ func PushAlert(level AlertLevel, code, message, source string) {
 	a := AIAlert{
 		ID:        newAlertID(),
 		Level:     level,
-		Code:      code,
-		Message:   message,
-		Source:    source,
+		Code:      boundedText(code),
+		Message:   boundedText(message),
+		Source:    boundedText(source),
 		CreatedAt: time.Now().Unix(),
 	}
 
@@ -75,8 +88,20 @@ func setAlertsFromSnapshot(alerts []AIAlert) {
 	alertsMu.Lock()
 	defer alertsMu.Unlock()
 
+	if len(alerts) > maxAlerts {
+		alerts = alerts[len(alerts)-maxAlerts:]
+	}
 	alertsBuffer = make([]AIAlert, len(alerts))
 	copy(alertsBuffer, alerts)
+	seen := make(map[string]bool)
+	for i := range alertsBuffer {
+		a := &alertsBuffer[i]
+		if a.ID == "" || seen[a.ID] {
+			a.ID = newAlertID()
+		}
+		seen[a.ID] = true
+		a.Code, a.Message, a.Source = boundedText(a.Code), boundedText(a.Message), boundedText(a.Source)
+	}
 	if len(alertsBuffer) > maxAlerts {
 		alertsBuffer = alertsBuffer[len(alertsBuffer)-maxAlerts:]
 	}
@@ -84,5 +109,5 @@ func setAlertsFromSnapshot(alerts []AIAlert) {
 
 // Basit ID üretici
 func newAlertID() string {
-	return time.Now().Format("20060102T150405")
+	return fmt.Sprintf("%s-%d", alertPrefix, alertSequence.Add(1))
 }

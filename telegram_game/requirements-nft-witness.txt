@@ -1,4 +1,2 @@
-# Independent operator service; install in its own virtual environment.
--r requirements-nft-evidence.txt
-fastapi==0.115.2
-uvicorn==0.30.3
+# Compatibility alias. Install the canonical locked environment.
+-r requirements.txt

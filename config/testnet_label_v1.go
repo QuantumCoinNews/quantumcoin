@@ -7,44 +7,52 @@ import "strings"
 const QCTestnetLabelUIAPIVersionV1 = "QC_TESTNET_LABEL_UI_API_V1"
 
 type NetworkLabelInfoV1 struct {
-	Version   string `json:"version"`
-	Network   string `json:"network"`
-	Label     string `json:"label"`
-	IsTestnet bool   `json:"is_testnet"`
-	Badge     string `json:"badge"`
-	Warning   string `json:"warning,omitempty"`
-	ChainFile string `json:"chain_file,omitempty"`
-	NetMagic  string `json:"net_magic,omitempty"`
+	Version     string `json:"version"`
+	Network     string `json:"network"`
+	Label       string `json:"label"`
+	IsTestnet   bool   `json:"is_testnet"`
+	Badge       string `json:"badge"`
+	Warning     string `json:"warning,omitempty"`
+	ChainFile   string `json:"chain_file,omitempty"`
+	NetMagic    string `json:"net_magic,omitempty"`
+	GenesisHash string `json:"genesis_hash,omitempty"`
 }
 
 func GetNetworkLabelInfoV1(chainFile string) NetworkLabelInfoV1 {
-	cf := strings.TrimSpace(chainFile)
-	base := chainFileBaseNameV1(cf)
+	profile, err := ResolveNetworkProfileV1(chainFile)
+	if err != nil {
+		return NetworkLabelForIdentityV1(chainFile, "", false)
+	}
+	network := string(profile.Profile)
+	if profile.IsTestnet {
+		network = QCNetworkTestnetV1
+	}
+	return NetworkLabelForIdentityV1(chainFile, network, profile.ExpectedChainFile == QCIsolatedLocalChainFileV1)
+}
 
-	isTestnet := IsTestnetModeEnvV1() || strings.Contains(base, "testnet")
-
-	if isTestnet {
-		return NetworkLabelInfoV1{
-			Version:   QCTestnetLabelUIAPIVersionV1,
-			Network:   QCNetworkTestnetV1,
-			Label:     "TESTNET",
-			IsTestnet: true,
-			Badge:     "TESTNET",
-			Warning:   "TESTNET MODE - not mainnet funds",
-			ChainFile: cf,
-			NetMagic:  QCTestnetMagicV1,
+// NetworkLabelForIdentityV1 formats an already selected network. Public HTTP
+// handlers pass the pinned chain identity rather than environment or path hints.
+func NetworkLabelForIdentityV1(chainFile, network string, isolatedLocal bool) NetworkLabelInfoV1 {
+	info := NetworkLabelInfoV1{
+		Version: QCTestnetLabelUIAPIVersionV1, Network: network,
+		ChainFile: chainFileBaseNameV1(chainFile),
+	}
+	switch network {
+	case QCNetworkTestnetV1:
+		info.Label, info.NetMagic, info.IsTestnet = "TESTNET", QCTestnetMagicV1, true
+		info.Warning = "TESTNET MODE - not mainnet funds"
+	case QCNetworkMainnetV1:
+		info.Label, info.NetMagic = "MAINNET", QCMainnetMagicV1
+	case string(QCNetworkProfileLocalReleaseV1):
+		info.Label, info.NetMagic = "LOCAL RELEASE", "QC_LOCAL_RELEASE_V1"
+		if isolatedLocal {
+			info.Label, info.NetMagic = "ISOLATED LOCAL RELEASE", "QC_LOCAL_RELEASE_V2"
 		}
+	default:
+		info.Network, info.Label = "unknown", "UNVERIFIED"
 	}
-
-	return NetworkLabelInfoV1{
-		Version:   QCTestnetLabelUIAPIVersionV1,
-		Network:   QCNetworkMainnetV1,
-		Label:     "MAINNET",
-		IsTestnet: false,
-		Badge:     "MAINNET",
-		ChainFile: cf,
-		NetMagic:  QCMainnetMagicV1,
-	}
+	info.Badge = info.Label
+	return info
 }
 
 func RequireVisibleTestnetLabelV1(chainFile string, visibleLabel string) error {

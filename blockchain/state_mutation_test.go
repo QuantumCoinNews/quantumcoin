@@ -1,10 +1,15 @@
 package blockchain
 
 import (
+	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
+
+	"quantumcoin/wallet"
 )
 
 func TestBlockchainCoinbaseMaturityWriterIsSynchronized(
@@ -59,7 +64,6 @@ func TestCoreMutationEntrypointsUseCanonicalWriteLock(
 		"AddBlock",
 		"addBlockFromPeerAfterStrictV2",
 		"AddTransaction",
-		"MineBlock",
 		"replaceChainAfterStrictV1",
 		"SetCoinbaseMaturity",
 	} {
@@ -79,6 +83,58 @@ func TestCoreMutationEntrypointsUseCanonicalWriteLock(
 				functionName,
 			)
 		}
+	}
+}
+
+// Mining wrappers delegate lock acquisition to context-aware entry points.
+// Verify exclusion through actual calls rather than requiring lock text in
+// the wrapper: none may publish a candidate while a writer owns the state.
+func TestMiningEntryPointsWaitForCanonicalWriteLock(t *testing.T) {
+	for _, name := range []string{"memory", "memory-context", "persistent", "persistent-context"} {
+		t.Run(name, func(t *testing.T) {
+			chain := NewIsolatedLocalBlockchainV1(50, 0)
+			address := wallet.NewWallet().GetAddress()
+			file := filepath.Join(t.TempDir(), "chain.dat")
+			chain.stateMu.Lock()
+			locked := true
+			defer func() {
+				if locked {
+					chain.stateMu.Unlock()
+				}
+			}()
+			started, done := make(chan struct{}), make(chan error, 1)
+			go func() {
+				close(started)
+				var err error
+				switch name {
+				case "memory":
+					_, err = chain.MineBlock(address, 1)
+				case "memory-context":
+					_, err = chain.MineBlockContextV1(context.Background(), address, 1)
+				case "persistent":
+					_, err = chain.MineBlockAndPersistV1(address, 1, file)
+				case "persistent-context":
+					_, err = chain.MineBlockAndPersistContextV1(context.Background(), address, 1, file)
+				}
+				done <- err
+			}()
+			<-started
+			select {
+			case err := <-done:
+				t.Fatal("mining bypassed the active state writer", err)
+			case <-time.After(30 * time.Millisecond):
+			}
+			chain.stateMu.Unlock()
+			locked = false
+			select {
+			case err := <-done:
+				if err != nil || chain.BestHeightSnapshot() != 1 {
+					t.Fatal("mining did not commit after writer released state", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("mining did not resume after writer released state")
+			}
+		})
 	}
 }
 

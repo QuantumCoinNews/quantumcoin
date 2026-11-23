@@ -1,0 +1,18 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug QuantumCoin local API",
+      "type": "go",
+      "request": "launch",
+      "mode": "debug",
+      "program": "${workspaceFolder}",
+      "args": ["api"],
+      "env": {
+        "QC_NETWORK": "local-release",
+        "QC_API_LISTEN": "127.0.0.1:8082"
+      },
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}

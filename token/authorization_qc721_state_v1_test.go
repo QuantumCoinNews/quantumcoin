@@ -14,20 +14,12 @@ func TestQC721AuthorizationStateV1PersistsNonceAndNFT(
 	collectionOwner := wallet.NewWallet().GetAddress()
 	holder := wallet.NewWallet().GetAddress()
 
-	subject := NewQC721TokenWithOwner(
+	subject := newTestAuthorizedQC721WithItems(t,
 		"Factory NFT",
 		"FNFT",
 		collectionOwner,
+		[]QC721InitialItemV1{{TokenID: 7, Owner: holder, TokenURI: "ipfs://factory-token-7"}},
 	)
-
-	if err := subject.MintByOwner(
-		collectionOwner,
-		holder,
-		7,
-		"ipfs://factory-token-7",
-	); err != nil {
-		t.Fatalf("mint test NFT: %v", err)
-	}
 
 	subject.mu.Lock()
 	commitTokenAuthorizationNonceV1(
@@ -163,7 +155,7 @@ func TestQC721AuthorizationStateV1DomainIsStable(
 ) {
 	collectionOwner := wallet.NewWallet().GetAddress()
 
-	subject := NewQC721TokenWithOwner(
+	subject := newTestAuthorizedQC721Token(t,
 		"Stable NFT",
 		"SNFT",
 		collectionOwner,

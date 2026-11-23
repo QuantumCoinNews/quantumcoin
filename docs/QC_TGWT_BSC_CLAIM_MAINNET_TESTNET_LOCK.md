@@ -1,6 +1,7 @@
 # QuantumCoin TGWT BSC Claim Mainnet/Testnet Lock
 
-Status: TGWT_BSC_CLAIM_MAINNET_TESTNET_LOCK_V1
+Document ID: `TGWT_BSC_CLAIM_MAINNET_TESTNET_LOCK_V1`\
+Evidence stage: **Partial implementation**. See [scope and release status](POLICY_EVIDENCE_REGISTER.md).
 
 Date: 20260618_211116
 

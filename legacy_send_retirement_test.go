@@ -15,7 +15,7 @@ func readLegacySendContractSource(
 	t.Helper()
 
 	path := filepath.Join(parts...)
-	data, err := os.ReadFile(path)
+	data, err := readNodeContractSourceV1(path)
 	if err != nil {
 		t.Fatalf(
 			"read %s: %v",
@@ -73,11 +73,10 @@ func TestCanonicalSendRetainsSecurityGuards(
 
 	required := []string{
 		`if r.Method != http.MethodPost {`,
-		`if req.From == "" || req.To == "" || strings.TrimSpace(req.Amount.String()) == "" {`,
+		`decoder.DisallowUnknownFields()`,
+		`boundedSignedEnvelopeV1(tx)`,
 		`qconsensus.ParseQCToAtomsV1(value)`,
-		`wallet.ImportPrivateKeyHex(privHex)`,
-		`tx.Sign(priv)`,
-		`tx.Verify()`,
+		`bc.VerifyTransaction(tx)`,
 		`bc.AddTransaction(tx)`,
 		`nodeRuntime.BroadcastP2P(p2p.TxMessage(tx))`,
 		`qnode.DefaultHTTPServerOptionsV1()`,
@@ -112,7 +111,7 @@ func TestWalletHasNoLegacySendFallback(
 	required := []string{
 		`apiBase()+"/api/tx/send"`,
 		`validateCanonicalSendResponse`,
-		`if !out.Success`,
+		`return walletsigner.ValidateSendResponseV1`,
 	}
 
 	for _, item := range required {
@@ -196,7 +195,7 @@ func TestNoRuntimeLocalCLITransferBridge(
 					return nil
 				}
 
-				data, err := os.ReadFile(path)
+				data, err := readNodeContractSourceV1(path)
 				if err != nil {
 					return err
 				}

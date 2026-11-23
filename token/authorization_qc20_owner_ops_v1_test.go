@@ -55,7 +55,7 @@ func TestQC20OwnerOperationsV1TransferAndBurn(
 	owner := wallet.NewWallet()
 	recipient := wallet.NewWallet()
 
-	subject := NewQC20TokenWithOwner(
+	subject := newTestAuthorizedQC20Token(t,
 		"Factory Token",
 		"FCT",
 		1000,
@@ -137,7 +137,7 @@ func TestQC20OwnerOperationsV1LegacyMethodsAreLocked(
 	owner := wallet.NewWallet()
 	recipient := wallet.NewWallet()
 
-	subject := NewQC20TokenWithOwner(
+	subject := newTestAuthorizedQC20Token(t,
 		"Locked Token",
 		"LCK",
 		1000,
@@ -201,7 +201,7 @@ func TestQC20OwnerOperationsV1RejectTamperingAndReplay(
 	owner := wallet.NewWallet()
 	recipient := wallet.NewWallet()
 
-	subject := NewQC20TokenWithOwner(
+	subject := newTestAuthorizedQC20Token(t,
 		"Replay Token",
 		"RPL",
 		1000,
@@ -279,7 +279,7 @@ func TestQC20OwnerOperationsV1FailureDoesNotConsumeNonce(
 
 	owner := wallet.NewWallet()
 
-	subject := NewQC20TokenWithOwner(
+	subject := newTestAuthorizedQC20Token(t,
 		"Failure Token",
 		"FLR",
 		100,
@@ -341,7 +341,7 @@ func TestQC20OwnerOperationsV1SerializeSameNonce(
 	owner := wallet.NewWallet()
 	recipient := wallet.NewWallet()
 
-	subject := NewQC20TokenWithOwner(
+	subject := newTestAuthorizedQC20Token(t,
 		"Concurrent Token",
 		"CON",
 		100,

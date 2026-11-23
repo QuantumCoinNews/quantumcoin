@@ -95,6 +95,9 @@ func (bc *Blockchain) ValidateCanonicalBlockEnvelopeV1(
 			transactionViews[transactionIndex] = nil
 			continue
 		}
+		if err := bc.validateTransactionIDLockedV2(transaction); err != nil {
+			return zero, fmt.Errorf("block transaction[%d] commitment: %w", transactionIndex, err)
+		}
 
 		outputAmounts := make(
 			[]int64,

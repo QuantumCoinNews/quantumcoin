@@ -7,8 +7,8 @@
 // Notlar:
 // - Sadece var olan tipleri (Block, Transaction, Blockchain) ve standart kütüphaneleri kullanır.
 // - Ekstra bir dış bağımlılık eklemez.
-// - main.go içinde QC_STRICT_CHAIN=1 ise ValidateBlockchain() çağırarak
-//   tam zincir doğrulamayı aktif edebilirsin.
+// - Kanonik runtime başlangıcı, servisler açılmadan önce tam zincir
+//   doğrulamasını koşulsuz çalıştırır.
 
 package blockchain
 
@@ -52,7 +52,7 @@ func ValidateTransactionBasic(tx *Transaction) error {
 		return ErrNilTx
 	}
 
-	if err := ValidateTransactionIDV1(tx); err != nil {
+	if err := validateTransactionContentID(tx); err != nil {
 		return fmt.Errorf("security: transaction id validation failed: %w", err)
 	}
 
@@ -251,7 +251,7 @@ func (bc *Blockchain) ValidateFullChain() error {
 // ValidateBlockchain documents the QuantumCoin component used by this module.
 // ValidateBlockchain
 // Dış dünya için "tek isim": şu an ValidateFullChain()'i çağırıyoruz.
-// main.go içinden QC_STRICT_CHAIN=1 ise burası devreye giriyor.
+// Canonical runtime startup calls this unconditionally before publishing services.
 func (bc *Blockchain) ValidateBlockchain() error {
 	return bc.ValidateFullChain()
 }
@@ -286,11 +286,7 @@ func (bc *Blockchain) ValidateNewBlockBasic(b *Block) error {
 		return fmt.Errorf("security: bad prev hash at height %d", b.Index)
 	}
 
-	if b.Timestamp < last.Timestamp {
-		return fmt.Errorf("security: block time goes backwards at height %d", b.Index)
-	}
-
-	return nil
+	return bc.validateNextBlockTimestampV1(b)
 }
 
 // AddBlockFromPeerSecure documents the QuantumCoin component used by this module.

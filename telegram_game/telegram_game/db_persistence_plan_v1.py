@@ -188,4 +188,3 @@ def db_persistence_summary_v1() -> Dict[str, Any]:
         "plan": plan,
         "validation": validate_db_persistence_plan_v1(plan),
     }
-

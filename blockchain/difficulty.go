@@ -22,6 +22,9 @@ const (
 func (bc *Blockchain) NextDifficulty(
 	defaultBits int,
 ) int {
+	if bc.usesMedianBlockTimeV2() {
+		return bc.medianNextDifficultyV2()
+	}
 	input := qconsensus.DifficultyInput{
 		DefaultBits: defaultBits,
 	}
@@ -76,6 +79,9 @@ func (bc *Blockchain) ExpectedNextDifficultyV1() (
 		return 0, fmt.Errorf(
 			"expected next difficulty: nil blockchain",
 		)
+	}
+	if bc.usesMedianBlockTimeV2() {
+		return bc.medianNextDifficultyV2(), nil
 	}
 
 	cfg := config.Current()

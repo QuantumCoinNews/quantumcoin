@@ -25,6 +25,7 @@ func (bc *Blockchain) BindPeerValidationContextFromLocalSynchronizedV1(local *Bl
 		return fmt.Errorf("peer validation context: local genesis missing")
 	}
 	genesis := append([]byte(nil), local.Blocks[0].Hash...)
+	network := cloneNetworkIdentityV1(local.networkIdentity)
 	activation := local.activationPolicy
 	trust := local.nftAwardTrust
 	program := local.nftMonthlyProgram
@@ -78,6 +79,12 @@ func (bc *Blockchain) BindPeerValidationContextFromLocalSynchronizedV1(local *Bl
 	}
 	if len(bc.Blocks) == 0 || bc.Blocks[0] == nil || !bytes.Equal(bc.Blocks[0].Hash, genesis) {
 		return fmt.Errorf("peer validation context: incoming genesis differs from local chain")
+	}
+	if network != nil {
+		if bc.StoredNetworkIdentityV1 == nil || *bc.StoredNetworkIdentityV1 != *network {
+			return fmt.Errorf("peer validation context: network identity mismatch")
+		}
+		bc.networkIdentity = cloneNetworkIdentityV1(network)
 	}
 	bc.activationPolicy = activation
 	bc.nftAwardTrust = trust

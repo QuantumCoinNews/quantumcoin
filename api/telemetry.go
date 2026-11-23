@@ -2,30 +2,21 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"quantumcoin/ai"
+	"quantumcoin/internal/httpresponse"
 )
 
 // HandleTelemetry documents the QuantumCoin component used by this module.
 // GET /api/telemetry
 func HandleTelemetry(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
+		w.Header().Set("Allow", http.MethodGet)
+		httpresponse.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 
 	snap := ai.GetTelemetrySnapshot()
-
-	enc := json.NewEncoder(w)
-	// Daha okunaklı olsun istersen indent'li:
-	// enc.SetIndent("", "  ")
-
-	if err := enc.Encode(snap); err != nil {
-		http.Error(w, "failed to encode telemetry", http.StatusInternalServerError)
-		return
-	}
+	httpresponse.WriteJSON(w, http.StatusOK, snap)
 }

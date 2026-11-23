@@ -46,8 +46,17 @@ func BackupFileV1(sourcePath, backupPath string) (BackupManifestV1, error) {
 
 	sum := sha256.Sum256(source)
 
-	if err := os.WriteFile(backupPath, source, 0o600); err != nil {
-		return manifest, fmt.Errorf("write backup: %w", err)
+	// Offline immutable-source helper only. Never overwrite a concurrently
+	// created backup; live SQLite snapshots belong to backuprestore/offline.
+	file, err := os.OpenFile(backupPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return manifest, fmt.Errorf("create backup: %w", err)
+	}
+	_, writeErr := file.Write(source)
+	syncErr := file.Sync()
+	closeErr := file.Close()
+	if err := errors.Join(writeErr, syncErr, closeErr); err != nil {
+		return manifest, fmt.Errorf("write backup (incomplete artifact retained): %w", err)
 	}
 
 	return BackupManifestV1{

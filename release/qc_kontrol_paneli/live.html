@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="tr">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="15">
+<title>QuantumCoin Canlı Kontrol Paneli</title>
+<style>
+body { font: 16px system-ui; max-width: 760px; margin: 3rem auto; padding: 1rem; background: #101827; color: #eef2ff; }
+section { border: 1px solid #52617b; border-radius: .6rem; padding: 1rem; margin: 1rem 0; }
+.warning { color: #ffd166; }
+.critical { color: #ff8c8c; }
+</style>
+<h1>QuantumCoin Canlı Kontrol Paneli</h1>
+<p>Okuma modu · Son sorgu {{.Time}} · 15 saniyede bir yenilenir</p>
+<section>
+  <h2>Node · {{.Node}}</h2>
+  <p>Ağ {{.Network}}</p>
+  {{with .Telemetry}}
+  <p>Yükseklik {{.Height}} · Blok {{.BlockCount}} · Eş {{.Peers}}</p>
+  {{else}}<p>Telemetri doğrulanmadı.</p>{{end}}
+</section>
+<section>
+  <h2>Monitoring · {{.Alerts}}</h2>
+  {{range .Critical}}<p class="critical">Kritik · {{.}}</p>{{end}}
+  {{range .Warnings}}<p class="warning">Uyarı · {{.}}</p>{{end}}
+  {{if and (eq .Alerts "Güncel") (not .Critical) (not .Warnings)}}<p>Açık uyarı yok.</p>{{end}}
+</section>
+<section><h2>Telegram Game · {{.Game}}</h2></section>
+</html>

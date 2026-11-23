@@ -6,7 +6,6 @@ import (
 	"os"
 	"quantumcoin/config"
 	qconsensus "quantumcoin/consensus"
-	"quantumcoin/wallet"
 	"strings"
 	"time"
 )
@@ -65,34 +64,13 @@ func FounderVestingReadyV1() bool {
 	return ready
 }
 
-func founderLockedPubKeyHashV1() (
-	[]byte,
-	bool,
-) {
-	_, lockedAddress, ready :=
-		founderAddressStringsV1()
-
-	if !ready {
-		return nil, false
-	}
-
-	pubKeyHash := wallet.Base58DecodeAddress(
-		lockedAddress,
-	)
-	if len(pubKeyHash) == 0 {
-		return nil, false
-	}
-
-	return pubKeyHash, true
-}
-
 func founderLockedPubKeyHashFromGenesisV1(
 	bc *Blockchain,
-) ([]byte, bool) {
+) ([]byte, bool, error) {
 	if bc == nil ||
 		len(bc.Blocks) == 0 ||
 		bc.Blocks[0] == nil {
-		return nil, false
+		return nil, false, fmt.Errorf("founder vesting requires valid genesis")
 	}
 
 	var lockedPubKeyHash []byte
@@ -111,7 +89,7 @@ func founderLockedPubKeyHashFromGenesisV1(
 			if len(lockedPubKeyHash) != 0 {
 				// Consensus must never guess between multiple
 				// candidate founder locked genesis outputs.
-				return nil, false
+				return nil, false, fmt.Errorf("ambiguous founder locked genesis allocation")
 			}
 
 			lockedPubKeyHash = append(
@@ -122,10 +100,10 @@ func founderLockedPubKeyHashFromGenesisV1(
 	}
 
 	if len(lockedPubKeyHash) == 0 {
-		return nil, false
+		return nil, false, nil
 	}
 
-	return lockedPubKeyHash, true
+	return lockedPubKeyHash, true, nil
 }
 
 func completedCalendarMonthsV1(
@@ -229,24 +207,16 @@ func (bc *Blockchain) findOutputByOutpointWithHeightV1(
 	return TransactionOutput{}, -1, false
 }
 
-func (bc *Blockchain) findOutputByOutpointV1(
-	txID []byte,
-	outputIndex int,
-) (TransactionOutput, bool) {
-	output, _, found :=
-		bc.findOutputByOutpointWithHeightV1(
-			txID,
-			outputIndex,
-		)
-
-	return output, found
+func (bc *Blockchain) founderNetReleaseForTxAtHeightV1(tx *Transaction, lockedPubKeyHash []byte, txHeight, accountingHeight int) (int, error) {
+	return bc.founderNetReleaseWithLookupAtHeightV1(tx, lockedPubKeyHash, txHeight, accountingHeight, bc.findOutputByOutpointWithHeightV1)
 }
 
-func (bc *Blockchain) founderNetReleaseForTxAtHeightV1(
+func (bc *Blockchain) founderNetReleaseWithLookupAtHeightV1(
 	tx *Transaction,
 	lockedPubKeyHash []byte,
 	txHeight int,
 	accountingHeight int,
+	lookup func([]byte, int) (TransactionOutput, int, bool),
 ) (int, error) {
 	if tx == nil || tx.IsCoinbase() {
 		return 0, nil
@@ -273,7 +243,7 @@ func (bc *Blockchain) founderNetReleaseForTxAtHeightV1(
 
 	for _, input := range tx.Inputs {
 		previousOutput, originHeight, found :=
-			bc.findOutputByOutpointWithHeightV1(
+			lookup(
 				input.TxID,
 				input.OutIndex,
 			)
@@ -418,15 +388,6 @@ func (bc *Blockchain) founderReleasedConfirmedAtHeightV1(
 	return total, nil
 }
 
-func (bc *Blockchain) founderReleasedConfirmedV1(
-	lockedPubKeyHash []byte,
-) (int, error) {
-	return bc.founderReleasedConfirmedAtHeightV1(
-		lockedPubKeyHash,
-		bc.nextSpendHeightV1(),
-	)
-}
-
 func (bc *Blockchain) founderUnlockedUnitsAtHeightV1(
 	unlockedQC int,
 	height int,
@@ -473,8 +434,11 @@ func (bc *Blockchain) ValidateFounderVestingSpendV1(
 	tx *Transaction,
 	atUnix int64,
 ) error {
-	lockedPubKeyHash, active :=
+	lockedPubKeyHash, active, bindingErr :=
 		founderLockedPubKeyHashFromGenesisV1(bc)
+	if bindingErr != nil {
+		return bindingErr
+	}
 
 	if !active {
 		return nil
@@ -552,8 +516,11 @@ func (bc *Blockchain) ValidateFounderVestingSpendV1(
 func (bc *Blockchain) ValidateFounderVestingBlockV1(
 	block *Block,
 ) error {
-	lockedPubKeyHash, active :=
+	lockedPubKeyHash, active, bindingErr :=
 		founderLockedPubKeyHashFromGenesisV1(bc)
+	if bindingErr != nil {
+		return bindingErr
+	}
 
 	if !active {
 		return nil
@@ -583,14 +550,26 @@ func (bc *Blockchain) ValidateFounderVestingBlockV1(
 	}
 
 	blockRelease := 0
-
+	// Resolve outputs created earlier in this candidate block, in the same
+	// denomination as canonical UTXO validation. Do not consult local config.
+	created := make(map[string]*Transaction)
+	lookup := func(id []byte, index int) (TransactionOutput, int, bool) {
+		if prior, ok := created[string(id)]; ok {
+			if index < 0 || index >= len(prior.Outputs) {
+				return TransactionOutput{}, -1, false
+			}
+			return prior.Outputs[index], accountingHeight, true
+		}
+		return bc.findOutputByOutpointWithHeightV1(id, index)
+	}
 	for _, tx := range block.Transactions {
 		netRelease, err :=
-			bc.founderNetReleaseForTxAtHeightV1(
+			bc.founderNetReleaseWithLookupAtHeightV1(
 				tx,
 				lockedPubKeyHash,
 				accountingHeight,
 				accountingHeight,
+				lookup,
 			)
 		if err != nil {
 			return err
@@ -604,6 +583,9 @@ func (bc *Blockchain) ValidateFounderVestingBlockV1(
 		}
 
 		blockRelease = next
+		if tx != nil {
+			created[string(tx.ID)] = tx
+		}
 	}
 
 	unlockedQC := FounderUnlockedAtUnixV1(

@@ -1,3 +1,4 @@
+# Retired offline compatibility reference. Live admin policy is read from the canonical Go node.
 # QC_MINING_PERIOD_BITCOIN_STYLE_CONTINUE_V1
 # Primary 10-year mining period, 2-year halving, and bitcoin-style continuation.
 #
@@ -20,15 +21,15 @@ HALVING_INTERVAL_YEARS = 2
 PRIMARY_REWARD_SCHEDULE = [
     {"index": 1, "fromYear": 0, "toYear": 2, "rewardQc": "50"},
     {"index": 2, "fromYear": 2, "toYear": 4, "rewardQc": "25"},
-    {"index": 3, "fromYear": 4, "toYear": 6, "rewardQc": "12.5"},
-    {"index": 4, "fromYear": 6, "toYear": 8, "rewardQc": "6.25"},
-    {"index": 5, "fromYear": 8, "toYear": 10, "rewardQc": "3.125"},
+    {"index": 3, "fromYear": 4, "toYear": 6, "rewardQc": "12"},
+    {"index": 4, "fromYear": 6, "toYear": 8, "rewardQc": "6"},
+    {"index": 5, "fromYear": 8, "toYear": 10, "rewardQc": "3"},
 ]
 
 POST_TEN_YEAR_EXAMPLE_SCHEDULE = [
-    {"index": 6, "fromYear": 10, "toYear": 12, "rewardQc": "1.5625"},
-    {"index": 7, "fromYear": 12, "toYear": 14, "rewardQc": "0.78125"},
-    {"index": 8, "fromYear": 14, "toYear": 16, "rewardQc": "0.390625"},
+    {"index": 6, "fromYear": 10, "toYear": 12, "rewardQc": "1"},
+    {"index": 7, "fromYear": 12, "toYear": 14, "rewardQc": "1"},
+    {"index": 8, "fromYear": 14, "toYear": 16, "rewardQc": "1"},
 ]
 
 SAFE_BOUNDARY = {

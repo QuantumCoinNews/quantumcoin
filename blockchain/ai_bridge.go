@@ -4,30 +4,37 @@
 package blockchain
 
 import (
+	"bytes"
 	"encoding/hex"
+	"time"
 
 	"quantumcoin/ai"
 	qconsensus "quantumcoin/consensus"
+	"quantumcoin/wallet"
 )
 
-// ToAITxLite documents the QuantumCoin component used by this module.
-// blockchain.Transaction -> ai.TxLite
-func ToAITxLite(txs []*Transaction) []ai.TxLite {
-	out := make([]ai.TxLite, 0, len(txs))
-	for _, tx := range txs {
-		if tx == nil {
-			continue
-		}
-		addr := tx.Sender
-		out = append(out, ai.TxLite{
-			TxID:          hex.EncodeToString(tx.ID),
-			WalletAddress: addr,
-			Sender:        tx.Sender,
-			Amount:        tx.Amount,
-			Timestamp:     tx.Timestamp,
-		})
+// verifiedAIProjectionV1 is used only for locked canonical snapshots. Signed
+// wire convenience fields are not measurements of value or observation time.
+func (bc *Blockchain) verifiedAIProjectionV1(tx *Transaction, height int, observedAt time.Time) (ai.TxLite, bool) {
+	if observedAt.IsZero() || tx.IsCoinbase() || !wallet.ValidateAddress(tx.Sender) ||
+		ValidateTransactionBasic(tx) != nil || !bc.verifyTransactionLockedV2(tx) {
+		return ai.TxLite{}, false
 	}
-	return out
+	address := wallet.GetAddressFromPub(tx.Inputs[0].PubKey)
+	if address != tx.Sender {
+		return ai.TxLite{}, false
+	}
+	change := wallet.HashPubKey(tx.Inputs[0].PubKey)
+	var amount int64
+	for _, out := range tx.Outputs {
+		if !bytes.Equal(out.PubKeyHash, change) {
+			amount += int64(out.Amount)
+		}
+	}
+	return ai.TxLite{
+		TxID: hex.EncodeToString(tx.ID), Sender: address, WalletAddress: address,
+		Amount: bc.TransactionAmountQCAtHeightV1(float64(amount), height), Timestamp: observedAt,
+	}, true
 }
 
 // TransactionAmountQCAtHeightV1 is the shared advisory QC presentation
@@ -40,22 +47,4 @@ func (bc *Blockchain) TransactionAmountQCAtHeightV1(amount float64, height int) 
 		return amount / float64(qconsensus.CanonicalAtomsPerQCV1)
 	}
 	return amount
-}
-
-// ToAITxLiteAtHeightV1 converts confirmed transaction amounts into QC for
-// advisory AI analysis. The block's origin height determines the wire unit;
-// it must not be inferred from the current chain tip.
-func (bc *Blockchain) ToAITxLiteAtHeightV1(
-	txs []*Transaction,
-	height int,
-) []ai.TxLite {
-	if bc == nil {
-		return nil
-	}
-
-	out := ToAITxLite(txs)
-	for i := range out {
-		out[i].Amount = bc.TransactionAmountQCAtHeightV1(out[i].Amount, height)
-	}
-	return out
 }

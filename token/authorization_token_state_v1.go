@@ -7,15 +7,16 @@ import (
 )
 
 type tokenPersistenceV1 struct {
-	Symbol              string                             `json:"symbol"`
-	Name                string                             `json:"name"`
-	Decimals            uint8                              `json:"decimals"`
-	MaxSupply           uint64                             `json:"max_supply"`
-	TotalSupply         uint64                             `json:"total_supply"`
-	Owner               string                             `json:"owner"`
-	Balances            map[string]uint64                  `json:"balances"`
-	AuthorizationNonces map[string]uint64                  `json:"authorization_nonces,omitempty"`
-	MinerTokenBlocks    map[string]minerTokenBlockRecordV1 `json:"miner_token_blocks,omitempty"`
+	Symbol                string                             `json:"symbol"`
+	Name                  string                             `json:"name"`
+	Decimals              uint8                              `json:"decimals"`
+	MaxSupply             uint64                             `json:"max_supply"`
+	TotalSupply           uint64                             `json:"total_supply"`
+	Owner                 string                             `json:"owner"`
+	Balances              map[string]uint64                  `json:"balances"`
+	AuthorizationNonces   map[string]uint64                  `json:"authorization_nonces,omitempty"`
+	MinerTokenBlocks      map[string]minerTokenBlockRecordV1 `json:"miner_token_blocks,omitempty"`
+	AuthorizationIdentity TokenAuthorizationIdentityV1       `json:"authorization_identity,omitempty"`
 }
 
 func validateTokenPersistenceAddressesV1(
@@ -107,6 +108,7 @@ func tokenPersistenceSnapshotLockedV1(
 		MinerTokenBlocks: cloneMinerTokenBlockRecordsV1(
 			t.minerTokenBlocks,
 		),
+		AuthorizationIdentity: t.authorizationIdentity,
 	}
 }
 
@@ -129,6 +131,7 @@ func restoreTokenPersistenceLockedV1(
 	t.minerTokenBlocks = cloneMinerTokenBlockRecordsV1(
 		persisted.MinerTokenBlocks,
 	)
+	t.authorizationIdentity = persisted.AuthorizationIdentity
 }
 
 // MarshalJSON persists consumed authorization nonces. Restarting the
@@ -153,6 +156,10 @@ func (t *Token) UnmarshalJSON(data []byte) error {
 		return errors.New(
 			"token: unmarshal into nil token",
 		)
+	}
+
+	if err := validateFungibleStateSchemaModeV1(FungibleTokenModelControlledEmissionV1, data, true); err != nil {
+		return err
 	}
 
 	var persisted tokenPersistenceV1
@@ -181,9 +188,23 @@ func (t *Token) UnmarshalJSON(data []byte) error {
 	); err != nil {
 		return err
 	}
+	if err := validatePersistedTokenAuthorizationIdentityV1(persisted.AuthorizationIdentity); err != nil {
+		return fmt.Errorf("token: persisted authorization identity: %w", err)
+	}
+	// Raw legacy loading must enforce the same state invariants as the
+	// canonical envelope and registry paths, before touching the receiver.
+	candidate := new(Token)
+	restoreTokenPersistenceLockedV1(candidate, persisted)
+	if err := validateLoadedRegistryTokenV1(persisted.Symbol, candidate, make(map[string]struct{})); err != nil {
+		return fmt.Errorf("%w: %w", ErrFungiblePersistenceIntegrityV1, err)
+	}
 
 	t.mu.Lock()
 	defer t.mu.Unlock()
+
+	if t.balances != nil {
+		return ErrTokenStateAlreadyInitialized
+	}
 
 	t.symbol = persisted.Symbol
 	t.name = persisted.Name
@@ -195,6 +216,7 @@ func (t *Token) UnmarshalJSON(data []byte) error {
 	t.authorizationNonces =
 		persisted.AuthorizationNonces
 	t.minerTokenBlocks = persisted.MinerTokenBlocks
+	t.authorizationIdentity = persisted.AuthorizationIdentity
 
 	return nil
 }
@@ -202,14 +224,19 @@ func (t *Token) UnmarshalJSON(data []byte) error {
 func tokenAuthorizationDomainForTokenLockedV1(
 	t *Token,
 ) string {
-	return TokenAuthorizationDomainV1(
+	domain, err := TokenAuthorizationDomainForIdentityV1(
 		TokenAuthorizationModelLegacyV1,
 		t.name,
 		t.symbol,
 		t.owner,
 		t.decimals,
 		t.maxSupply,
+		t.authorizationIdentity,
 	)
+	if err != nil {
+		return ""
+	}
+	return domain
 }
 
 // AuthorizationDomainV1 returns the deterministic domain that wallets
@@ -225,7 +252,11 @@ func (t *Token) AuthorizationDomainV1() (
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	return tokenAuthorizationDomainForTokenLockedV1(t), nil
+	domain := tokenAuthorizationDomainForTokenLockedV1(t)
+	if domain == "" {
+		return "", ErrTokenNetworkIdentityRequired
+	}
+	return domain, nil
 }
 
 // NextAuthorizationNonceV1 returns the next sequential caller nonce.

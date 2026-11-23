@@ -1,6 +1,7 @@
 # QuantumCoin Backup Location Policy
 
-Status: QC_33B_BACKUP_EXTERNALIZATION_V1
+Document ID: `QC_33B_BACKUP_EXTERNALIZATION_V1`\
+Evidence stage: **Design**. See [scope and release status](POLICY_EVIDENCE_REGISTER.md).
 
 Date: 20260619_213620
 

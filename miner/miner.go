@@ -39,16 +39,18 @@ type Options struct {
 
 // ---- iç durum ----
 var (
-	state    minerState
-	globalBC *blockchain.Blockchain // geriye dönük uyumluluk
+	state            minerState
+	minerLifecycleMu sync.Mutex
+	globalBC         atomic.Pointer[blockchain.Blockchain] // geriye dönük uyumluluk
 )
 
 type minerState struct {
-	active  atomic.Bool
-	stopCh  chan struct{}
-	wg      sync.WaitGroup
-	bc      *blockchain.Blockchain
-	address string
+	active   atomic.Bool
+	stopCh   chan struct{}
+	doneCh   chan struct{}
+	stopping bool
+	bc       *blockchain.Blockchain
+	address  string
 
 	// requestedDifficulty <= 0 means dynamically resolve from the
 	// current blockchain before every mining attempt.
@@ -135,12 +137,22 @@ func resolveMinerEntryDifficultyV1(
 
 // Start documents the QuantumCoin component used by this module.
 // Start: sürekli kazıma döngüsünü başlatır
+// An already-active call is idempotent and does not apply new options. Call
+// StartExclusiveV1 when initialization must install a genuinely new loop.
 func Start(
 	bc *blockchain.Blockchain,
 	minerAddress string,
 	difficulty int,
 	opts ...Options,
 ) error {
+	return startPreparedV1(bc, minerAddress, difficulty, false, func() (Options, error) {
+		return MergeOptionsV1(opts...), nil
+	})
+}
+
+func startPreparedV1(bc *blockchain.Blockchain, minerAddress string, difficulty int, requireIdle bool, prepare func() (Options, error)) error {
+	minerLifecycleMu.Lock()
+	defer minerLifecycleMu.Unlock()
 	if bc == nil {
 		return errors.New(
 			"miner: blockchain is nil",
@@ -157,6 +169,9 @@ func Start(
 	}
 
 	if IsActive() {
+		if requireIdle {
+			return ErrMinerAlreadyActiveV1
+		}
 		return nil
 	}
 
@@ -173,31 +188,9 @@ func Start(
 		)
 	}
 
-	merged := Options{
-		Interval: 1200 * time.Millisecond,
-		Animate:  true,
-	}
-
-	if len(opts) > 0 {
-		option := opts[0]
-
-		if option.OnBlock != nil {
-			merged.OnBlock = option.OnBlock
-		}
-		if option.OnError != nil {
-			merged.OnError = option.OnError
-		}
-		if option.OnTick != nil {
-			merged.OnTick = option.OnTick
-		}
-		if option.Interval > 0 {
-			merged.Interval = option.Interval
-		}
-		if option.Broadcaster != nil {
-			merged.Broadcaster = option.Broadcaster
-		}
-
-		merged.Animate = option.Animate
+	merged, err := prepare()
+	if err != nil {
+		return fmt.Errorf("miner preparation: %w", err)
 	}
 
 	state.bc = bc
@@ -206,6 +199,8 @@ func Start(
 	state.difficulty = effectiveDifficulty
 	state.opts = merged
 	state.stopCh = make(chan struct{})
+	state.doneCh = make(chan struct{})
+	state.stopping = false
 	state.step = 0
 	state.hashrate = 0
 
@@ -216,9 +211,7 @@ func Start(
 	}
 
 	state.active.Store(true)
-	state.wg.Add(1)
-
-	go loop()
+	go loop(state.stopCh, state.doneCh)
 
 	return nil
 }
@@ -226,21 +219,18 @@ func Start(
 // Stop documents the QuantumCoin component used by this module.
 // Stop: sürekli kazımayı durdurur
 func Stop() {
-	if !IsActive() {
+	minerLifecycleMu.Lock()
+	if !state.active.Load() {
+		minerLifecycleMu.Unlock()
 		return
 	}
-	// bir kere kapat
-	select {
-	case <-state.stopCh:
-		// zaten kapalı
-	default:
+	done := state.doneCh
+	if !state.stopping {
+		state.stopping = true
 		close(state.stopCh)
 	}
-	state.wg.Wait()
-	state.active.Store(false)
-	if state.effect != nil {
-		state.effect.Clear()
-	}
+	minerLifecycleMu.Unlock()
+	<-done
 }
 
 // IsActive documents the QuantumCoin component used by this module.
@@ -339,12 +329,20 @@ func MineOne(
 }
 
 // ---- iç döngü ----
-func loop() {
-	defer state.wg.Done()
+func loop(stop <-chan struct{}, done chan struct{}) {
+	defer func() {
+		minerLifecycleMu.Lock()
+		defer minerLifecycleMu.Unlock()
+		if state.effect != nil {
+			state.effect.Clear()
+		}
+		state.active.Store(false)
+		close(done)
+	}()
 
 	for {
 		select {
-		case <-state.stopCh:
+		case <-stop:
 			return
 		default:
 		}
@@ -440,9 +438,11 @@ func loop() {
 		)
 
 		if state.opts.Interval > 0 {
-			consolefx.SpinFor(
-				state.opts.Interval,
-			)
+			if state.opts.Animate {
+				consolefx.SpinFor(state.opts.Interval)
+			} else {
+				time.Sleep(state.opts.Interval)
+			}
 		}
 
 		fmt.Printf(
@@ -499,53 +499,29 @@ func checkYearlyBonus(address string) {
 	_ = address
 }
 
-// ödül bölüşümü bilgisi (görsel/log; coinbase split chain tarafında uygulanıyor varsayımı)
-func showSplitInfoPreview(
-	baseReward int,
-) {
-	cfg := config.Current()
-	if cfg == nil || cfg.InitialReward <= 0 {
+// Report the actual recipient contract; no unsupported stake/burn split is implied.
+func showSplitInfoPreview(baseReward int) {
+	if baseReward <= 0 {
 		return
 	}
-
-	base := float64(baseReward)
-	if base <= 0 {
-		return
-	}
-
-	miner := base * float64(cfg.RewardPctMiner) / 100.0
-	stake := base * float64(cfg.RewardPctStake) / 100.0
-	dev := base * float64(cfg.RewardPctDev) / 100.0
-	burn := base * float64(cfg.RewardPctBurn) / 100.0
-	remain := base - (miner + stake + dev + burn)
-	if remain < 0 {
-		remain = 0
-	}
-
-	fmt.Printf(
-		"🧮 split preview → miner:%.2f stake:%.2f dev:%.2f burn:%.2f community:%.2f\n",
-		miner,
-		stake,
-		dev,
-		burn,
-		remain,
-	)
+	fmt.Println("[mining] coinbase pays the miner the consensus subsidy plus validated fees; staking/dev/burn/community block splits are inactive")
 }
 
 // ---- Geriye dönük uyumluluk katmanı ----
 
-func SetGlobalBlockchain(bc *blockchain.Blockchain) { globalBC = bc }
+func SetGlobalBlockchain(bc *blockchain.Blockchain) { globalBC.Store(bc) }
 
 func StartMining(
 	minerAddress string,
 	animationUpdate func(status MiningStatus),
 ) {
-	if IsActive() || globalBC == nil {
+	chain := globalBC.Load()
+	if IsActive() || chain == nil {
 		return
 	}
 
 	err := Start(
-		globalBC,
+		chain,
 		minerAddress,
 		0,
 		Options{

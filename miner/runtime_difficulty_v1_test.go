@@ -109,9 +109,13 @@ func TestResolveRuntimeDifficultyV1AllowsLocalReleaseOverride(
 ) {
 	clearMinerRuntimeDifficultyEnvV1(t)
 	t.Setenv("QC_DIFFICULTY_BITS", "12")
+	cfg := config.Default()
+	cfg.ChainFile = config.QCIsolatedLocalChainFileV1
+	cfg.HTTPPort = config.QCIsolatedLocalHTTPPortV1
+	cfg.P2PPort = config.QCIsolatedLocalP2PPortV1
 
 	got, err := resolveRuntimeDifficultyV1(
-		config.Default(),
+		cfg,
 		nil,
 		17,
 	)

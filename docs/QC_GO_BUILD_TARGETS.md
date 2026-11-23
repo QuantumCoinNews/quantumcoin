@@ -1,6 +1,7 @@
 # QuantumCoin Go Build Targets
 
-Status: QC_GO_BUILD_TARGETS_V1
+Document ID: `QC_GO_BUILD_TARGETS_V1`\
+Evidence stage: **Source verification**. See [scope and release status](POLICY_EVIDENCE_REGISTER.md).
 
 This document defines the Go build targets before testnet preparation.
 
@@ -34,19 +35,24 @@ Temporary audit build output:
 
 ### DESKTOP_GUI
 
-Desktop GUI entrypoint.
+Desktop browser launcher entrypoint.
 
 Package:
 - ./cmd/quantumcoin-gui
 
 Temporary audit build output:
-- wallet-gui-audit.exe
+- quantumcoin-launcher-audit.exe
 
 Release output later:
-- release/wallet-gui.exe
+- quantumcoin-launcher.exe
 
 Important:
-- The audit build must not overwrite release/wallet-gui.exe.
+- The audit build must stay outside the local release runtime.
+
+### NATIVE_WALLET
+
+The Fyne wallet and local signer use `./cmd/wallet`. The audit output is
+`wallet-gui-audit.exe`. The signed release package uses `wallet-gui.exe`.
 
 ### WALLET_TOOLS
 

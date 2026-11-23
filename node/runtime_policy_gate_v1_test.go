@@ -299,7 +299,7 @@ func TestRuntimePolicyGateExplicitMainnetNoLongerBlockedByBurnReadinessV1(t *tes
 
 	if !strings.Contains(
 		message,
-		"enforceable network fee denomination is not finalized",
+		"final network fee parameters and activation are not finalized",
 	) {
 		t.Fatalf(
 			"remaining network-fee readiness blocker missing: %v",

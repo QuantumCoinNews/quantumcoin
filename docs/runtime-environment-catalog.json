@@ -1,0 +1,3236 @@
+{
+  "version": 1,
+  "schema": "config/runtime-environment.schema.json",
+  "sourcePrecedence": {
+    "node": "defaults -> explicit file -> environment -> data-dir anchoring -> typed/policy validation; CLI selects file/data directory",
+    "game": "inherited environment -> optional game .env fills absent keys only -> schema -> DB selection -> ASGI",
+    "publisher": "process environment -> explicit env/secret source -> allowed public settings -> explicit CLI overrides -> schema; plaintext credential input is forbidden for live publish"
+  },
+  "settings": [
+    {
+      "key": "ADMIN_TOKEN",
+      "kind": "text",
+      "owners": [
+        "game"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": "TELEGRAM_GAME_ADMIN_TOKEN",
+      "sourceReferences": [
+        "telegram_game/telegram_game/admin_panel_safety_v1.py"
+      ]
+    },
+    {
+      "key": "CONTENT_LANG",
+      "kind": "enum",
+      "owners": [
+        "publisher"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/cli.ts",
+        "autopublisher/src/runtime/config.ts"
+      ]
+    },
+    {
+      "key": "HTTP_PORT",
+      "kind": "port",
+      "owners": [
+        "node",
+        "tooling"
+      ],
+      "secret": false,
+      "status": "compatibility-assertion",
+      "aliasFor": "QC_HTTP_PORT",
+      "sourceReferences": [
+        "apiclient/startup.go",
+        "config/runtime_environment.go",
+        "config/runtime_network_policy_v1.go"
+      ]
+    },
+    {
+      "key": "OPENAI_API_KEY",
+      "kind": "text",
+      "owners": [
+        "publisher"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/ai.ts",
+        "autopublisher/src/runtime/engine.ts"
+      ]
+    },
+    {
+      "key": "OPENAI_IMAGE_MODEL",
+      "kind": "text",
+      "owners": [
+        "publisher"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/ai.ts",
+        "autopublisher/src/runtime/cli.ts",
+        "autopublisher/src/runtime/config.ts"
+      ]
+    },
+    {
+      "key": "OPENAI_MODEL",
+      "kind": "text",
+      "owners": [
+        "publisher"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/ai.ts",
+        "autopublisher/src/runtime/cli.ts",
+        "autopublisher/src/runtime/config.ts"
+      ]
+    },
+    {
+      "key": "OPENAI_TTS_MODEL",
+      "kind": "text",
+      "owners": [
+        "publisher"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/ai.ts",
+        "autopublisher/src/runtime/cli.ts",
+        "autopublisher/src/runtime/config.ts"
+      ]
+    },
+    {
+      "key": "OPENAI_TTS_VOICE",
+      "kind": "text",
+      "owners": [
+        "publisher"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/ai.ts",
+        "autopublisher/src/runtime/cli.ts",
+        "autopublisher/src/runtime/config.ts"
+      ]
+    },
+    {
+      "key": "QC_01_AUDIT_PACKAGE_SECURITY_DONE",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "tools/qc_repo_safety_check.ps1"
+      ]
+    },
+    {
+      "key": "QC_01_REPO_SAFETY_CHECK_PASS",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "tools/qc_repo_safety_check.ps1"
+      ]
+    },
+    {
+      "key": "QC_02_ACTIVE_SOURCE_STANDARD_DONE",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "tools/qc_active_source_standard_check.ps1"
+      ]
+    },
+    {
+      "key": "QC_02_ACTIVE_SOURCE_STANDARD_PASS",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "tools/qc_active_source_standard_check.ps1"
+      ]
+    },
+    {
+      "key": "QC_04_MAIN_ENTRYPOINTS_DONE",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "tools/qc_main_entrypoint_check.ps1"
+      ]
+    },
+    {
+      "key": "QC_04_MAIN_ENTRYPOINTS_PASS",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "tools/qc_main_entrypoint_check.ps1"
+      ]
+    },
+    {
+      "key": "QC_05_GO_BUILD_TARGETS_DONE",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "tools/qc_go_build_targets_check.ps1"
+      ]
+    },
+    {
+      "key": "QC_05_GO_BUILD_TARGETS_PASS",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "tools/qc_go_build_targets_check.ps1"
+      ]
+    },
+    {
+      "key": "QC_06A_LEGACY_NOISE_AUDIT_DONE",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "tools/qc_legacy_noise_audit.ps1"
+      ]
+    },
+    {
+      "key": "QC_06A_LEGACY_NOISE_AUDIT_PASS",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "tools/qc_legacy_noise_audit.ps1"
+      ]
+    },
+    {
+      "key": "QC_07_WEBUI_EMBED_DIST_DONE",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "tools/qc_webui_embed_dist_check.ps1"
+      ]
+    },
+    {
+      "key": "QC_07_WEBUI_EMBED_DIST_PASS",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "tools/qc_webui_embed_dist_check.ps1"
+      ]
+    },
+    {
+      "key": "QC_08_BLOCKCHAIN_PACKAGE_AUDIT_DONE",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "tools/qc_blockchain_package_audit.ps1"
+      ]
+    },
+    {
+      "key": "QC_08_BLOCKCHAIN_PACKAGE_AUDIT_PASS",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "tools/qc_blockchain_package_audit.ps1"
+      ]
+    },
+    {
+      "key": "QC_ADDR",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "release/_qc_api_mempool_miner.ps1"
+      ]
+    },
+    {
+      "key": "QC_ADMIN_AUTH_REQUIRED",
+      "kind": "boolean",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "compatibility-ignored",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/admin_panel_safety_v1.py"
+      ]
+    },
+    {
+      "key": "QC_ADMIN_TOKEN",
+      "kind": "text",
+      "owners": [
+        "game"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": "TELEGRAM_GAME_ADMIN_TOKEN",
+      "sourceReferences": [
+        "telegram_game/telegram_game/admin_panel_safety_v1.py"
+      ]
+    },
+    {
+      "key": "QC_AI_CONFIG_CHILD",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_AI_ENABLED",
+      "kind": "boolean",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "ai/settings.go"
+      ]
+    },
+    {
+      "key": "QC_AI_LEVEL",
+      "kind": "enum",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "ai/settings.go"
+      ]
+    },
+    {
+      "key": "QC_AI_RECORD_TEST_DIR",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_AI_TEST_ENABLED",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_AI_TEST_LEVEL",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_API_BASE",
+      "kind": "origin",
+      "owners": [
+        "game",
+        "node",
+        "tooling"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/runtimeEnvironment.ts",
+        "cmd/miner/main.go",
+        "cmd/wallet/main_fyne.go",
+        "cmd/wallet/mining_client.go",
+        "config/runtime_environment.go",
+        "config/runtime_environment.py",
+        "release/_qc_api_mempool_miner.ps1",
+        "scripts/runtime_config_preflight.py",
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080.ps1",
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET.ps1",
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET_SIM.ps1",
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET_SIM_NORELOAD.ps1",
+        "telegram_game/telegram_game/testnet_connection_v1.py"
+      ]
+    },
+    {
+      "key": "QC_API_LISTEN",
+      "kind": "bind",
+      "owners": [
+        "node",
+        "tooling"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/runtimeEnvironment.ts",
+        "config/runtime_environment.go",
+        "config/runtime_environment.py",
+        "node_app_config.go",
+        "scripts/runtime_config_preflight.py"
+      ]
+    },
+    {
+      "key": "QC_API_PUBLIC_TESTNET",
+      "kind": "boolean",
+      "owners": [
+        "game",
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/runtimeEnvironment.ts",
+        "config/chain_file_separation_v1.go",
+        "config/network_profile_v1.go",
+        "config/runtime_environment.go",
+        "config/runtime_environment.py",
+        "node_app_http.go",
+        "telegram_game/telegram_game/testnet_connection_v1.py"
+      ]
+    },
+    {
+      "key": "QC_API_TOKEN",
+      "kind": "text",
+      "owners": [
+        "game",
+        "node",
+        "tooling"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/runtimeEnvironment.ts",
+        "cmd/apitest/quantumcoin-gui/main.go",
+        "cmd/miner/main.go",
+        "cmd/quantumcoin-gui/main.go",
+        "cmd/wallet/main_fyne.go",
+        "cmd/wallet/mining_client.go",
+        "config/runtime_environment.go",
+        "config/runtime_environment.py",
+        "config/testnet_config_skeleton_v1.go",
+        "dev_miner_endpoint_lock_v1.go",
+        "node_app_http.go",
+        "release/START_TESTNET_LOCAL.ps1",
+        "release/_qc_api_mempool_miner.ps1",
+        "release/qc_kontrol_paneli/qc_kontrol_paneli_launcher.go",
+        "scripts/runtime_config_preflight.py",
+        "telegram_game/telegram_game/dev_api.py",
+        "telegram_game/telegram_game/game_pow.py",
+        "telegram_game/telegram_game/utils/nft_mint_bridge_v1.py",
+        "telegram_game/telegram_game/utils/nft_program_bridge_v1.py",
+        "telegram_game/telegram_game/utils/qc_api.py",
+        "tools/qc_load_test_safe_v1.ps1"
+      ]
+    },
+    {
+      "key": "QC_ATOM_INTEGER",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "consensus/protocol_denomination_v1.go"
+      ]
+    },
+    {
+      "key": "QC_BONUS_FILE",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go"
+      ]
+    },
+    {
+      "key": "QC_BOOT_PEERS",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go"
+      ]
+    },
+    {
+      "key": "QC_BOUNDARY_TEST_MARKER",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": [
+        "scripts/check_social_publisher_boundary.ps1"
+      ]
+    },
+    {
+      "key": "QC_BURN_ADDRESS",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go"
+      ]
+    },
+    {
+      "key": "QC_BURN_SINK",
+      "kind": "text",
+      "owners": [
+        "game",
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "consensus/canonical_economy_policy_v1.go",
+        "telegram_game/telegram_game/burn_sink_control_v1.py"
+      ]
+    },
+    {
+      "key": "QC_CANONICAL_ENCODING_TEST_CHILD",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_CHAIN_FILE",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go",
+        "config/testnet_config_skeleton_v1.go"
+      ]
+    },
+    {
+      "key": "QC_CHAIN_MODE",
+      "kind": "network",
+      "owners": [
+        "game",
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/network_profile_v1.go",
+        "config/testnet_config_skeleton_v1.go",
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET.ps1",
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET_SIM.ps1",
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET_SIM_NORELOAD.ps1",
+        "telegram_game/telegram_game/admin_panel_safety_v1.py",
+        "telegram_game/telegram_game/testnet_connection_v1.py",
+        "telegram_game/telegram_game/tgwt_bsc_claim_safety_v1.py",
+        "telegram_game/telegram_game/watch_earn_final_safety_v1.py"
+      ]
+    },
+    {
+      "key": "QC_CLI_SEND_TEST_ARGS",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_CLI_SEND_TEST_CHILD",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_COINBASE_MATURITY",
+      "kind": "integer",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go"
+      ]
+    },
+    {
+      "key": "QC_COMMUNITY_POOL_ADDRESS",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go"
+      ]
+    },
+    {
+      "key": "QC_CONFIG_FILE",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "cmd/wallet/mining_client.go",
+        "node_app_cli_paths.go"
+      ]
+    },
+    {
+      "key": "QC_CORS_ALLOWED_ORIGIN",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "cors_public_mode_v1.go"
+      ]
+    },
+    {
+      "key": "QC_CORS_ALLOWED_ORIGINS",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/testnet_config_skeleton_v1.go",
+        "cors_public_mode_v1.go"
+      ]
+    },
+    {
+      "key": "QC_DATA_DIR",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "cmd/wallet/mining_client.go",
+        "node_app_cli_paths.go"
+      ]
+    },
+    {
+      "key": "QC_DEBUG_CMD",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "compatibility-ignored",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_DEFAULT_DIFFICULTY_BITS",
+      "kind": "integer",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go",
+        "config/testnet_config_skeleton_v1.go"
+      ]
+    },
+    {
+      "key": "QC_DEV_FUND_ADDRESS",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go"
+      ]
+    },
+    {
+      "key": "QC_DEV_MODE",
+      "kind": "boolean",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "node_app_http.go"
+      ]
+    },
+    {
+      "key": "QC_DIFFICULTY_BITS",
+      "kind": "integer",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/runtime_network_policy_v1.go"
+      ]
+    },
+    {
+      "key": "QC_ENABLE_CHAIN_NFT_MINT",
+      "kind": "boolean-01",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/utils/nft_mint_bridge_v1.py"
+      ]
+    },
+    {
+      "key": "QC_ENABLE_TG_NFT_MINT_BRIDGE",
+      "kind": "boolean-01",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/utils/nft_mint_bridge_v1.py"
+      ]
+    },
+    {
+      "key": "QC_ENABLE_TOKEN_MINER_BRIDGE",
+      "kind": "boolean",
+      "owners": [
+        "node"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "token/security_policy.go"
+      ]
+    },
+    {
+      "key": "QC_ENDPOINT_SCHEMA_TEST_CHILD",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_EXACT_TEST_CHILD",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_FAUCET_ADDRESS",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/testnet_faucet_premine_safety_v1.go"
+      ]
+    },
+    {
+      "key": "QC_FAUCET_ENABLED",
+      "kind": "boolean",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/testnet_faucet_premine_safety_v1.go"
+      ]
+    },
+    {
+      "key": "QC_FAUCET_PRIVATE_KEY",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/testnet_faucet_premine_safety_v1.go"
+      ]
+    },
+    {
+      "key": "QC_FAUCET_PRIVATE_KEY_HEX",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/testnet_faucet_premine_safety_v1.go"
+      ]
+    },
+    {
+      "key": "QC_FOUNDER_VESTING_CLIFF_MONTHS",
+      "kind": "integer",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go"
+      ]
+    },
+    {
+      "key": "QC_FOUNDER_VESTING_DURATION_MONTHS",
+      "kind": "integer",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go"
+      ]
+    },
+    {
+      "key": "QC_GAME_CORS_ORIGINS",
+      "kind": "text",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/dev_api.py"
+      ]
+    },
+    {
+      "key": "QC_GAME_DATA_DIR",
+      "kind": "absolute-path",
+      "owners": [
+        "game",
+        "tooling"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "scripts/runtime_config_preflight.py",
+        "telegram_game/telegram_game/persistence.py"
+      ]
+    },
+    {
+      "key": "QC_GAME_DB",
+      "kind": "absolute-path",
+      "owners": [
+        "game",
+        "tooling"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "scripts/export_game_endpoints.py",
+        "scripts/nft_regression_v2.py",
+        "scripts/runtime_config_preflight.py",
+        "telegram_game/telegram_game/persistence.py"
+      ]
+    },
+    {
+      "key": "QC_GAME_LOAD_DOTENV",
+      "kind": "boolean-01",
+      "owners": [
+        "game",
+        "tooling"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "scripts/export_game_endpoints.py",
+        "telegram_game/telegram_game/config.py"
+      ]
+    },
+    {
+      "key": "QC_GAME_MINING_MODE",
+      "kind": "enum",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET_SIM.ps1",
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET_SIM_NORELOAD.ps1",
+        "telegram_game/telegram_game/dev_api.py"
+      ]
+    },
+    {
+      "key": "QC_GAME_SCORE_SIGNING_KEY_FILE",
+      "kind": "text",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/utils/node_score_bridge_v1.py"
+      ]
+    },
+    {
+      "key": "QC_GAME_WEBAPP_URL",
+      "kind": "text",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/main_bot.py"
+      ]
+    },
+    {
+      "key": "QC_GENESIS_UNIX",
+      "kind": "integer",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go"
+      ]
+    },
+    {
+      "key": "QC_GUI_REAL_SIGNER_CHILD_V1",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_GUI_SEND_CHILD_V1",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_HALVING_INTERVAL_SECS",
+      "kind": "integer",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go"
+      ]
+    },
+    {
+      "key": "QC_HALVING_PERIOD_BLOCKS",
+      "kind": "integer",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go"
+      ]
+    },
+    {
+      "key": "QC_HARDFORK_ACTIVATION_HEIGHT",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "compatibility-ignored",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_HARDFORK_ADMIN_QUORUM",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "compatibility-ignored",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_HARDFORK_MANIFEST",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "compatibility-ignored",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_HTTP_PORT",
+      "kind": "port",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "apiclient/startup.go",
+        "autopublisher/src/runtime/runtimeEnvironment.ts",
+        "config/config.go",
+        "config/runtime_environment.go",
+        "config/runtime_environment.py",
+        "config/testnet_config_skeleton_v1.go"
+      ]
+    },
+    {
+      "key": "QC_INITIAL_REWARD",
+      "kind": "integer",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go"
+      ]
+    },
+    {
+      "key": "QC_INSTAGRAM_URL",
+      "kind": "text",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/config.py"
+      ]
+    },
+    {
+      "key": "QC_INTERNAL_AUDIT_CHILD",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_LANG",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "cmd/wallet/main_fyne.go"
+      ]
+    },
+    {
+      "key": "QC_LOG_LEVEL",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go"
+      ]
+    },
+    {
+      "key": "QC_MAINNET",
+      "kind": "boolean",
+      "owners": [
+        "game",
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/runtimeEnvironment.ts",
+        "config/network_profile_v1.go",
+        "config/runtime_environment.go",
+        "config/runtime_environment.py",
+        "telegram_game/telegram_game/testnet_connection_v1.py"
+      ]
+    },
+    {
+      "key": "QC_MAIN_ADDRESS",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "blockchain/blockchain.go",
+        "blockchain/founder_vesting_consensus_v1.go",
+        "config/testnet_faucet_premine_safety_v1.go"
+      ]
+    },
+    {
+      "key": "QC_MINED_PATH",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "cmd/wallet/main_fyne.go"
+      ]
+    },
+    {
+      "key": "QC_MINER",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go"
+      ]
+    },
+    {
+      "key": "QC_MINING_DELAY_MS",
+      "kind": "integer",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "node_app_mining.go"
+      ]
+    },
+    {
+      "key": "QC_MINING_EMISSION_POOL",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "consensus/canonical_economy_policy_v1.go"
+      ]
+    },
+    {
+      "key": "QC_MINING_PERIOD_SECS",
+      "kind": "integer",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go"
+      ]
+    },
+    {
+      "key": "QC_MINING_POOL_ADDRESS",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go"
+      ]
+    },
+    {
+      "key": "QC_MODE",
+      "kind": "network",
+      "owners": [
+        "game",
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/network_profile_v1.go",
+        "telegram_game/telegram_game/testnet_connection_v1.py"
+      ]
+    },
+    {
+      "key": "QC_MONITORING_ADMIN_TOKEN",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "node_app_monitoring.go"
+      ]
+    },
+    {
+      "key": "QC_MONTHLY_NFT_PLACEHOLDER_SEED",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "nft/monthly_placeholder_v1.go"
+      ]
+    },
+    {
+      "key": "QC_NETWORK",
+      "kind": "network",
+      "owners": [
+        "game",
+        "node",
+        "tooling"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/network_profile_v1.go",
+        "config/testnet_config_skeleton_v1.go",
+        "release/START_TESTNET_LOCAL.ps1",
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET.ps1",
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET_SIM.ps1",
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET_SIM_NORELOAD.ps1",
+        "telegram_game/telegram_game/admin_panel_safety_v1.py",
+        "telegram_game/telegram_game/testnet_connection_v1.py",
+        "telegram_game/telegram_game/tgwt_bsc_claim_safety_v1.py",
+        "telegram_game/telegram_game/watch_earn_final_safety_v1.py"
+      ]
+    },
+    {
+      "key": "QC_NETWORK_MODE",
+      "kind": "network",
+      "owners": [
+        "game",
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/network_profile_v1.go",
+        "telegram_game/telegram_game/testnet_connection_v1.py"
+      ]
+    },
+    {
+      "key": "QC_NET_MAGIC",
+      "kind": "enum",
+      "owners": [
+        "game",
+        "node",
+        "tooling"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/runtimeEnvironment.ts",
+        "config/chain_file_separation_v1.go",
+        "config/network_profile_v1.go",
+        "config/runtime_environment.go",
+        "config/runtime_environment.py",
+        "config/runtime_network_policy_v1.go",
+        "config/testnet_config_skeleton_v1.go",
+        "p2p/message.go",
+        "release/START_TESTNET_LOCAL.ps1",
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET.ps1",
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET_SIM.ps1",
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET_SIM_NORELOAD.ps1",
+        "telegram_game/telegram_game/testnet_connection_v1.py"
+      ]
+    },
+    {
+      "key": "QC_NFT_EVIDENCE_POLICY_PATH",
+      "kind": "text",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/utils/nft_draw_evidence_v1.py"
+      ]
+    },
+    {
+      "key": "QC_NFT_GAME_ACTIVATED_AT",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "compatibility-ignored",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_NFT_PROGRAM_MANIFEST",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "compatibility-ignored",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_NFT_WITNESS_SUBMIT_TOKEN",
+      "kind": "text",
+      "owners": [
+        "game"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/utils/nft_external_evidence_v1.py"
+      ]
+    },
+    {
+      "key": "QC_NODE",
+      "kind": "text",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/load_test_safety_v1.py"
+      ]
+    },
+    {
+      "key": "QC_NODE_API",
+      "kind": "origin",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": "QC_API_BASE",
+      "sourceReferences": [
+        "autopublisher/src/runtime/runtimeEnvironment.ts",
+        "config/runtime_environment.go",
+        "config/runtime_environment.py",
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080.ps1",
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET.ps1",
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET_SIM.ps1",
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET_SIM_NORELOAD.ps1",
+        "telegram_game/telegram_game/qc_ecosystem_scale_runtime.py",
+        "telegram_game/telegram_game/testnet_connection_v1.py"
+      ]
+    },
+    {
+      "key": "QC_NODE_DIR",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "ai/state_persist.go",
+        "cmd/wallet/main_fyne.go",
+        "internal/reward_system.go",
+        "token/authorization_events_v1.go"
+      ]
+    },
+    {
+      "key": "QC_NO_PSH",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "compatibility-ignored",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_OFFLINE_TEST_ARGS",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_OFFLINE_TEST_CHILD",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_OVERWRITE_RUN_MINER",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "compatibility-ignored",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_P2P_PORT",
+      "kind": "port",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go",
+        "config/testnet_config_skeleton_v1.go"
+      ]
+    },
+    {
+      "key": "QC_PANEL_GAME_BASE",
+      "kind": "origin",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "release/qc_kontrol_paneli/qc_kontrol_paneli_launcher.go"
+      ]
+    },
+    {
+      "key": "QC_PANEL_NODE_BASE",
+      "kind": "origin",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "release/qc_kontrol_paneli/qc_kontrol_paneli_launcher.go"
+      ]
+    },
+    {
+      "key": "QC_PERSISTENCE_TEST_CHILD",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_PLAYER_RUNTIME_TEST_CHILD",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_PREMINE_ADDRESS",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go",
+        "config/testnet_faucet_premine_safety_v1.go"
+      ]
+    },
+    {
+      "key": "QC_PREMINE_LIQUID_ADDRESS",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go",
+        "config/testnet_faucet_premine_safety_v1.go"
+      ]
+    },
+    {
+      "key": "QC_PREMINE_LIQUID_PERCENT",
+      "kind": "integer",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go",
+        "config/testnet_faucet_premine_safety_v1.go"
+      ]
+    },
+    {
+      "key": "QC_PREMINE_LOCKED_ADDRESS",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go",
+        "config/testnet_faucet_premine_safety_v1.go"
+      ]
+    },
+    {
+      "key": "QC_PREMINE_LOCKED_PERCENT",
+      "kind": "integer",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go",
+        "config/testnet_faucet_premine_safety_v1.go"
+      ]
+    },
+    {
+      "key": "QC_PREMINE_PERCENT",
+      "kind": "integer",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go",
+        "config/testnet_faucet_premine_safety_v1.go"
+      ]
+    },
+    {
+      "key": "QC_PS_INLINE",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "compatibility-ignored",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_PUBLIC_FAUCET_ENABLED",
+      "kind": "boolean",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/testnet_faucet_premine_safety_v1.go"
+      ]
+    },
+    {
+      "key": "QC_PUBLIC_TESTNET",
+      "kind": "boolean",
+      "owners": [
+        "game",
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/runtimeEnvironment.ts",
+        "config/chain_file_separation_v1.go",
+        "config/network_profile_v1.go",
+        "config/runtime_environment.go",
+        "config/runtime_environment.py",
+        "config/testnet_config_skeleton_v1.go",
+        "node_app_http.go",
+        "telegram_game/telegram_game/testnet_connection_v1.py"
+      ]
+    },
+    {
+      "key": "QC_PUBLISHER_AI_ENABLED",
+      "kind": "boolean-01",
+      "owners": [
+        "publisher"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/cli.ts",
+        "autopublisher/src/runtime/config.ts",
+        "autopublisher/src/runtime/engine.ts",
+        "autopublisher/src/runtime/pool.ts"
+      ]
+    },
+    {
+      "key": "QC_PUBLISHER_AI_VISUALS",
+      "kind": "boolean-01",
+      "owners": [
+        "publisher"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/ai.ts",
+        "autopublisher/src/runtime/cli.ts",
+        "autopublisher/src/runtime/config.ts",
+        "autopublisher/src/runtime/pool.ts"
+      ]
+    },
+    {
+      "key": "QC_PUBLISHER_AUDIO_DIR",
+      "kind": "absolute-path",
+      "owners": [
+        "publisher",
+        "tooling"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/config.ts",
+        "scripts/runtime_config_preflight.py"
+      ]
+    },
+    {
+      "key": "QC_PUBLISHER_BACKGROUND_DIR",
+      "kind": "absolute-path",
+      "owners": [
+        "publisher",
+        "tooling"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/config.ts",
+        "scripts/runtime_config_preflight.py"
+      ]
+    },
+    {
+      "key": "QC_PUBLISHER_CRON",
+      "kind": "enum",
+      "owners": [
+        "publisher"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/cli.ts",
+        "autopublisher/src/runtime/config.ts"
+      ]
+    },
+    {
+      "key": "QC_PUBLISHER_MONITOR_ORIGIN",
+      "kind": "monitor-origin",
+      "owners": [
+        "publisher",
+        "tooling"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/cli.ts",
+        "autopublisher/src/runtime/monitoring.ts",
+        "autopublisher/src/runtime/runtimeEnvironment.ts",
+        "config/runtime_environment.go",
+        "config/runtime_environment.py",
+        "scripts/runtime_config_preflight.py"
+      ]
+    },
+    {
+      "key": "QC_PUBLISHER_MONITOR_TOKEN",
+      "kind": "text",
+      "owners": [
+        "node",
+        "publisher",
+        "tooling"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/monitoring.ts",
+        "autopublisher/src/runtime/runtimeEnvironment.ts",
+        "config/runtime_environment.go",
+        "config/runtime_environment.py",
+        "node_app_monitoring.go",
+        "scripts/runtime_config_preflight.py"
+      ]
+    },
+    {
+      "key": "QC_PUBLISHER_PLATFORMS",
+      "kind": "platforms",
+      "owners": [
+        "publisher"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/cli.ts",
+        "autopublisher/src/runtime/config.ts"
+      ]
+    },
+    {
+      "key": "QC_PUBLISHER_SCHEDULER",
+      "kind": "enum",
+      "owners": [
+        "publisher"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/cli.ts",
+        "autopublisher/src/runtime/config.ts",
+        "autopublisher/src/runtime/schedulePolicy.ts"
+      ]
+    },
+    {
+      "key": "QC_PUBLISHER_SECRET_FILE",
+      "kind": "absolute-path",
+      "owners": [
+        "publisher"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/cli.ts",
+        "autopublisher/src/runtime/oauth.ts"
+      ]
+    },
+    {
+      "key": "QC_PUBLISHER_STATE_DIR",
+      "kind": "absolute-path",
+      "owners": [
+        "publisher",
+        "tooling"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/cli.ts",
+        "autopublisher/src/runtime/config.ts",
+        "scripts/runtime_config_preflight.py"
+      ]
+    },
+    {
+      "key": "QC_PUBLISHER_TIMEZONE",
+      "kind": "timezone",
+      "owners": [
+        "publisher"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/cli.ts",
+        "autopublisher/src/runtime/config.ts"
+      ]
+    },
+    {
+      "key": "QC_PUBLISHER_TOPICS",
+      "kind": "absolute-path",
+      "owners": [
+        "publisher"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/config.ts"
+      ]
+    },
+    {
+      "key": "QC_QUEUE_LOCK_CHILD",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_RECOVERY_TEST_PYTHON",
+      "kind": "absolute-path",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": [
+        "scripts/verify_clean_stack.py"
+      ]
+    },
+    {
+      "key": "QC_RELEASE_E2E_CC",
+      "kind": "absolute-path",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": [
+        "scripts/verify_clean_stack.py"
+      ]
+    },
+    {
+      "key": "QC_WEB_MINING_VECTOR_FILE",
+      "kind": "absolute-path",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": [
+        "scripts/verify_clean_stack.py"
+      ]
+    },
+    {
+      "key": "QC_REWARD_ADDR_BURN",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go"
+      ]
+    },
+    {
+      "key": "QC_REWARD_ADDR_COMMUNITY",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go"
+      ]
+    },
+    {
+      "key": "QC_REWARD_ADDR_DEV",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go"
+      ]
+    },
+    {
+      "key": "QC_REWARD_ADDR_MINER",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go"
+      ]
+    },
+    {
+      "key": "QC_REWARD_ADDR_STAKE",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go"
+      ]
+    },
+    {
+      "key": "QC_REWARD_PCT_BURN",
+      "kind": "integer",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go"
+      ]
+    },
+    {
+      "key": "QC_REWARD_PCT_DEV",
+      "kind": "integer",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go"
+      ]
+    },
+    {
+      "key": "QC_REWARD_PCT_MINER",
+      "kind": "integer",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go"
+      ]
+    },
+    {
+      "key": "QC_REWARD_PCT_STAKE",
+      "kind": "integer",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go"
+      ]
+    },
+    {
+      "key": "QC_RUN_DIRECT",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "compatibility-ignored",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_SECURITY_CRASH_TEST_DIR",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_SECURITY_LOG_TEST_DIR",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_SETTLEMENT_DEV_ACTIONS",
+      "kind": "boolean",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/dev_api.py"
+      ]
+    },
+    {
+      "key": "QC_SIGNER_TEST_CHILD",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_STAKE_POOL_ADDRESS",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go"
+      ]
+    },
+    {
+      "key": "QC_STORAGE_LOCK_CHILD",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_STRICT_CHAIN",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "compatibility-ignored",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_SYMBOL",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go"
+      ]
+    },
+    {
+      "key": "QC_SYNC_TEST_HEIGHT",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_SYNC_TEST_INPUT",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_SYNC_TEST_REMOTE",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_SYNC_TEST_RESULT",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_SYNC_TEST_ROLE",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_TARGET_BLOCK_TIME_SECS",
+      "kind": "integer",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go"
+      ]
+    },
+    {
+      "key": "QC_TELEGRAM_BOT_TOKEN",
+      "kind": "text",
+      "owners": [
+        "game"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": "TELEGRAM_BOT_TOKEN",
+      "sourceReferences": [
+        "telegram_game/_item5_make_valid_initdata.py",
+        "telegram_game/telegram_game/config.py",
+        "telegram_game/telegram_game/dev_api.py",
+        "telegram_game/telegram_game/main_bot.py"
+      ]
+    },
+    {
+      "key": "QC_TELEGRAM_URL",
+      "kind": "text",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/config.py"
+      ]
+    },
+    {
+      "key": "QC_TESTNET",
+      "kind": "boolean",
+      "owners": [
+        "game",
+        "node",
+        "tooling"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/runtimeEnvironment.ts",
+        "config/chain_file_separation_v1.go",
+        "config/network_profile_v1.go",
+        "config/runtime_environment.go",
+        "config/runtime_environment.py",
+        "config/testnet_config_skeleton_v1.go",
+        "release/START_TESTNET_LOCAL.ps1",
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET.ps1",
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET_SIM.ps1",
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET_SIM_NORELOAD.ps1",
+        "telegram_game/telegram_game/admin_panel_safety_v1.py",
+        "telegram_game/telegram_game/testnet_connection_v1.py",
+        "telegram_game/telegram_game/tgwt_bsc_claim_safety_v1.py",
+        "telegram_game/telegram_game/watch_earn_final_safety_v1.py"
+      ]
+    },
+    {
+      "key": "QC_TESTNET_FAUCET_ADDRESS",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/testnet_faucet_premine_safety_v1.go"
+      ]
+    },
+    {
+      "key": "QC_TESTNET_FAUCET_ENABLED",
+      "kind": "boolean",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/testnet_faucet_premine_safety_v1.go"
+      ]
+    },
+    {
+      "key": "QC_TESTNET_FAUCET_PRIVATE_KEY",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/testnet_faucet_premine_safety_v1.go"
+      ]
+    },
+    {
+      "key": "QC_TESTNET_FAUCET_PRIVATE_KEY_HEX",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/testnet_faucet_premine_safety_v1.go"
+      ]
+    },
+    {
+      "key": "QC_TESTNET_PREMINE_ENABLED",
+      "kind": "boolean",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/testnet_faucet_premine_safety_v1.go"
+      ]
+    },
+    {
+      "key": "QC_TESTNET_PUBLIC_API",
+      "kind": "boolean",
+      "owners": [
+        "game",
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/runtimeEnvironment.ts",
+        "config/chain_file_separation_v1.go",
+        "config/network_profile_v1.go",
+        "config/runtime_environment.go",
+        "config/runtime_environment.py",
+        "node_app_http.go",
+        "telegram_game/telegram_game/testnet_connection_v1.py"
+      ]
+    },
+    {
+      "key": "QC_TGWT_DB",
+      "kind": "text",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "retired",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/persistence.py"
+      ]
+    },
+    {
+      "key": "QC_TG_ADMIN_TOKEN",
+      "kind": "text",
+      "owners": [
+        "game"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": "TELEGRAM_GAME_ADMIN_TOKEN",
+      "sourceReferences": [
+        "telegram_game/telegram_game/admin_panel_safety_v1.py"
+      ]
+    },
+    {
+      "key": "QC_THEME",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "cmd/wallet/main_fyne.go"
+      ]
+    },
+    {
+      "key": "QC_THEME_VALUE",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "cmd/wallet/main_fyne.go"
+      ]
+    },
+    {
+      "key": "QC_TIKTOK_URL",
+      "kind": "text",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/config.py"
+      ]
+    },
+    {
+      "key": "QC_TOTAL_SUPPLY",
+      "kind": "integer",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go"
+      ]
+    },
+    {
+      "key": "QC_VERIFIED_REWARDS_TEST_CHILD",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_WALLET_BOUNDARY_TEST_CHILD",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_WALLET_DIR",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "cmd/qc_recovery_init/main.go",
+        "cmd/qc_seed_manager/main.go"
+      ]
+    },
+    {
+      "key": "QC_WALLET_FILE",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "config/config.go",
+        "node_app_cli_paths.go"
+      ]
+    },
+    {
+      "key": "QC_WALLET_LEDGER_TEST_CHILD",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_WALLET_LINK_GENESIS_HEX",
+      "kind": "text",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/wallet_link.py"
+      ]
+    },
+    {
+      "key": "QC_WALLET_LINK_NETWORK_ID",
+      "kind": "text",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/wallet_link.py"
+      ]
+    },
+    {
+      "key": "QC_WALLET_STORAGE_TEST_MODE",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_WALLET_STORAGE_TEST_PATH",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_WATCH_EARN_URL",
+      "kind": "text",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/config.py"
+      ]
+    },
+    {
+      "key": "QC_WEB_APP_URL",
+      "kind": "text",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/config.py"
+      ]
+    },
+    {
+      "key": "QC_WHOLE_QC_INTEGER",
+      "kind": "text",
+      "owners": [
+        "node"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "consensus/protocol_denomination_v1.go"
+      ]
+    },
+    {
+      "key": "QC_X_CALLBACK_URL",
+      "kind": "text",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/x_reward_verifier.py"
+      ]
+    },
+    {
+      "key": "QC_X_CLIENT_ID",
+      "kind": "text",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/x_reward_verifier.py"
+      ]
+    },
+    {
+      "key": "QC_X_CLIENT_SECRET",
+      "kind": "text",
+      "owners": [
+        "game"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/x_reward_verifier.py"
+      ]
+    },
+    {
+      "key": "QC_X_REWARD_SIGNING_SEED_FILE",
+      "kind": "absolute-path",
+      "owners": [
+        "game"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/x_reward_verifier.py"
+      ]
+    },
+    {
+      "key": "QC_X_REWARD_TEST_CHILD",
+      "kind": "text",
+      "owners": [
+        "tooling"
+      ],
+      "secret": false,
+      "status": "test-only",
+      "aliasFor": null,
+      "sourceReferences": []
+    },
+    {
+      "key": "QC_X_STATE_ENCRYPTION_KEY",
+      "kind": "text",
+      "owners": [
+        "game"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/x_reward_verifier.py"
+      ]
+    },
+    {
+      "key": "QC_X_URL",
+      "kind": "text",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/config.py"
+      ]
+    },
+    {
+      "key": "QC_YOUTUBE_URL",
+      "kind": "text",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/config.py"
+      ]
+    },
+    {
+      "key": "QUANTUMCOIN_API_BASE",
+      "kind": "origin",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": "QC_API_BASE",
+      "sourceReferences": [
+        "autopublisher/src/runtime/runtimeEnvironment.ts",
+        "config/runtime_environment.go",
+        "config/runtime_environment.py",
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080.ps1",
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET.ps1",
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET_SIM.ps1",
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET_SIM_NORELOAD.ps1",
+        "telegram_game/telegram_game/testnet_connection_v1.py"
+      ]
+    },
+    {
+      "key": "TELEGRAM_BOT_MEMBERSHIP_VERIFIER_LATER",
+      "kind": "text",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/social_claim_verification.py"
+      ]
+    },
+    {
+      "key": "TELEGRAM_BOT_TOKEN",
+      "kind": "text",
+      "owners": [
+        "game",
+        "publisher"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/platforms/telegram.ts",
+        "autopublisher/src/runtime/credentialHealth.ts",
+        "autopublisher/src/utils/telegramTest.ts",
+        "telegram_game/_item5_make_valid_initdata.py",
+        "telegram_game/telegram_game/config.py",
+        "telegram_game/telegram_game/dev_api.py",
+        "telegram_game/telegram_game/main_bot.py"
+      ]
+    },
+    {
+      "key": "TELEGRAM_CHAT_ID",
+      "kind": "text",
+      "owners": [
+        "publisher"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/platforms/telegram.ts",
+        "autopublisher/src/utils/telegramTest.ts"
+      ]
+    },
+    {
+      "key": "TELEGRAM_GAME",
+      "kind": "text",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/load_test_safety_v1.py",
+        "telegram_game/telegram_game/qc_ecosystem_scale_runtime.py"
+      ]
+    },
+    {
+      "key": "TELEGRAM_GAME_ADMIN_AUTH_REQUIRED",
+      "kind": "boolean",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "compatibility-ignored",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/admin_panel_safety_v1.py"
+      ]
+    },
+    {
+      "key": "TELEGRAM_GAME_ADMIN_TOKEN",
+      "kind": "text",
+      "owners": [
+        "game",
+        "tooling"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/admin_panel_safety_v1.py",
+        "tools/qc_load_test_safe_v1.ps1"
+      ]
+    },
+    {
+      "key": "TELEGRAM_GAME_ALLOW_TESTNET_MAIN_PORT",
+      "kind": "boolean",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/runtimeEnvironment.ts",
+        "config/runtime_environment.go",
+        "config/runtime_environment.py",
+        "telegram_game/telegram_game/testnet_connection_v1.py"
+      ]
+    },
+    {
+      "key": "TELEGRAM_GAME_BOT_TOKEN",
+      "kind": "text",
+      "owners": [
+        "game"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": "TELEGRAM_BOT_TOKEN",
+      "sourceReferences": [
+        "telegram_game/_item5_make_valid_initdata.py",
+        "telegram_game/telegram_game/config.py",
+        "telegram_game/telegram_game/dev_api.py"
+      ]
+    },
+    {
+      "key": "TELEGRAM_GAME_CHAIN_MODE",
+      "kind": "game-network",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET.ps1",
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET_SIM.ps1",
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET_SIM_NORELOAD.ps1",
+        "telegram_game/telegram_game/admin_panel_safety_v1.py",
+        "telegram_game/telegram_game/testnet_connection_v1.py",
+        "telegram_game/telegram_game/tgwt_bsc_claim_safety_v1.py",
+        "telegram_game/telegram_game/watch_earn_final_safety_v1.py"
+      ]
+    },
+    {
+      "key": "TELEGRAM_GAME_MINING_MODE",
+      "kind": "enum",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET.ps1",
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET_SIM.ps1",
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET_SIM_NORELOAD.ps1",
+        "telegram_game/telegram_game/dev_api.py"
+      ]
+    },
+    {
+      "key": "TELEGRAM_GAME_NETWORK",
+      "kind": "game-network",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET.ps1",
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET_SIM.ps1",
+        "telegram_game/RUN_TELEGRAM_GAME_SERVER_8080_TESTNET_SIM_NORELOAD.ps1",
+        "telegram_game/telegram_game/admin_panel_safety_v1.py",
+        "telegram_game/telegram_game/testnet_connection_v1.py",
+        "telegram_game/telegram_game/tgwt_bsc_claim_safety_v1.py",
+        "telegram_game/telegram_game/watch_earn_final_safety_v1.py"
+      ]
+    },
+    {
+      "key": "TWITTER_ACCESS_SECRET",
+      "kind": "text",
+      "owners": [
+        "publisher"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": "X_ACCESS_SECRET",
+      "sourceReferences": [
+        "autopublisher/src/platforms/x.ts"
+      ]
+    },
+    {
+      "key": "TWITTER_ACCESS_TOKEN",
+      "kind": "text",
+      "owners": [
+        "publisher"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": "X_ACCESS_TOKEN",
+      "sourceReferences": [
+        "autopublisher/src/platforms/x.ts"
+      ]
+    },
+    {
+      "key": "TWITTER_API_KEY",
+      "kind": "text",
+      "owners": [
+        "publisher"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": "X_APP_KEY",
+      "sourceReferences": [
+        "autopublisher/src/platforms/x.ts"
+      ]
+    },
+    {
+      "key": "TWITTER_API_SECRET",
+      "kind": "text",
+      "owners": [
+        "publisher"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": "X_APP_SECRET",
+      "sourceReferences": [
+        "autopublisher/src/platforms/x.ts"
+      ]
+    },
+    {
+      "key": "X_ACCESS_SECRET",
+      "kind": "text",
+      "owners": [
+        "publisher"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/platforms/x.ts"
+      ]
+    },
+    {
+      "key": "X_ACCESS_TOKEN",
+      "kind": "text",
+      "owners": [
+        "publisher"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/platforms/x.ts"
+      ]
+    },
+    {
+      "key": "X_ACCESS_TOKEN_SECRET",
+      "kind": "text",
+      "owners": [
+        "publisher"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": "X_ACCESS_SECRET",
+      "sourceReferences": [
+        "autopublisher/src/platforms/x.ts"
+      ]
+    },
+    {
+      "key": "X_API_OR_APPROVED_VERIFICATION_ADAPTER_LATER",
+      "kind": "text",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/social_claim_verification.py"
+      ]
+    },
+    {
+      "key": "X_APP_KEY",
+      "kind": "text",
+      "owners": [
+        "publisher"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/platforms/x.ts"
+      ]
+    },
+    {
+      "key": "X_APP_SECRET",
+      "kind": "text",
+      "owners": [
+        "publisher"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/platforms/x.ts"
+      ]
+    },
+    {
+      "key": "X_COM",
+      "kind": "text",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/social_claim_verification.py"
+      ]
+    },
+    {
+      "key": "X_CONSUMER_KEY",
+      "kind": "text",
+      "owners": [
+        "publisher"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": "X_APP_KEY",
+      "sourceReferences": [
+        "autopublisher/src/platforms/x.ts"
+      ]
+    },
+    {
+      "key": "X_CONSUMER_SECRET",
+      "kind": "text",
+      "owners": [
+        "publisher"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": "X_APP_SECRET",
+      "sourceReferences": [
+        "autopublisher/src/platforms/x.ts"
+      ]
+    },
+    {
+      "key": "YOUTUBE_API_OR_APPROVED_VERIFICATION_ADAPTER_LATER",
+      "kind": "text",
+      "owners": [
+        "game"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "telegram_game/telegram_game/social_claim_verification.py"
+      ]
+    },
+    {
+      "key": "YOUTUBE_CLIENT_JSON",
+      "kind": "text",
+      "owners": [
+        "publisher"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/oauth.ts",
+        "autopublisher/src/runtime/secrets.ts"
+      ]
+    },
+    {
+      "key": "YOUTUBE_CLIENT_SECRET_PATH",
+      "kind": "text",
+      "owners": [
+        "publisher"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/oauth.ts",
+        "autopublisher/src/runtime/secrets.ts"
+      ]
+    },
+    {
+      "key": "YOUTUBE_PRIVACY",
+      "kind": "enum",
+      "owners": [
+        "publisher"
+      ],
+      "secret": false,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/cli.ts",
+        "autopublisher/src/runtime/config.ts"
+      ]
+    },
+    {
+      "key": "YOUTUBE_TOKEN_JSON",
+      "kind": "text",
+      "owners": [
+        "publisher"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/oauth.ts",
+        "autopublisher/src/runtime/secrets.ts"
+      ]
+    },
+    {
+      "key": "YOUTUBE_TOKEN_PATH",
+      "kind": "text",
+      "owners": [
+        "publisher"
+      ],
+      "secret": true,
+      "status": "active",
+      "aliasFor": null,
+      "sourceReferences": [
+        "autopublisher/src/runtime/oauth.ts",
+        "autopublisher/src/runtime/secrets.ts"
+      ]
+    }
+  ]
+}

@@ -35,11 +35,3 @@ Invoke-RestMethod "http://127.0.0.1:8080/api/bridge/status?playerId=dev_user" | 
 Write-QcInfo ""
 Write-QcInfo "--- TGWT LEDGER LAST 5 ---" -ForegroundColor Yellow
 Invoke-RestMethod "http://127.0.0.1:8080/api/v1/tgwt/ledger?user_id=dev_user&limit=5" | ConvertTo-Json -Depth 12
-
-
-
-
-
-
-
-

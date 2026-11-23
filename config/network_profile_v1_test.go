@@ -8,6 +8,7 @@ func clearNetworkProfileEnvV1(t *testing.T) {
 	keys := []string{
 		"QC_TESTNET",
 		"QC_TESTNET_PUBLIC_API",
+		"QC_API_PUBLIC_TESTNET",
 		"QC_PUBLIC_TESTNET",
 		"QC_MAINNET",
 		"QC_NET_MAGIC",
@@ -20,6 +21,27 @@ func clearNetworkProfileEnvV1(t *testing.T) {
 
 	for _, key := range keys {
 		t.Setenv(key, "")
+	}
+}
+
+func TestResolveNetworkProfileV1RejectsMalformedAndConflictingAliases(t *testing.T) {
+	for _, scenario := range []struct {
+		name string
+		env  map[string]string
+	}{
+		{"typo", map[string]string{"QC_NETWORK": "not-mainnet"}},
+		{"boolean", map[string]string{"QC_TESTNET": "enabled"}},
+		{"conflict", map[string]string{"QC_NETWORK": "local-release", "QC_MODE": "testnet"}},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			clearNetworkProfileEnvV1(t)
+			for key, value := range scenario.env {
+				t.Setenv(key, value)
+			}
+			if _, err := ResolveNetworkProfileV1(QCMainnetChainFileV1); err == nil {
+				t.Fatal("invalid network settings accepted")
+			}
+		})
 	}
 }
 

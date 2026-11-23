@@ -1,7 +1,5 @@
 package blockchain
 
-import "bytes"
-
 // BlockchainStateSnapshot is a detached view of mutable blockchain state.
 // Callers may inspect or mutate the returned values without aliasing the
 // live Blockchain instance.
@@ -368,7 +366,9 @@ func (bc *Blockchain) BlockByIndexSnapshot(
 	return nil
 }
 
-// BlockByHashSnapshot returns a detached block matching hash.
+// BlockByHashSnapshot returns a detached block using an ephemeral hash index.
+// Construction/load/reorg derive this index together with transaction indexes;
+// manually constructed compatibility instances initialize it only once.
 func (bc *Blockchain) BlockByHashSnapshot(
 	hash []byte,
 ) *Block {
@@ -377,24 +377,16 @@ func (bc *Blockchain) BlockByHashSnapshot(
 	}
 
 	bc.stateMu.RLock()
-	defer bc.stateMu.RUnlock()
-
-	for _, block := range bc.Blocks {
-		if block == nil {
-			continue
-		}
-
-		if bytes.Equal(
-			block.Hash,
-			hash,
-		) {
-			return cloneBlockV1(
-				block,
-			)
-		}
+	if bc.blockHashIndex != nil {
+		block := cloneBlockV1(bc.blockHashIndex[string(hash)])
+		bc.stateMu.RUnlock()
+		return block
 	}
-
-	return nil
+	bc.stateMu.RUnlock()
+	bc.stateMu.Lock()
+	defer bc.stateMu.Unlock()
+	bc.ensureTransactionLocationIndexesLocked()
+	return cloneBlockV1(bc.blockHashIndex[string(hash)])
 }
 
 // BalanceSnapshot executes the legacy balance calculation while holding the

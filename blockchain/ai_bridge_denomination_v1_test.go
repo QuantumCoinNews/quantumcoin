@@ -1,9 +1,6 @@
 package blockchain
 
-import (
-	"testing"
-	"time"
-)
+import "testing"
 
 func TestAITxLiteQCAtOriginHeightV1(t *testing.T) {
 	bc := atomRewardTestChainV1(t, 1)
@@ -21,13 +18,9 @@ func TestAITxLiteQCAtOriginHeightV1(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			tx := &Transaction{Sender: "sender", Amount: tc.units, Timestamp: time.Unix(1, 0)}
-			got := bc.ToAITxLiteAtHeightV1([]*Transaction{tx}, tc.height)
-			if len(got) != 1 {
-				t.Fatalf("entries=%d want=1", len(got))
-			}
-			if got[0].Amount != tc.wantQC {
-				t.Fatalf("amount=%v want=%v QC", got[0].Amount, tc.wantQC)
+			got := bc.TransactionAmountQCAtHeightV1(tc.units, tc.height)
+			if got != tc.wantQC {
+				t.Fatalf("amount=%v want=%v QC", got, tc.wantQC)
 			}
 		})
 	}

@@ -1,5 +1,0 @@
-./analysis.go
-./codeactionkind.go
-./default.go
-./settings.go
-./staticcheck.go

@@ -1,60 +1,16 @@
-# QuantumCoin Local Testnet Runbook - 24A
+# Local testnet runbook
 
-Status: QC_PRE_TESTNET_STEP_24A
+Use the single runtime profile in config.testnet.json. The node loads it through
+the strict Go config loader. The API script selects observer mode and the node
+script selects writable run mode. Both delegate to START_TESTNET_LOCAL.ps1.
 
-Scope: LOCAL DEV TESTNET only.
-Public testnet is disabled until later approval.
+Run either script with -PlanOnly to see its config and storage paths.
+For a real run, supply -ReleaseDirectory, -ReleaseCommit and -TrustedSigners
+for a verified package, -DataDir for a separate existing testnet directory,
+and QC_API_TOKEN through the process environment. The local P2P listener is
+127.0.0.1:13001. The HTTP port is 18082. The chain file is
+chain_data_testnet.dat. Stop the foreground process with Ctrl+C in its terminal.
 
-Fixed values:
-- Network: testnet
-- Network magic: QC_TESTNET_V1
-- API port: 18082
-- P2P port: 13001
-- Chain file: chain_data_testnet.dat
-- Bonus file: bonus_store_testnet.json
-- Wallet file: wallet_data_testnet.json
-- Total supply: 25,500,000 QC
-- Faucet: disabled
-- Premine: disabled
-
-Required files:
-- config.testnet.json
-- RUN_TESTNET_API_18082.ps1
-- STOP_TESTNET_API_18082.ps1
-- RUN_TESTNET_NODE_18082_13001.ps1
-- STOP_TESTNET_NODE_18082_13001.ps1
-- TESTNET_DEV_MODE_BOUNDARY_23B.md
-- CHECK_TESTNET_BOUNDARY_23B.ps1
-- RUN_PUBLIC_TESTNET_NODE_DISABLED_UNTIL_APPROVAL.ps1
-
-Start API-only local testnet:
-Run from release folder: .\RUN_TESTNET_API_18082.ps1
-Expected: TESTNET label, ok health, chain_data_testnet.dat, port 18082 listening.
-
-Start full local testnet node:
-Run from release folder: .\RUN_TESTNET_NODE_18082_13001.ps1
-Expected: port 18082 API and port 13001 P2P listening.
-
-Stop local testnet:
-API-only stop: .\STOP_TESTNET_API_18082.ps1
-Full node stop: .\STOP_TESTNET_NODE_18082_13001.ps1
-
-Public testnet rule:
-Do not run public testnet yet.
-RUN_PUBLIC_TESTNET_NODE_DISABLED_UNTIL_APPROVAL.ps1 must refuse to start.
-
-Safety rules:
-Never touch mainnet chain file during testnet steps.
-Mainnet file: chain_data.dat
-Testnet file: chain_data_testnet.dat
-
-Before public testnet:
-- backup rollback plan
-- endpoint allowlist
-- token CORS policy
-- faucet premine decision
-- first local dry-run
-
-Next checklist:
-25 backup rollback plan
-26 first local testnet dry-run
+The testnet profile does not start a miner. Public testnet activation is a
+separate procedure. Follow the authenticated offline backup runbook for
+snapshot and recovery. [Backup and recovery](../docs/QC_BACKUP_RESTORE_RUNBOOK.md)

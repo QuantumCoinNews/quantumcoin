@@ -1,13 +1,17 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestSendResponseRejectsHTTPFailure(
 	t *testing.T,
 ) {
-	err := validateCanonicalSendResponse(
+	_, err := validateCanonicalSendResponse(
 		500,
 		[]byte(`{"success":false,"message":"server error"}`),
+		"",
 	)
 
 	if err == nil {
@@ -18,13 +22,14 @@ func TestSendResponseRejectsHTTPFailure(
 func TestSendResponseRejectsSemanticFailure(
 	t *testing.T,
 ) {
-	err := validateCanonicalSendResponse(
+	_, err := validateCanonicalSendResponse(
 		200,
 		[]byte(`{
 "success":false,
 "txid":"",
 "message":"verify failed"
 }`),
+		"",
 	)
 
 	if err == nil {
@@ -35,9 +40,10 @@ func TestSendResponseRejectsSemanticFailure(
 func TestSendResponseRejectsInvalidJSON(
 	t *testing.T,
 ) {
-	err := validateCanonicalSendResponse(
+	_, err := validateCanonicalSendResponse(
 		200,
 		[]byte(`not-json`),
+		"",
 	)
 
 	if err == nil {
@@ -48,13 +54,14 @@ func TestSendResponseRejectsInvalidJSON(
 func TestSendResponseAcceptsCanonicalSuccess(
 	t *testing.T,
 ) {
-	err := validateCanonicalSendResponse(
+	_, err := validateCanonicalSendResponse(
 		200,
 		[]byte(`{
 "success":true,
-"txid":"abc123",
+"txid":"`+strings.Repeat("a", 64)+`",
 "message":"accepted"
 }`),
+		strings.Repeat("a", 64),
 	)
 
 	if err != nil {

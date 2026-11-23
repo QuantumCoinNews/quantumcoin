@@ -1,31 +1,48 @@
 {
+  "mechanism": "PERMANENT_BURN",
+  "recyclingReserve": {
+    "mechanism": "RECYCLING_RESERVE_PROPOSAL",
+    "enabled": false,
+    "transfersExistingQcOnly": true,
+    "requiresOwnerSignature": true,
+    "countsAsBurnedSupply": false,
+    "mayMintReplacement": false,
+    "maySpendBurnSink": false,
+    "requiresSeparateActivation": true
+  },
   "version": "QC_BURN_SINK_CONTROL_V1",
   "mode": "BURN_SINK_CONTROL_NO_BURN_EXECUTION",
-  "burn": {
-    "maxSupplyQc": 25500000,
-    "burnAddressAlias": "QC_BURN_SINK",
-    "burnAddressFinalBeforeMainnet": true,
-    "burnAddressMustBeUnspendable": true,
-    "burnPrivateKeyMustNotExist": true,
-    "burnedSupplyReducesCirculatingSupply": true,
-    "burnDoesNotReduceMaxSupply": true,
-    "burnDoesNotMintReplacement": true,
-    "autoBurnForbidden": true,
-    "requiresExplicitApproval": true
-  },
+  "maxSupplyQc": 25500000,
+  "burnAddressAlias": "QC_BURN_SINK",
+  "burnAddressFinalBeforeMainnet": true,
+  "burnAddressMustBeUnspendable": true,
+  "burnPrivateKeyMustNotExist": true,
+  "burnedSupplyReducesCirculatingSupply": true,
+  "burnDoesNotReduceMaxSupply": true,
+  "burnDoesNotMintReplacement": true,
+  "autoBurnForbidden": true,
+  "requiresExplicitApproval": true,
+  "allowedBurnSources": [
+    "explicit_user_burn",
+    "explicit_admin_approved_burn"
+  ],
   "safeBoundary": {
-    "doesNotExecuteBurn": true,
-    "doesNotSendFunds": true,
-    "doesNotMint": true,
-    "doesNotMintReplacement": true,
+    "burnReducesCirculatingSupplyOnly": true,
+    "controlOnly": true,
     "doesNotChangeBalances": true,
     "doesNotChangeChain": true,
     "doesNotChangeConsensus": true,
     "doesNotChangeMaxSupply": true,
     "doesNotChangeMiningReward": true,
-    "requiresUnspendableBurnAddress": true,
+    "doesNotExecuteBurn": true,
+    "doesNotMint": true,
+    "doesNotMintReplacement": true,
+    "doesNotSendFunds": true,
+    "doesNotStartMining": true,
+    "doesNotStopMining": true,
+    "requiresBurnAddressFinalBeforeMainnet": true,
+    "requiresExplicitBurnApproval": true,
     "requiresNoBurnPrivateKey": true,
-    "burnReducesCirculatingSupplyOnly": true,
-    "controlOnly": true
+    "requiresUnspendableBurnAddress": true
   }
 }

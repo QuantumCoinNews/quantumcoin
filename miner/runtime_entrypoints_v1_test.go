@@ -41,9 +41,13 @@ func TestResolveMinerEntryDifficultyV1UsesLocalOverride(
 		"QC_DIFFICULTY_BITS",
 		"12",
 	)
+	cfg := config.Default()
+	cfg.ChainFile = config.QCIsolatedLocalChainFileV1
+	cfg.HTTPPort = config.QCIsolatedLocalHTTPPortV1
+	cfg.P2PPort = config.QCIsolatedLocalP2PPortV1
 
 	got, err := resolveMinerEntryDifficultyV1(
-		config.Default(),
+		cfg,
 		nil,
 		17,
 	)

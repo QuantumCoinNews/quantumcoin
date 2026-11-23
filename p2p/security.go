@@ -317,6 +317,8 @@ func (ps *PeerSecurity) ReputationSnapshot() map[string]any {
 	}
 
 	items := map[string]any{}
+	overallRisk := "LOW"
+	ranks := map[string]int{"LOW": 0, "WATCH": 1, "MEDIUM": 2, "HIGH": 3}
 	for ip, score := range ps.reputation {
 		status := "TRUSTED"
 		switch {
@@ -329,6 +331,18 @@ func (ps *PeerSecurity) ReputationSnapshot() map[string]any {
 		default:
 			status = "QUARANTINE"
 		}
+		risk := "LOW"
+		switch status {
+		case "WATCH":
+			risk = "WATCH"
+		case "RISKY":
+			risk = "MEDIUM"
+		case "QUARANTINE":
+			risk = "HIGH"
+		}
+		if ranks[risk] > ranks[overallRisk] {
+			overallRisk = risk
+		}
 		items[ip] = map[string]any{
 			"score":  score,
 			"status": status,
@@ -336,6 +350,7 @@ func (ps *PeerSecurity) ReputationSnapshot() map[string]any {
 	}
 
 	return map[string]any{
+		"overallRisk": overallRisk, "peerCount": len(items), "scope": "local-peer-reputation",
 		"version": "PEER_REPUTATION_ENGINE_V1",
 		"peers":   items,
 		"safeBoundary": map[string]bool{

@@ -324,8 +324,11 @@ d=json.loads(sys.argv[2]); print(json.dumps(draw_monthly_winner_v1(lambda:sqlite
                     secret=hmac.new(b"WebAppData",token.encode(),hashlib.sha256).digest()
                     values["hash"]=hmac.new(secret,"\n".join(f"{k}={values[k]}" for k in sorted(values)).encode(),hashlib.sha256).hexdigest()
                     init_data=urllib.parse.urlencode(values)
+                    from telegram_game.player_auth import issue_session
+                    credentials=issue_session(api._db,"tg_101",token,clock[0])
+                    player_headers={"Authorization":"Bearer "+credentials["accessToken"]}
                     def post(path,body,admin=False):
-                        response=client.post(path,json=body,headers={"X-Admin-Token":"test-only-full-admin"} if admin else {})
+                        response=client.post(path,json=body,headers={"X-Admin-Token":"test-only-full-admin"} if admin else player_headers)
                         self.assertEqual(response.status_code,200,response.text)
                         result=response.json();self.assertTrue(result["ok"],result)
                         return result
@@ -399,14 +402,20 @@ d=json.loads(sys.argv[2]); print(json.dumps(draw_monthly_winner_v1(lambda:sqlite
         with patch.dict(os.environ,settings),patch.object(api,"APP_DB",str(self.db)),patch.object(api,"_now",side_effect=lambda:clock[0]),patch.object(program_bridge,"fetch_verified_nft_game_program_v1",return_value=self.program),TestClient(api.app) as client:
             api._QC_ACTION_BURST_EVENTS_V1.clear();api._QC_ACTION_BURST_BLOCKS_V1.clear()
             body={"playerId":"tg_101","initData":"","period":self.period}
-            self.assertEqual(client.post("/api/nft/wallet/challenge",json=body).json()["error"],"telegram_identity_required")
+            unauthenticated=client.post("/api/nft/wallet/challenge",json=body)
+            self.assertEqual(unauthenticated.status_code,401)
+            self.assertEqual(unauthenticated.json()["error"],"telegram_session_required")
+            credentials=client.post("/api/telegram/identity/verify",json={"initData":init_data}).json()
+            self.assertTrue(credentials["ok"],credentials)
+            player_headers={"Authorization":"Bearer "+credentials["accessToken"]}
+            self.assertEqual(client.post("/api/nft/wallet/challenge",json=body,headers=player_headers).json()["error"],"telegram_identity_required")
             body["initData"]=init_data
-            issued=client.post("/api/nft/wallet/challenge",json=body).json()
+            issued=client.post("/api/nft/wallet/challenge",json=body,headers=player_headers).json()
             self.assertTrue(issued["ok"],issued)
             signature=self.key.sign(bytes.fromhex(issued["signingBytesHex"]),ec.ECDSA(hashes.SHA256())).hex()
             proof={"playerId":"tg_101","initData":init_data,"nonce":issued["challenge"]["nonce"],"publicKey":self.public,"signature":signature}
-            self.assertTrue(client.post("/api/nft/wallet/prove",json=proof).json()["ok"])
-            self.assertEqual(client.post("/api/nft/wallet/prove",json=proof).json()["error"],"wallet_challenge_replayed")
+            self.assertTrue(client.post("/api/nft/wallet/prove",json=proof,headers=player_headers).json()["ok"])
+            self.assertEqual(client.post("/api/nft/wallet/prove",json=proof,headers=player_headers).json()["error"],"wallet_challenge_replayed")
             headers={"X-Admin-Token":"test-only-api-admin"}
             for path,payload in (("register-draw-commitment",{"period":self.period,"publication":self.publication}),
                                  ("draw-winner",{"period":self.period,"beacon":self.beacon})):

@@ -1,0 +1,38 @@
+{
+  "files.encoding": "utf8",
+  "go.lintOnSave": "package",
+  "go.vetOnSave": "package",
+  "go.buildOnSave": "package",
+  "go.formatTool": "gofmt",
+  "[go]": {
+    "editor.formatOnSave": true
+  },
+  "gopls": {
+    "staticcheck": true
+  },
+  "python.terminal.useEnvFile": true,
+  "go.goroot": "${env:LOCALAPPDATA}\\QuantumCoin\\toolchains\\go1.26.11\\go",
+  "go.alternateTools": {
+    "go": "${env:LOCALAPPDATA}\\QuantumCoin\\toolchains\\go1.26.11\\go\\bin\\go.exe",
+    "gopls": "${env:LOCALAPPDATA}\\QuantumCoin\\tools\\go1.26.11\\bin\\gopls.exe"
+  },
+  "go.toolsEnvVars": {
+    "GOROOT": "${env:LOCALAPPDATA}\\QuantumCoin\\toolchains\\go1.26.11\\go",
+    "GOTOOLCHAIN": "local",
+    "PATH": "${env:LOCALAPPDATA}\\QuantumCoin\\toolchains\\go1.26.11\\go\\bin;${env:LOCALAPPDATA}\\QuantumCoin\\toolchains\\node22.23.5\\node-v22.23.5-win-x64;${env:LOCALAPPDATA}\\QuantumCoin\\environments\\telegram-game-py3.14.10-6a0cc1168cd5\\Scripts;${env:LOCALAPPDATA}\\QuantumCoin\\toolchains\\python3.14.10;${env:LOCALAPPDATA}\\QuantumCoin\\toolchains\\python3.14.10\\Scripts;${env:LOCALAPPDATA}\\QuantumCoin\\toolchains\\ffmpeg9.0.2\\ffmpeg-9.0.2-essentials_build\\bin;${env:PATH}",
+    "CC": "C:/msys64/mingw64/bin/gcc.exe",
+    "CXX": "C:/msys64/mingw64/bin/g++.exe",
+    "AR": "C:/msys64/mingw64/bin/ar.exe"
+  },
+  "terminal.integrated.env.windows": {
+    "GOROOT": "${env:LOCALAPPDATA}\\QuantumCoin\\toolchains\\go1.26.11\\go",
+    "GOTOOLCHAIN": "local",
+    "PATH": "${env:LOCALAPPDATA}\\QuantumCoin\\toolchains\\go1.26.11\\go\\bin;${env:LOCALAPPDATA}\\QuantumCoin\\toolchains\\node22.23.5\\node-v22.23.5-win-x64;${env:LOCALAPPDATA}\\QuantumCoin\\environments\\telegram-game-py3.14.10-6a0cc1168cd5\\Scripts;${env:LOCALAPPDATA}\\QuantumCoin\\toolchains\\python3.14.10;${env:LOCALAPPDATA}\\QuantumCoin\\toolchains\\python3.14.10\\Scripts;${env:LOCALAPPDATA}\\QuantumCoin\\toolchains\\ffmpeg9.0.2\\ffmpeg-9.0.2-essentials_build\\bin;${env:PATH}",
+    "CC": "C:/msys64/mingw64/bin/gcc.exe",
+    "CXX": "C:/msys64/mingw64/bin/g++.exe",
+    "AR": "C:/msys64/mingw64/bin/ar.exe"
+  },
+  "go.toolsManagement.autoUpdate": false,
+  "python.defaultInterpreterPath": "${env:LOCALAPPDATA}\\QuantumCoin\\environments\\telegram-game-py3.14.10-6a0cc1168cd5\\Scripts\\python.exe",
+  "python.terminal.activateEnvironment": false
+}

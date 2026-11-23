@@ -238,10 +238,14 @@ func decodeFungiblePersistenceEnvelopeV1(
 	return envelope, nil
 }
 
-func validateFungibleStateSchemaV1(
-	model FungibleTokenModelV1,
-	state []byte,
-) error {
+func validateFungibleStateSchemaV1(model FungibleTokenModelV1, state []byte) error {
+	return validateFungibleStateSchemaModeV1(model, state, false)
+}
+
+func validateFungibleStateSchemaModeV1(model FungibleTokenModelV1, state []byte, legacyMaps bool) error {
+	if err := validateUniqueJSONV1(state); err != nil {
+		return fungiblePersistenceErrorV1(ErrFungiblePersistenceIntegrityV1, "ambiguous %s state: %v", model, err)
+	}
 	fields, err := decodeJSONObjectFieldsV1(state)
 	if err != nil {
 		return fungiblePersistenceErrorV1(
@@ -267,15 +271,16 @@ func validateFungibleStateSchemaV1(
 			"balances",
 		}
 		allowed = map[string]struct{}{
-			"symbol":               {},
-			"name":                 {},
-			"decimals":             {},
-			"max_supply":           {},
-			"total_supply":         {},
-			"owner":                {},
-			"balances":             {},
-			"authorization_nonces": {},
-			"miner_token_blocks":   {},
+			"symbol":                 {},
+			"name":                   {},
+			"decimals":               {},
+			"max_supply":             {},
+			"total_supply":           {},
+			"owner":                  {},
+			"balances":               {},
+			"authorization_nonces":   {},
+			"authorization_identity": {},
+			"miner_token_blocks":     {},
 		}
 
 	case FungibleTokenModelFixedSupplyV1:
@@ -290,15 +295,16 @@ func validateFungibleStateSchemaV1(
 			"Allowances",
 		}
 		allowed = map[string]struct{}{
-			"Name":                {},
-			"Symbol":              {},
-			"Owner":               {},
-			"MaxSupply":           {},
-			"TotalSupply":         {},
-			"Decimals":            {},
-			"Balances":            {},
-			"Allowances":          {},
-			"AuthorizationNonces": {},
+			"Name":                  {},
+			"Symbol":                {},
+			"Owner":                 {},
+			"MaxSupply":             {},
+			"TotalSupply":           {},
+			"Decimals":              {},
+			"Balances":              {},
+			"Allowances":            {},
+			"AuthorizationNonces":   {},
+			"AuthorizationIdentity": {},
 		}
 
 	default:
@@ -321,7 +327,14 @@ func validateFungibleStateSchemaV1(
 	}
 
 	for _, key := range required {
-		if _, exists := fields[key]; !exists {
+		value, exists := fields[key]
+		isMap := key == "balances" || key == "Balances" || key == "Allowances"
+		// Old empty states may omit maps; scalar identity/cap/unit fields
+		// must always be explicit. JSON null must never silently become 0.
+		if legacyMaps && isMap && !exists {
+			continue
+		}
+		if !exists || (!isMap && bytes.Equal(bytes.TrimSpace(value), []byte("null"))) {
 			return fungiblePersistenceErrorV1(
 				ErrFungiblePersistenceIntegrityV1,
 				"missing %s state field %q",
@@ -331,6 +344,19 @@ func validateFungibleStateSchemaV1(
 		}
 	}
 
+	if model == FungibleTokenModelControlledEmissionV1 {
+		if records, exists := fields["miner_token_blocks"]; exists && !bytes.Equal(bytes.TrimSpace(records), []byte("null")) {
+			blocks, err := decodeJSONObjectFieldsV1(records)
+			if err != nil {
+				return fungiblePersistenceErrorV1(ErrFungiblePersistenceIntegrityV1, "invalid miner records: %v", err)
+			}
+			for _, record := range blocks {
+				if _, err := registrySchemaFieldsV1(record, []string{"version", "height", "block_hash", "miner", "reward", "status"}, nil); err != nil {
+					return fungiblePersistenceErrorV1(ErrFungiblePersistenceIntegrityV1, "invalid miner record: %v", err)
+				}
+			}
+		}
+	}
 	return nil
 }
 
@@ -385,6 +411,20 @@ func MarshalFungibleTokenV1(
 	); err != nil {
 		return nil, err
 	}
+	// Validate the detached serialized state, so every successful canonical
+	// export is accepted by the corresponding loader. This does not modify
+	// the source object or emit a persistence-load observation.
+	switch model {
+	case FungibleTokenModelControlledEmissionV1:
+		var probe Token
+		err = json.Unmarshal(state, &probe)
+	case FungibleTokenModelFixedSupplyV1:
+		var probe QC20Token
+		err = json.Unmarshal(state, &probe)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%w: export state: %w", ErrFungiblePersistenceIntegrityV1, err)
+	}
 
 	return json.Marshal(fungiblePersistenceEnvelopeV1{
 		Version: FungiblePersistenceVersionV1,
@@ -393,8 +433,8 @@ func MarshalFungibleTokenV1(
 	})
 }
 
-// UnmarshalFungibleTokenV1 selects the concrete token type from the trusted
-// envelope identity, validates its exact v1 schema and returns a read-only
+// UnmarshalFungibleTokenV1 selects the concrete token type from the explicit
+// envelope model, validates its exact v1 schema and returns a read-only
 // common view. It never mutates an existing token instance.
 func UnmarshalFungibleTokenV1(
 	data []byte,

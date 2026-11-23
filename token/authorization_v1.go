@@ -269,6 +269,9 @@ func verifyTokenAuthorizationV1(
 	authorization TokenAuthorizationV1,
 	expected TokenAuthorizationClaimV1,
 ) error {
+	if expected.Domain == "" {
+		return ErrTokenNetworkIdentityRequired
+	}
 	if authorization.Claim != expected {
 		return fmt.Errorf(
 			"%w: signed operation does not match requested operation",
@@ -347,6 +350,33 @@ func TokenAuthorizationDomainV1(
 	return TokenAuthorizationVersionV1 +
 		":" +
 		hex.EncodeToString(digest[:])
+}
+
+// TokenAuthorizationDomainForIdentityV1 extends a model/definition domain
+// with the verified network and persistent token instance identity.
+func TokenAuthorizationDomainForIdentityV1(
+	model, name, symbol, owner string,
+	decimals uint8,
+	maxSupply uint64,
+	identity TokenAuthorizationIdentityV1,
+) (string, error) {
+	if err := validateTokenAuthorizationIdentityV1(identity); err != nil {
+		return "", err
+	}
+	base := TokenAuthorizationDomainV1(model, name, symbol, owner, decimals, maxSupply)
+	genesis, _ := hex.DecodeString(identity.GenesisHash)
+	instance, _ := hex.DecodeString(identity.InstanceID)
+	var buffer bytes.Buffer
+	if err := writeTokenAuthorizationStringV1(&buffer, base); err != nil {
+		return "", err
+	}
+	var magic [4]byte
+	binary.BigEndian.PutUint32(magic[:], identity.NetworkMagic)
+	_, _ = buffer.Write(magic[:])
+	_, _ = buffer.Write(genesis)
+	_, _ = buffer.Write(instance)
+	digest := sha256.Sum256(buffer.Bytes())
+	return TokenAuthorizationVersionV1 + ":" + hex.EncodeToString(digest[:]), nil
 }
 
 func checkTokenAuthorizationNonceV1(

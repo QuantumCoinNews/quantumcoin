@@ -1,0 +1,24 @@
+# Generated runtime outputs and local credentials
+/node_modules/
+/dist/
+/.env
+/.env.*
+!/.env.example
+/state/
+/logs/
+
+# Temporary credential inputs and local encrypted custody files
+/*.local
+/*.dpapi.json
+
+# Operational snapshots never belong to source releases
+/assets/pool/
+/assets/bg.mp4
+/last.json
+/autopublisher.lock
+/.tmp-*
+/src/content/out/
+/src/content/pool/pool_state.json
+!/src/content/pool/topics_pool.json
+
+/.build/

@@ -1,6 +1,7 @@
 package blockchain
 
 import (
+	"context"
 	"fmt"
 	"math/big"
 	"time"
@@ -21,11 +22,19 @@ func NewNFTBlockWithAwardProofV1(
 	records []NFTMintRecordV1,
 	proofs []NFTAwardProofV1,
 ) (*Block, error) {
+	return newNFTBlockWithAwardProofAndTimeV1(index, txs, prevHash, miner, difficulty, records, proofs, time.Now().Unix())
+}
+
+func newNFTBlockWithAwardProofAndTimeV1(index int, txs []*Transaction, prevHash []byte, miner string, difficulty int, records []NFTMintRecordV1, proofs []NFTAwardProofV1, timestamp int64) (*Block, error) {
+	return newNFTBlockWithAwardProofAndTimeContextV1(context.Background(), index, txs, prevHash, miner, difficulty, records, proofs, timestamp)
+}
+
+func newNFTBlockWithAwardProofAndTimeContextV1(ctx context.Context, index int, txs []*Transaction, prevHash []byte, miner string, difficulty int, records []NFTMintRecordV1, proofs []NFTAwardProofV1, timestamp int64) (*Block, error) {
 	if index <= 0 || len(records) == 0 || len(proofs) == 0 {
 		return nil, fmt.Errorf("create approved NFT block: non-genesis height, records and proofs are required")
 	}
 	block := cloneBlockV1(&Block{
-		Index: index, Timestamp: time.Now().Unix(), Transactions: txs,
+		Index: index, Timestamp: timestamp, Transactions: txs,
 		PrevHash: prevHash, Miner: miner, Difficulty: difficulty,
 		Metadata: map[string]string{}, NFTMintRecordsV1: records, NFTAwardProofsV1: proofs,
 	})
@@ -38,6 +47,9 @@ func NewNFTBlockWithAwardProofV1(
 		return nil, fmt.Errorf("create approved NFT block: PoW target is unavailable")
 	}
 	for nonce := uint64(0); ; nonce++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		hash, err := qconsensus.ComputePoWHashV4(header, nonce)
 		if err != nil {
 			return nil, err
@@ -45,6 +57,9 @@ func NewNFTBlockWithAwardProofV1(
 		var value big.Int
 		value.SetBytes(hash[:])
 		if value.Cmp(target) < 0 {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			n, err := ConsensusNonceIntV1(nonce)
 			if err != nil {
 				return nil, err

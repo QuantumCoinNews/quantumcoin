@@ -1,6 +1,7 @@
 # QuantumCoin Main Entrypoints
 
-Status: QC_MAIN_ENTRYPOINTS_V1
+Document ID: `QC_MAIN_ENTRYPOINTS_V1`\
+Evidence stage: **Source verification**. See [scope and release status](POLICY_EVIDENCE_REGISTER.md).
 
 This document classifies every main.go entrypoint before testnet preparation.
 

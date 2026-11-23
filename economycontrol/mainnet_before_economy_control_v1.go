@@ -162,6 +162,9 @@ func ValidatePolicyV1(policy EconomyPolicy) error {
 		if name == "" {
 			return errors.New("allocation name required")
 		}
+		if name != a.Name {
+			return errors.New("allocation name contains surrounding whitespace")
+		}
 		if seen[name] {
 			return errors.New("duplicate allocation: " + name)
 		}
@@ -180,9 +183,11 @@ func ValidatePolicyV1(policy EconomyPolicy) error {
 			if a.BasisPoints != NonFounderBasisPointsV1 || a.Locked || a.Liquid {
 				return errors.New("invalid non-founder network allocation")
 			}
+		default:
+			return errors.New("unknown allocation: " + name)
 		}
-		if a.BasisPoints <= 0 {
-			return errors.New("allocation basis points must be positive: " + name)
+		if a.BasisPoints <= 0 || a.BasisPoints > FullAllocationBasisPointsV1-total {
+			return errors.New("allocation basis points outside remaining total: " + name)
 		}
 		if a.MintsNewQC {
 			return errors.New("allocation must not mint new QC: " + name)

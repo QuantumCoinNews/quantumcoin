@@ -1,12 +1,15 @@
 module quantumcoin
 
-go 1.21
+go 1.26.0
+
+toolchain go1.26.11
 
 require (
 	fyne.io/fyne/v2 v2.6.3
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0
 	github.com/tyler-smith/go-bip39 v1.1.0
-	golang.org/x/crypto v0.33.0
+	golang.org/x/crypto v0.59.0
+	golang.org/x/sys v0.50.0
 )
 
 require (
@@ -36,10 +39,9 @@ require (
 	github.com/srwiley/oksvg v0.0.0-20221011165216-be6e8873101c // indirect
 	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef // indirect
 	github.com/stretchr/testify v1.10.0 // indirect
-	github.com/yuin/goldmark v1.7.8 // indirect
-	golang.org/x/image v0.24.0 // indirect
-	golang.org/x/net v0.35.0 // indirect
-	golang.org/x/sys v0.30.0 // indirect
-	golang.org/x/text v0.22.0 // indirect
+	github.com/yuin/goldmark v1.8.7 // indirect
+	golang.org/x/image v0.48.0 // indirect
+	golang.org/x/net v0.62.0 // indirect
+	golang.org/x/text v0.44.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

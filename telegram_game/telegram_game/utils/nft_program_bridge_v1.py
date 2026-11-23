@@ -79,7 +79,7 @@ def fetch_verified_nft_game_program_v1():
             if not ipaddress.ip_address(parsed.hostname).is_loopback:
                 return None
         request = urllib.request.Request(base + PROGRAM_PATH, headers={"Accept": "application/json", "X-QC-API-KEY": token}, method="GET")
-        opener = urllib.request.build_opener(_NoProgramRedirectV1())
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoProgramRedirectV1())
         with opener.open(request, timeout=3.0) as response:
             if response.status != 200 or response.headers.get_content_type() != "application/json":
                 return None

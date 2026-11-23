@@ -4,6 +4,8 @@ package security
 const SecurityAdminReadonlyReportVersion = "SECURITY_ADMIN_READONLY_REPORT_V1"
 
 type SecurityAdminReportInput struct {
+	IPAPIReputation     map[string]any `json:"ipApiReputation"`
+	GUICLIAPIGuardrails map[string]any `json:"guiCliApiGuardrails"`
 	Summary             map[string]any `json:"summary"`
 	Score               map[string]any `json:"score"`
 	NodeHealth          map[string]any `json:"nodeHealth"`
@@ -33,7 +35,7 @@ func BuildSecurityAdminReadonlyReport(input SecurityAdminReportInput) map[string
 	finalityStatus := stringFromMap(input.FinalityCheckpoint, "status", "UNKNOWN")
 
 	overallRisk := "LOW"
-	if securityRisk == "HIGH" || minerSafetyRisk == "HIGH" || actionBurstRisk == "HIGH" || peerRisk == "HIGH" || mempoolRisk == "HIGH" || doubleSpendRisk == "HIGH" || walletRisk == "HIGH" || feeRisk == "HIGH" || finalityRisk == "HIGH" {
+	if securityRisk == "CRITICAL" || securityRisk == "HIGH" || minerSafetyRisk == "HIGH" || actionBurstRisk == "HIGH" || peerRisk == "HIGH" || mempoolRisk == "HIGH" || doubleSpendRisk == "HIGH" || walletRisk == "HIGH" || feeRisk == "HIGH" || finalityRisk == "HIGH" {
 		overallRisk = "HIGH"
 	} else if securityRisk == "MEDIUM" || minerSafetyRisk == "MEDIUM" || actionBurstRisk == "MEDIUM" || peerRisk == "MEDIUM" || mempoolRisk == "MEDIUM" || doubleSpendRisk == "MEDIUM" || walletRisk == "MEDIUM" || feeRisk == "MEDIUM" || finalityRisk == "MEDIUM" {
 		overallRisk = "MEDIUM"
@@ -42,6 +44,20 @@ func BuildSecurityAdminReadonlyReport(input SecurityAdminReportInput) map[string
 	}
 
 	overallStatus := "OK"
+	for _, section := range []map[string]any{input.IPAPIReputation, input.GUICLIAPIGuardrails} {
+		risk := stringFromMap(section, "overallRisk", "UNKNOWN")
+		if risk == "HIGH" {
+			overallRisk = "HIGH"
+		} else if risk == "MEDIUM" && overallRisk != "HIGH" {
+			overallRisk = "MEDIUM"
+		} else if risk == "WATCH" && overallRisk == "LOW" {
+			overallRisk = "WATCH"
+		}
+	}
+	if overallRisk == "LOW" && (nodeHealth == "UNKNOWN" || securityRisk == "UNKNOWN" || peerRisk == "UNKNOWN") {
+		overallRisk = "UNKNOWN"
+		overallStatus = "INCOMPLETE"
+	}
 	if overallRisk == "WATCH" {
 		overallStatus = "WATCH"
 	}
@@ -114,6 +130,8 @@ func BuildSecurityAdminReadonlyReport(input SecurityAdminReportInput) map[string
 		},
 		"recommendedActions": recommendedActions,
 		"sections": map[string]any{
+			"ipApiReputation":     input.IPAPIReputation,
+			"guiCliApiGuardrails": input.GUICLIAPIGuardrails,
 			"securitySummary":     input.Summary,
 			"securityScore":       input.Score,
 			"nodeHealth":          input.NodeHealth,

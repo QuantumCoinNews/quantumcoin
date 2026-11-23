@@ -1,4 +1,6 @@
-﻿# QC_33C7_PSSCRIPTANALYZER_LEGACY_SUPPRESSIONS
+# Persistence is selected by telegram_game.persistence.
+# To retain a legacy DB, explicitly set QC_GAME_DB to its absolute path first.
+# QC_33C7_PSSCRIPTANALYZER_LEGACY_SUPPRESSIONS
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingCmdletAliases', '', Justification='QC 33C7: legacy/test/run script naming or control-flow retained to avoid behavior change while zeroing analyzer warnings.')]
 param()
 function Write-QcInfo {
@@ -30,7 +32,8 @@ $env:QC_CHAIN_MODE = "testnet"
 $env:QC_NET_MAGIC = "QC_TESTNET_V1"
 $env:TELEGRAM_GAME_MINING_MODE = "TESTNET_SIMULATED"
 $null = "Stop"
-cd C:\Projects\quantumcoin\telegram_game
+Set-Location -LiteralPath $PSScriptRoot
+
 $env:QC_API_BASE = "http://127.0.0.1:18082"
 $env:QUANTUMCOIN_API_BASE = "http://127.0.0.1:18082"
 $env:QC_NODE_API = "http://127.0.0.1:18082"
@@ -42,15 +45,6 @@ Write-QcInfo "QC_API_BASE=$env:QC_API_BASE" -ForegroundColor Yellow
 Write-QcInfo "QC_GAME_MINING_MODE=$env:QC_GAME_MINING_MODE" -ForegroundColor Yellow
 Write-QcInfo "TELEGRAM_GAME_MINING_MODE=$env:TELEGRAM_GAME_MINING_MODE" -ForegroundColor Yellow
 python -c "import os; print('ENV QC_GAME_MINING_MODE =', os.getenv('QC_GAME_MINING_MODE')); from telegram_game.dev_api import _get_game_mining_mode; print('PY MODE =', _get_game_mining_mode())"
-python -m uvicorn telegram_game.dev_api:app --host 127.0.0.1 --port 8080
-
-
-
-
-
-
-
-
-
-
-
+python (Join-Path $PSScriptRoot "../scripts/build_wallet_crypto.py")
+if ($LASTEXITCODE -ne 0) { throw "QC local wallet asset build failed; server not started" }
+python -m uvicorn telegram_game.runtime:app --host 127.0.0.1 --port 8080 --no-proxy-headers

@@ -53,7 +53,7 @@ func DefaultPlanV1() Plan {
 				MainnetSeparated:  true,
 				BackupRequired:    true,
 				MigrationRequired: false,
-				AppendOnlyLedger:  true,
+				AppendOnlyLedger:  false,
 			},
 			{
 				Name:              "telegram_game_state",
@@ -207,6 +207,9 @@ func validateDataDomainV1(domain DataDomain, index int) error {
 		)
 	}
 
+	if !safeDomainSegmentV1(name) {
+		return fmt.Errorf("unsafe domain name: %q", name)
+	}
 	if name != domain.Name {
 		return fmt.Errorf(
 			"domain name must not contain surrounding whitespace: %s",
@@ -238,7 +241,7 @@ func validateDataDomainV1(domain DataDomain, index int) error {
 		)
 	}
 
-	if !schemaVersionPatternV1.MatchString(schemaVersion) {
+	if len(schemaVersion) > 128 || !schemaVersionPatternV1.MatchString(schemaVersion) {
 		return fmt.Errorf(
 			"invalid schema version %q for domain: %s",
 			schemaVersion,

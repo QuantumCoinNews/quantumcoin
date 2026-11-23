@@ -1,0 +1,8 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>QuantumCoin · Browser mining</title>
+<style>body{font:16px system-ui;background:#101827;color:#eef2ff;max-width:680px;margin:4rem auto;padding:1rem}label{display:block;margin:1rem 0}input{display:block;box-sizing:border-box;width:100%;padding:.8rem;background:#1d2940;color:inherit;border:1px solid #52617b;border-radius:6px}button{padding:.8rem 1.4rem;margin-right:1rem;cursor:pointer}pre{white-space:pre-wrap;overflow-wrap:anywhere;color:#a5e7d5}a{color:#b8cbff}</style></head>
+<body><a href="/">← QuantumCoin</a><h1>Browser mining</h1><p>Solve the actual block header on this device. A successful submission means the block was validated and saved by this node. Network confirmation can still change.</p>
+<p>Use an existing wallet whose private key you control and have backed up. This page never creates a wallet. HTTPS or localhost is required. Use this tool on a node you operate.</p>
+<label>Mining wallet address<input id="address" autocomplete="off"></label><label>Node API token for this run<input id="token" type="password" autocomplete="off"></label>
+<button id="start">Start mining</button><button id="stop" disabled>Stop</button><pre id="status" role="status">Ready. Mining starts only when requested.</pre>
+<script type="module" src="/webminer.mjs"></script></body></html>

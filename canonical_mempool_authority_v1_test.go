@@ -17,6 +17,11 @@ func TestCanonicalMempoolAuthorityV1(t *testing.T) {
 		}
 
 		if entry.IsDir() {
+			// Match Go package boundaries: generated JavaScript dependencies,
+			// VCS data and fixtures are not production QuantumCoin Go sources.
+			if path != "." && (strings.HasPrefix(entry.Name(), ".") || strings.HasPrefix(entry.Name(), "_") || entry.Name() == "node_modules" || entry.Name() == "vendor" || entry.Name() == "testdata") {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 
@@ -85,7 +90,7 @@ func TestCanonicalMempoolAuthorityV1(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mainSource, err := os.ReadFile("main.go")
+	mainSource, err := readNodeApplicationSourcesV1()
 	if err != nil {
 		t.Fatal(err)
 	}

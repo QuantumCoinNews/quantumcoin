@@ -13,7 +13,7 @@ func TestMiningLoopNaturalExitReleasesRestartLock(
 	runtime.minerStop = stop
 	runtime.minerDone = done
 	runtime.minerAddress = "test-miner"
-	runtime.minerStopping = true
+	runtime.activeMiner.Store(&miningStopSignalV1{stop: stop})
 
 	// A nil blockchain makes MineOnceV1 return
 	// ErrMiningBlockchainUnavailableV1. That represents an internal,
@@ -60,7 +60,7 @@ func TestMiningLoopNaturalExitReleasesRestartLock(
 		)
 	}
 
-	if runtime.minerStopping {
+	if runtime.activeMiner.Load() != nil {
 		t.Fatal(
 			"natural mining-loop exit left stopping state active",
 		)

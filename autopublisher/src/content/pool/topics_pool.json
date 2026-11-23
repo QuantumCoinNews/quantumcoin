@@ -3,7 +3,11 @@
     "id": "QC-SH-001",
     "title": "3 rules for surviving crypto volatility",
     "script": "Crypto swings are normal. Rule one: position size small enough to sleep. Rule two: plan entries and exits before you buy. Rule three: protect downside with a stop or a hedge. If you can’t explain your plan in one sentence, you’re gambling.",
-    "hashtags": ["#crypto", "#risk", "#trading"],
+    "hashtags": [
+      "#crypto",
+      "#risk",
+      "#trading"
+    ],
     "telegram": "3 rules for surviving crypto volatility: size small, pre-plan, protect downside. Stay consistent.",
     "x": "3 rules for surviving crypto volatility: 1) size small 2) plan entry/exit 3) protect downside. Discipline > prediction. #crypto #risk",
     "youtube_description": "Short risk rules for volatile markets. Educational only."
@@ -12,7 +16,11 @@
     "id": "QC-SH-002",
     "title": "Why most traders lose in bull markets",
     "script": "In bull markets, people confuse luck with skill. They increase leverage, chase green candles, and ignore risk. The market rewards patience, not FOMO. The moment you feel “it can’t go down,” that’s when a sharp pullback usually happens.",
-    "hashtags": ["#crypto", "#market", "#psychology"],
+    "hashtags": [
+      "#crypto",
+      "#market",
+      "#psychology"
+    ],
     "telegram": "Bull markets trick people into overconfidence. Avoid leverage + FOMO.",
     "x": "Bull markets make people overconfident: leverage + FOMO + no risk plan. Patience wins. #crypto",
     "youtube_description": "Market psychology basics. Educational only."
@@ -21,7 +29,11 @@
     "id": "QC-SH-003",
     "title": "The simplest portfolio rule",
     "script": "If one position can wipe your month, it’s too big. A simple rule: no single idea should decide your future. Diversify across time, not just coins—use staggered entries and take partial profits. Consistency beats one lucky trade.",
-    "hashtags": ["#crypto", "#portfolio", "#discipline"],
+    "hashtags": [
+      "#crypto",
+      "#portfolio",
+      "#discipline"
+    ],
     "telegram": "One position shouldn’t decide your future. Size + stagger entries.",
     "x": "Simple portfolio rule: if one position can wipe your month, it’s too big. #crypto #risk",
     "youtube_description": "Portfolio sizing and consistency. Educational only."
@@ -30,7 +42,11 @@
     "id": "QC-SH-004",
     "title": "Stop-loss isn’t weakness",
     "script": "A stop-loss is not admitting defeat—it’s paying a small fee to avoid a large disaster. Professionals cut losses quickly and keep capital for the next setup. Refusing to exit doesn’t make you strong; it makes you exposed.",
-    "hashtags": ["#trading", "#risk", "#crypto"],
+    "hashtags": [
+      "#trading",
+      "#risk",
+      "#crypto"
+    ],
     "telegram": "Stop-loss is a tool, not weakness. Protect capital.",
     "x": "Stop-loss isn’t weakness. It’s protection. Pros cut losses fast. #trading #crypto",
     "youtube_description": "Risk management mindset. Educational only."
@@ -39,7 +55,11 @@
     "id": "QC-SH-005",
     "title": "The 10-minute security checklist",
     "script": "Quick security: enable 2FA, use a password manager, verify URLs, and never sign unknown transactions. Keep long-term funds on cold storage, and separate your daily wallet from your main wallet. Security is profit you don’t lose.",
-    "hashtags": ["#security", "#crypto", "#wallet"],
+    "hashtags": [
+      "#security",
+      "#crypto",
+      "#wallet"
+    ],
     "telegram": "10-minute security checklist: 2FA, password manager, verify URLs, cold storage.",
     "x": "10-min crypto security: 2FA + password manager + verify URLs + cold storage. #security",
     "youtube_description": "Basic security habits. Educational only."
@@ -48,7 +68,11 @@
     "id": "QC-SH-006",
     "title": "Why DCA works when emotions fail",
     "script": "Dollar-cost averaging works because it removes your ego. You buy on a schedule, not on feelings. When price drops, you accumulate more; when it rises, your average improves over time. It’s boring—and that’s why it works.",
-    "hashtags": ["#DCA", "#investing", "#crypto"],
+    "hashtags": [
+      "#DCA",
+      "#investing",
+      "#crypto"
+    ],
     "telegram": "DCA removes emotions. Schedule beats feelings.",
     "x": "DCA works because it removes emotions. Boring is powerful. #DCA #crypto",
     "youtube_description": "DCA basics. Educational only."
@@ -57,7 +81,11 @@
     "id": "QC-SH-007",
     "title": "Liquidity: the hidden driver",
     "script": "Liquidity moves markets. When liquidity is abundant, risk assets breathe. When liquidity tightens, volatility spikes. Don’t watch only charts—watch the environment. Trend strength often follows liquidity conditions, not your favorite indicator.",
-    "hashtags": ["#macro", "#liquidity", "#crypto"],
+    "hashtags": [
+      "#macro",
+      "#liquidity",
+      "#crypto"
+    ],
     "telegram": "Liquidity often drives trend strength more than indicators.",
     "x": "Liquidity is the hidden driver: abundant liquidity = easier trends, tight liquidity = volatility. #macro",
     "youtube_description": "Macro + liquidity simplified. Educational only."
@@ -66,7 +94,11 @@
     "id": "QC-SH-008",
     "title": "The ‘two-wallet’ rule",
     "script": "Use two wallets: one for daily activity, one for long-term storage. Your daily wallet connects to apps; your vault wallet stays offline and untouched. This single habit reduces the blast radius if something goes wrong.",
-    "hashtags": ["#wallet", "#security", "#crypto"],
+    "hashtags": [
+      "#wallet",
+      "#security",
+      "#crypto"
+    ],
     "telegram": "Two-wallet rule: daily wallet + vault wallet. Reduce risk.",
     "x": "Two-wallet rule: one for apps, one for long-term storage. Reduce blast radius. #security",
     "youtube_description": "Wallet separation best practice. Educational only."
@@ -75,7 +107,11 @@
     "id": "QC-SH-009",
     "title": "Why ‘free’ airdrops aren’t free",
     "script": "Many airdrops cost you privacy or security. Fake claim sites steal signatures. Real airdrops rarely require you to ‘approve’ unlimited spending. If a link is rushed, brand-new, or asks for strange permissions—walk away.",
-    "hashtags": ["#airdrop", "#security", "#crypto"],
+    "hashtags": [
+      "#airdrop",
+      "#security",
+      "#crypto"
+    ],
     "telegram": "Airdrops can cost privacy/security. Don’t sign unknown approvals.",
     "x": "‘Free’ airdrops aren’t free. Beware fake claim sites & unlimited approvals. #security",
     "youtube_description": "Airdrop safety tips. Educational only."
@@ -84,41 +120,633 @@
     "id": "QC-SH-010",
     "title": "The real meaning of ‘DYOR’",
     "script": "DYOR isn’t scrolling hype. It’s reading docs, checking token distribution, understanding revenue, and verifying teams and contracts. If you can’t explain what the project does, how it captures value, and what can fail—pause.",
-    "hashtags": ["#DYOR", "#crypto", "#research"],
+    "hashtags": [
+      "#DYOR",
+      "#crypto",
+      "#research"
+    ],
     "telegram": "DYOR = docs + tokenomics + risks. Not hype scrolling.",
     "x": "DYOR isn’t hype scrolling. Docs + tokenomics + risks. #crypto",
     "youtube_description": "Research basics. Educational only."
   },
-
-  { "id":"QC-SH-011","title":"Why memecoins pump fast","script":"Memecoins move on attention, not fundamentals. Attention is scarce, so pumps are violent, and dumps are faster. If you play them, treat it like entertainment money, take profits quickly, and never confuse a lucky trade with a strategy.","hashtags":["#memecoin","#crypto","#risk"],"telegram":"Memecoins run on attention. Treat them as high risk.","x":"Memecoins run on attention, not fundamentals. Pumps are fast, dumps faster. #memecoin","#youtube_description":"High-risk dynamics explained. Educational only."},
-  { "id":"QC-SH-012","title":"The trap of ‘all-in’ thinking","script":"All-in thinking feels heroic, but it’s fragile. One bad event and you’re done. Real builders survive by staying liquid, keeping options open, and letting probability work over time. You don’t need perfect timing—just survival.","hashtags":["#mindset","#risk","#crypto"],"telegram":"All-in is fragile. Survivability matters.","x":"All-in feels heroic but it’s fragile. Survival > perfect timing. #crypto","#youtube_description":"Risk mindset. Educational only."},
-  { "id":"QC-SH-013","title":"How to avoid scam tokens","script":"Check contract address from official sources, scan holders and liquidity lock, and avoid tokens with extreme taxes or owner privileges. If the team can freeze transfers or mint endlessly, you’re not early—you’re exit liquidity.","hashtags":["#scam","#security","#crypto"],"telegram":"Avoid scam tokens: verify contract, liquidity, permissions.","x":"Avoid scam tokens: verify contract, holders, liquidity lock, owner powers. #security","#youtube_description":"Basic token safety. Educational only."},
-  { "id":"QC-SH-014","title":"Why sideways markets are a gift","script":"Sideways markets feel boring, but they’re where you build positions without panic. You can DCA, study projects, and plan entries calmly. Most people quit in boredom and return at the top. Don’t be most people.","hashtags":["#markets","#DCA","#crypto"],"telegram":"Sideways = building time. Don’t quit in boredom.","x":"Sideways markets are a gift: build positions calmly, plan entries. #crypto","#youtube_description":"Market phases. Educational only."},
-  { "id":"QC-SH-015","title":"The ‘one risk metric’ to respect","script":"Respect drawdown. If you’re down 30%, you need a 43% gain just to break even. That’s why risk control matters more than upside fantasies. Protect capital first, then compound.","hashtags":["#risk","#trading","#crypto"],"telegram":"Drawdown math is brutal. Protect capital first.","x":"Drawdown math: -30% needs +43% to recover. Protect capital. #risk","#youtube_description":"Drawdown math. Educational only."},
-
-  { "id":"QC-SH-016","title":"Hot vs cold wallets in 15 seconds","script":"Hot wallets are connected—fast but exposed. Cold wallets are offline—slower but safer. Use hot wallets for small daily amounts, and cold wallets for long-term storage. Treat it like cash versus a safe.","hashtags":["#wallet","#security","#crypto"],"telegram":"Hot = connected, Cold = offline. Use both.","x":"Hot vs cold: hot is connected, cold is offline. Use both. #security","#youtube_description":"Wallet types explained. Educational only."},
-  { "id":"QC-SH-017","title":"Why fees spike suddenly","script":"Fees spike when blockspace demand jumps—NFT mints, memecoin mania, or big news. Don’t panic-send during congestion. Use off-peak hours, set max fee limits, or choose a cheaper network when possible.","hashtags":["#fees","#blockchain","#crypto"],"telegram":"Fees spike with congestion. Time your transactions.","x":"Fees spike when blockspace demand jumps. Don’t panic-send during congestion. #blockchain","#youtube_description":"Transaction fees explained. Educational only."},
-  { "id":"QC-SH-018","title":"The easiest way to lose coins","script":"The easiest way to lose coins is signing the wrong message or approving unlimited spending. Always read the approval, revoke old permissions, and use a separate wallet for new apps. One bad signature can drain everything.","hashtags":["#security","#wallet","#crypto"],"telegram":"Bad approvals drain wallets. Revoke old permissions.","x":"Most common loss: wrong signature/unlimited approvals. Revoke permissions. #security","#youtube_description":"Signature safety. Educational only."},
-  { "id":"QC-SH-019","title":"Why patience is a strategy","script":"Patience is not doing nothing. It’s waiting for your setup, your price, your confirmation. Overtrading turns small mistakes into big losses. The market pays you for being selective, not for being busy.","hashtags":["#trading","#discipline","#crypto"],"telegram":"Patience = selectivity. Overtrading kills.","x":"Patience is a strategy. Overtrading turns small mistakes into big losses. #trading","#youtube_description":"Trading discipline. Educational only."},
-  { "id":"QC-SH-020","title":"Stablecoins: what to watch","script":"Stablecoins aren’t risk-free. Watch reserves, transparency reports, and depeg history. Spread risk across reputable stables, and don’t park life savings in a single issuer. Stability is a goal, not a guarantee.","hashtags":["#stablecoin","#risk","#crypto"],"telegram":"Stablecoins carry issuer risk. Watch reserves + depegs.","x":"Stablecoins aren’t risk-free: watch reserves, transparency, depegs. #crypto","#youtube_description":"Stablecoin risk basics. Educational only."},
-
-  { "id":"QC-SH-021","title":"The difference between hype and adoption","script":"Hype is clicks. Adoption is daily users who pay fees because the product solves a problem. When judging projects, ask: who uses this, why, and what would make them stop? Adoption compounds—hype expires.","hashtags":["#web3","#adoption","#crypto"],"telegram":"Hype expires. Adoption compounds. Look for real users.","x":"Hype is clicks; adoption is daily users who pay to use it. #web3","#youtube_description":"Adoption vs hype. Educational only."},
-  { "id":"QC-SH-022","title":"How to spot a healthy trend","script":"A healthy trend has higher highs, higher lows, and pullbacks that hold key levels. If every bounce gets weaker and volume dries up, be careful. Trends end quietly before they end loudly.","hashtags":["#technicalanalysis","#crypto","#trading"],"telegram":"Healthy trend: higher highs/lows + pullbacks that hold levels.","x":"Healthy trend = higher highs/lows + pullbacks that hold. Trends end quietly first. #trading","#youtube_description":"Trend basics. Educational only."},
-  { "id":"QC-SH-023","title":"Why ‘news trading’ is dangerous","script":"By the time news hits your feed, pros already positioned. Chasing headlines makes you late and emotional. Focus on risk, structure, and liquidity. Let the chart confirm, not your timeline.","hashtags":["#trading","#news","#crypto"],"telegram":"News trading often makes you late. Use structure + risk.","x":"News trading is dangerous: by the time you see it, pros positioned. #trading","#youtube_description":"News vs structure. Educational only."},
-  { "id":"QC-SH-024","title":"One habit to reduce mistakes","script":"Write your plan before you click buy: entry, exit, invalidation, and size. If you can’t write it, you don’t know it. This habit alone cuts impulsive trades and protects you from emotional decisions.","hashtags":["#discipline","#trading","#crypto"],"telegram":"Write the plan first: entry, exit, invalidation, size.","x":"One habit: write your plan BEFORE you buy. Entry, exit, invalidation, size. #trading","#youtube_description":"Process > impulse. Educational only."},
-  { "id":"QC-SH-025","title":"Why long-term wins feel boring","script":"Long-term wins feel boring because compounding is quiet. Small edges repeated over months beat dramatic moves that blow accounts. Build habits, manage risk, and let time do the heavy lifting.","hashtags":["#investing","#mindset","#crypto"],"telegram":"Compounding is quiet. Habits beat drama.","x":"Long-term wins feel boring because compounding is quiet. Habits beat drama. #investing","#youtube_description":"Compounding mindset. Educational only."},
-
-  { "id":"QC-SH-026","title":"The ‘verify then trust’ rule","script":"In crypto, trust comes after verification. Verify links, verify addresses, verify contracts, verify permissions. If something pressures you to act fast, it’s often a trap. Slow is smooth, smooth is safe.","hashtags":["#security","#crypto","#safety"],"telegram":"Verify then trust. Fast pressure is a red flag.","x":"Verify then trust: links, addresses, contracts, permissions. Pressure = red flag. #security","#youtube_description":"Safety mindset. Educational only."},
-  { "id":"QC-SH-027","title":"Why leverage is a silent killer","script":"Leverage magnifies both gains and tiny mistakes. A normal pullback can liquidate you, even if your long-term idea is right. If you use leverage, use it small, with a hard stop, and never when emotional.","hashtags":["#leverage","#risk","#crypto"],"telegram":"Leverage liquidates on normal pullbacks. Use small or avoid.","x":"Leverage is a silent killer: normal pullbacks can liquidate you. #risk","#youtube_description":"Leverage risks. Educational only."},
-  { "id":"QC-SH-028","title":"How to avoid topic repetition","script":"Use a content pool: 30 titles, 30 scripts, 30 voice files, and rotate 7 visuals. Track an index so every run picks the next item. That’s how you stay consistent without repeating when AI is offline.","hashtags":["#content","#automation","#creator"],"telegram":"Content pool prevents repetition: rotate topics, voices, visuals.","x":"Avoid repetition: rotate a pool of topics + voices + visuals with an index. #automation","#youtube_description":"Content automation tip. Educational only."},
-  { "id":"QC-SH-029","title":"The fastest way to improve results","script":"Stop chasing perfect setups and start measuring. Track what you post, what performs, and what fails. Improve one variable at a time—hook, pacing, visuals, or timing. Iteration beats guessing.","hashtags":["#growth","#content","#metrics"],"telegram":"Measure, iterate, improve one variable at a time.","x":"Fastest improvement: measure results, iterate one variable at a time. #growth","#youtube_description":"Iteration mindset. Educational only."},
+  {
+    "id": "QC-SH-011",
+    "title": "Why memecoins pump fast",
+    "script": "Memecoins move on attention, not fundamentals. Attention is scarce, so pumps are violent, and dumps are faster. If you play them, treat it like entertainment money, take profits quickly, and never confuse a lucky trade with a strategy.",
+    "hashtags": [
+      "#memecoin",
+      "#crypto",
+      "#risk"
+    ],
+    "telegram": "Memecoins run on attention. Treat them as high risk.",
+    "x": "Memecoins run on attention, not fundamentals. Pumps are fast, dumps faster. #memecoin",
+    "youtube_description": "High-risk dynamics explained. Educational only."
+  },
+  {
+    "id": "QC-SH-012",
+    "title": "The trap of ‘all-in’ thinking",
+    "script": "All-in thinking feels heroic, but it’s fragile. One bad event and you’re done. Real builders survive by staying liquid, keeping options open, and letting probability work over time. You don’t need perfect timing—just survival.",
+    "hashtags": [
+      "#mindset",
+      "#risk",
+      "#crypto"
+    ],
+    "telegram": "All-in is fragile. Survivability matters.",
+    "x": "All-in feels heroic but it’s fragile. Survival > perfect timing. #crypto",
+    "youtube_description": "Risk mindset. Educational only."
+  },
+  {
+    "id": "QC-SH-013",
+    "title": "How to avoid scam tokens",
+    "script": "Check contract address from official sources, scan holders and liquidity lock, and avoid tokens with extreme taxes or owner privileges. If the team can freeze transfers or mint endlessly, you’re not early—you’re exit liquidity.",
+    "hashtags": [
+      "#scam",
+      "#security",
+      "#crypto"
+    ],
+    "telegram": "Avoid scam tokens: verify contract, liquidity, permissions.",
+    "x": "Avoid scam tokens: verify contract, holders, liquidity lock, owner powers. #security",
+    "youtube_description": "Basic token safety. Educational only."
+  },
+  {
+    "id": "QC-SH-014",
+    "title": "Why sideways markets are a gift",
+    "script": "Sideways markets feel boring, but they’re where you build positions without panic. You can DCA, study projects, and plan entries calmly. Most people quit in boredom and return at the top. Don’t be most people.",
+    "hashtags": [
+      "#markets",
+      "#DCA",
+      "#crypto"
+    ],
+    "telegram": "Sideways = building time. Don’t quit in boredom.",
+    "x": "Sideways markets are a gift: build positions calmly, plan entries. #crypto",
+    "youtube_description": "Market phases. Educational only."
+  },
+  {
+    "id": "QC-SH-015",
+    "title": "The ‘one risk metric’ to respect",
+    "script": "Respect drawdown. If you’re down 30%, you need a 43% gain just to break even. That’s why risk control matters more than upside fantasies. Protect capital first, then compound.",
+    "hashtags": [
+      "#risk",
+      "#trading",
+      "#crypto"
+    ],
+    "telegram": "Drawdown math is brutal. Protect capital first.",
+    "x": "Drawdown math: -30% needs +43% to recover. Protect capital. #risk",
+    "youtube_description": "Drawdown math. Educational only."
+  },
+  {
+    "id": "QC-SH-016",
+    "title": "Hot vs cold wallets in 15 seconds",
+    "script": "Hot wallets are connected—fast but exposed. Cold wallets are offline—slower but safer. Use hot wallets for small daily amounts, and cold wallets for long-term storage. Treat it like cash versus a safe.",
+    "hashtags": [
+      "#wallet",
+      "#security",
+      "#crypto"
+    ],
+    "telegram": "Hot = connected, Cold = offline. Use both.",
+    "x": "Hot vs cold: hot is connected, cold is offline. Use both. #security",
+    "youtube_description": "Wallet types explained. Educational only."
+  },
+  {
+    "id": "QC-SH-017",
+    "title": "Why fees spike suddenly",
+    "script": "Fees spike when blockspace demand jumps—NFT mints, memecoin mania, or big news. Don’t panic-send during congestion. Use off-peak hours, set max fee limits, or choose a cheaper network when possible.",
+    "hashtags": [
+      "#fees",
+      "#blockchain",
+      "#crypto"
+    ],
+    "telegram": "Fees spike with congestion. Time your transactions.",
+    "x": "Fees spike when blockspace demand jumps. Don’t panic-send during congestion. #blockchain",
+    "youtube_description": "Transaction fees explained. Educational only."
+  },
+  {
+    "id": "QC-SH-018",
+    "title": "The easiest way to lose coins",
+    "script": "The easiest way to lose coins is signing the wrong message or approving unlimited spending. Always read the approval, revoke old permissions, and use a separate wallet for new apps. One bad signature can drain everything.",
+    "hashtags": [
+      "#security",
+      "#wallet",
+      "#crypto"
+    ],
+    "telegram": "Bad approvals drain wallets. Revoke old permissions.",
+    "x": "Most common loss: wrong signature/unlimited approvals. Revoke permissions. #security",
+    "youtube_description": "Signature safety. Educational only."
+  },
+  {
+    "id": "QC-SH-019",
+    "title": "Why patience is a strategy",
+    "script": "Patience is not doing nothing. It’s waiting for your setup, your price, your confirmation. Overtrading turns small mistakes into big losses. The market pays you for being selective, not for being busy.",
+    "hashtags": [
+      "#trading",
+      "#discipline",
+      "#crypto"
+    ],
+    "telegram": "Patience = selectivity. Overtrading kills.",
+    "x": "Patience is a strategy. Overtrading turns small mistakes into big losses. #trading",
+    "youtube_description": "Trading discipline. Educational only."
+  },
+  {
+    "id": "QC-SH-020",
+    "title": "Stablecoins: what to watch",
+    "script": "Stablecoins aren’t risk-free. Watch reserves, transparency reports, and depeg history. Spread risk across reputable stables, and don’t park life savings in a single issuer. Stability is a goal, not a guarantee.",
+    "hashtags": [
+      "#stablecoin",
+      "#risk",
+      "#crypto"
+    ],
+    "telegram": "Stablecoins carry issuer risk. Watch reserves + depegs.",
+    "x": "Stablecoins aren’t risk-free: watch reserves, transparency, depegs. #crypto",
+    "youtube_description": "Stablecoin risk basics. Educational only."
+  },
+  {
+    "id": "QC-SH-021",
+    "title": "The difference between hype and adoption",
+    "script": "Hype is clicks. Adoption is daily users who pay fees because the product solves a problem. When judging projects, ask: who uses this, why, and what would make them stop? Adoption compounds—hype expires.",
+    "hashtags": [
+      "#web3",
+      "#adoption",
+      "#crypto"
+    ],
+    "telegram": "Hype expires. Adoption compounds. Look for real users.",
+    "x": "Hype is clicks; adoption is daily users who pay to use it. #web3",
+    "youtube_description": "Adoption vs hype. Educational only."
+  },
+  {
+    "id": "QC-SH-022",
+    "title": "How to spot a healthy trend",
+    "script": "A healthy trend has higher highs, higher lows, and pullbacks that hold key levels. If every bounce gets weaker and volume dries up, be careful. Trends end quietly before they end loudly.",
+    "hashtags": [
+      "#technicalanalysis",
+      "#crypto",
+      "#trading"
+    ],
+    "telegram": "Healthy trend: higher highs/lows + pullbacks that hold levels.",
+    "x": "Healthy trend = higher highs/lows + pullbacks that hold. Trends end quietly first. #trading",
+    "youtube_description": "Trend basics. Educational only."
+  },
+  {
+    "id": "QC-SH-023",
+    "title": "Why ‘news trading’ is dangerous",
+    "script": "By the time news hits your feed, pros already positioned. Chasing headlines makes you late and emotional. Focus on risk, structure, and liquidity. Let the chart confirm, not your timeline.",
+    "hashtags": [
+      "#trading",
+      "#news",
+      "#crypto"
+    ],
+    "telegram": "News trading often makes you late. Use structure + risk.",
+    "x": "News trading is dangerous: by the time you see it, pros positioned. #trading",
+    "youtube_description": "News vs structure. Educational only."
+  },
+  {
+    "id": "QC-SH-024",
+    "title": "One habit to reduce mistakes",
+    "script": "Write your plan before you click buy: entry, exit, invalidation, and size. If you can’t write it, you don’t know it. This habit alone cuts impulsive trades and protects you from emotional decisions.",
+    "hashtags": [
+      "#discipline",
+      "#trading",
+      "#crypto"
+    ],
+    "telegram": "Write the plan first: entry, exit, invalidation, size.",
+    "x": "One habit: write your plan BEFORE you buy. Entry, exit, invalidation, size. #trading",
+    "youtube_description": "Process > impulse. Educational only."
+  },
+  {
+    "id": "QC-SH-025",
+    "title": "Why long-term wins feel boring",
+    "script": "Long-term wins feel boring because compounding is quiet. Small edges repeated over months beat dramatic moves that blow accounts. Build habits, manage risk, and let time do the heavy lifting.",
+    "hashtags": [
+      "#investing",
+      "#mindset",
+      "#crypto"
+    ],
+    "telegram": "Compounding is quiet. Habits beat drama.",
+    "x": "Long-term wins feel boring because compounding is quiet. Habits beat drama. #investing",
+    "youtube_description": "Compounding mindset. Educational only."
+  },
+  {
+    "id": "QC-SH-026",
+    "title": "The ‘verify then trust’ rule",
+    "script": "In crypto, trust comes after verification. Verify links, verify addresses, verify contracts, verify permissions. If something pressures you to act fast, it’s often a trap. Slow is smooth, smooth is safe.",
+    "hashtags": [
+      "#security",
+      "#crypto",
+      "#safety"
+    ],
+    "telegram": "Verify then trust. Fast pressure is a red flag.",
+    "x": "Verify then trust: links, addresses, contracts, permissions. Pressure = red flag. #security",
+    "youtube_description": "Safety mindset. Educational only."
+  },
+  {
+    "id": "QC-SH-027",
+    "title": "Why leverage is a silent killer",
+    "script": "Leverage magnifies both gains and tiny mistakes. A normal pullback can liquidate you, even if your long-term idea is right. If you use leverage, use it small, with a hard stop, and never when emotional.",
+    "hashtags": [
+      "#leverage",
+      "#risk",
+      "#crypto"
+    ],
+    "telegram": "Leverage liquidates on normal pullbacks. Use small or avoid.",
+    "x": "Leverage is a silent killer: normal pullbacks can liquidate you. #risk",
+    "youtube_description": "Leverage risks. Educational only."
+  },
+  {
+    "id": "QC-SH-028",
+    "title": "How to avoid topic repetition",
+    "script": "Use a content pool: 30 titles, 30 scripts, 30 voice files, and rotate 7 visuals. Track an index so every run picks the next item. That’s how you stay consistent without repeating when AI is offline.",
+    "hashtags": [
+      "#content",
+      "#automation",
+      "#creator"
+    ],
+    "telegram": "Content pool prevents repetition: rotate topics, voices, visuals.",
+    "x": "Avoid repetition: rotate a pool of topics + voices + visuals with an index. #automation",
+    "youtube_description": "Content automation tip. Educational only."
+  },
+  {
+    "id": "QC-SH-029",
+    "title": "The fastest way to improve results",
+    "script": "Stop chasing perfect setups and start measuring. Track what you post, what performs, and what fails. Improve one variable at a time—hook, pacing, visuals, or timing. Iteration beats guessing.",
+    "hashtags": [
+      "#growth",
+      "#content",
+      "#metrics"
+    ],
+    "telegram": "Measure, iterate, improve one variable at a time.",
+    "x": "Fastest improvement: measure results, iterate one variable at a time. #growth",
+    "youtube_description": "Iteration mindset. Educational only."
+  },
   {
     "id": "QC-SH-030",
     "title": "Consistency beats intensity",
     "script": "Posting daily isn’t about motivation, it’s about systems. A simple pipeline—topic pool, voice pool, visual pool—keeps you shipping even when credits or tools fail. Consistency compounds attention like interest.",
-    "hashtags": ["#consistency", "#automation", "#creator"],
+    "hashtags": [
+      "#consistency",
+      "#automation",
+      "#creator"
+    ],
     "telegram": "Consistency is systems: topic + voice + visual pools keep you shipping.",
     "x": "Consistency beats intensity. Systems > motivation. Pools keep you shipping. #automation",
     "youtube_description": "Systems and consistency. Educational only."
+  },
+  {
+    "id": "QC-SH-031",
+    "title": "A wallet backup is a recovery plan",
+    "script": "Explain why testing recovery matters as much as storing a backup.",
+    "hashtags": [
+      "#Technology",
+      "#Blockchain"
+    ],
+    "telegram": "A wallet backup is a recovery plan",
+    "x": "A wallet backup is a recovery plan #Blockchain",
+    "youtube_description": "Explain why testing recovery matters as much as storing a backup."
+  },
+  {
+    "id": "QC-SH-032",
+    "title": "Signing a transaction without sharing a private key",
+    "script": "Explain local signing and what a node needs to verify a transaction.",
+    "hashtags": [
+      "#Technology",
+      "#Blockchain"
+    ],
+    "telegram": "Signing a transaction without sharing a private key",
+    "x": "Signing a transaction without sharing a private key #Blockchain",
+    "youtube_description": "Explain local signing and what a node needs to verify a transaction."
+  },
+  {
+    "id": "QC-SH-033",
+    "title": "Hashing and encryption solve different problems",
+    "script": "Explain integrity checks versus confidentiality in plain language.",
+    "hashtags": [
+      "#Technology",
+      "#Blockchain"
+    ],
+    "telegram": "Hashing and encryption solve different problems",
+    "x": "Hashing and encryption solve different problems #Blockchain",
+    "youtube_description": "Explain integrity checks versus confidentiality in plain language."
+  },
+  {
+    "id": "QC-SH-034",
+    "title": "Why confirmations matter",
+    "script": "Explain inclusion, confirmations and probabilistic finality without naming a live network.",
+    "hashtags": [
+      "#Technology",
+      "#Blockchain"
+    ],
+    "telegram": "Why confirmations matter",
+    "x": "Why confirmations matter #Blockchain",
+    "youtube_description": "Explain inclusion, confirmations and probabilistic finality without naming a live network."
+  },
+  {
+    "id": "QC-SH-035",
+    "title": "Testnet funds are not mainnet funds",
+    "script": "Explain network identity and why data and keys must be separated.",
+    "hashtags": [
+      "#Technology",
+      "#Blockchain"
+    ],
+    "telegram": "Testnet funds are not mainnet funds",
+    "x": "Testnet funds are not mainnet funds #Blockchain",
+    "youtube_description": "Explain network identity and why data and keys must be separated."
+  },
+  {
+    "id": "QC-SH-036",
+    "title": "What a block header actually proves",
+    "script": "Explain proof of work against a real header rather than a decorative challenge.",
+    "hashtags": [
+      "#Technology",
+      "#Blockchain"
+    ],
+    "telegram": "What a block header actually proves",
+    "x": "What a block header actually proves #Blockchain",
+    "youtube_description": "Explain proof of work against a real header rather than a decorative challenge."
+  },
+  {
+    "id": "QC-SH-037",
+    "title": "Why retries can create duplicate payments",
+    "script": "Explain idempotency keys and uncertain network outcomes.",
+    "hashtags": [
+      "#Technology",
+      "#Blockchain"
+    ],
+    "telegram": "Why retries can create duplicate payments",
+    "x": "Why retries can create duplicate payments #Blockchain",
+    "youtube_description": "Explain idempotency keys and uncertain network outcomes."
+  },
+  {
+    "id": "QC-SH-038",
+    "title": "A receipt is better than a success message",
+    "script": "Explain independently verifiable transaction identifiers and delivery receipts.",
+    "hashtags": [
+      "#Technology",
+      "#Blockchain"
+    ],
+    "telegram": "A receipt is better than a success message",
+    "x": "A receipt is better than a success message #Blockchain",
+    "youtube_description": "Explain independently verifiable transaction identifiers and delivery receipts."
+  },
+  {
+    "id": "QC-SH-039",
+    "title": "Why micro fees need exact integer units",
+    "script": "Explain atoms, precision and avoiding floating-point rounding.",
+    "hashtags": [
+      "#Technology",
+      "#Blockchain"
+    ],
+    "telegram": "Why micro fees need exact integer units",
+    "x": "Why micro fees need exact integer units #Blockchain",
+    "youtube_description": "Explain atoms, precision and avoiding floating-point rounding."
+  },
+  {
+    "id": "QC-SH-040",
+    "title": "A burn is not a recycling reserve",
+    "script": "Explain permanent supply reduction versus moving assets into a reserve.",
+    "hashtags": [
+      "#Technology",
+      "#Blockchain"
+    ],
+    "telegram": "A burn is not a recycling reserve",
+    "x": "A burn is not a recycling reserve #Blockchain",
+    "youtube_description": "Explain permanent supply reduction versus moving assets into a reserve."
+  },
+  {
+    "id": "QC-SH-041",
+    "title": "Who should pay token transfer fees",
+    "script": "Explain gas on a host chain and why a token balance is different from native gas.",
+    "hashtags": [
+      "#Technology",
+      "#Blockchain"
+    ],
+    "telegram": "Who should pay token transfer fees",
+    "x": "Who should pay token transfer fees #Blockchain",
+    "youtube_description": "Explain gas on a host chain and why a token balance is different from native gas."
+  },
+  {
+    "id": "QC-SH-042",
+    "title": "Social rewards need proof of an action",
+    "script": "Explain authenticated tasks, provider evidence and replay protection without claiming any current campaign.",
+    "hashtags": [
+      "#Technology",
+      "#Blockchain"
+    ],
+    "telegram": "Social rewards need proof of an action",
+    "x": "Social rewards need proof of an action #Blockchain",
+    "youtube_description": "Explain authenticated tasks, provider evidence and replay protection without claiming any current campaign."
+  },
+  {
+    "id": "QC-SH-043",
+    "title": "Why random selection needs a public method",
+    "script": "Explain auditable inputs and unbiased draws without announcing an NFT release.",
+    "hashtags": [
+      "#Technology",
+      "#Blockchain"
+    ],
+    "telegram": "Why random selection needs a public method",
+    "x": "Why random selection needs a public method #Blockchain",
+    "youtube_description": "Explain auditable inputs and unbiased draws without announcing an NFT release."
+  },
+  {
+    "id": "QC-SH-044",
+    "title": "The difference between a prototype and a live feature",
+    "script": "Explain explicit capabilities, testing and honest product status.",
+    "hashtags": [
+      "#Technology",
+      "#Blockchain"
+    ],
+    "telegram": "The difference between a prototype and a live feature",
+    "x": "The difference between a prototype and a live feature #Blockchain",
+    "youtube_description": "Explain explicit capabilities, testing and honest product status."
+  },
+  {
+    "id": "QC-SH-045",
+    "title": "What makes an API read only",
+    "script": "Explain capability boundaries and why the HTTP method alone is not enough.",
+    "hashtags": [
+      "#Technology",
+      "#Blockchain"
+    ],
+    "telegram": "What makes an API read only",
+    "x": "What makes an API read only #Blockchain",
+    "youtube_description": "Explain capability boundaries and why the HTTP method alone is not enough."
+  },
+  {
+    "id": "QC-SH-046",
+    "title": "How a database survives a restart",
+    "script": "Explain durable commits and recovery using a simple everyday analogy.",
+    "hashtags": [
+      "#Technology",
+      "#Blockchain"
+    ],
+    "telegram": "How a database survives a restart",
+    "x": "How a database survives a restart #Blockchain",
+    "youtube_description": "Explain durable commits and recovery using a simple everyday analogy."
+  },
+  {
+    "id": "QC-SH-047",
+    "title": "Why a screenshot cannot prove wallet ownership",
+    "script": "Explain signature-based ownership verification without exposing secrets.",
+    "hashtags": [
+      "#Technology",
+      "#Blockchain"
+    ],
+    "telegram": "Why a screenshot cannot prove wallet ownership",
+    "x": "Why a screenshot cannot prove wallet ownership #Blockchain",
+    "youtube_description": "Explain signature-based ownership verification without exposing secrets."
+  },
+  {
+    "id": "QC-SH-048",
+    "title": "Trust boundaries in AI-assisted software",
+    "script": "Explain advisory analysis versus consensus and user authorization.",
+    "hashtags": [
+      "#Technology",
+      "#Blockchain"
+    ],
+    "telegram": "Trust boundaries in AI-assisted software",
+    "x": "Trust boundaries in AI-assisted software #Blockchain",
+    "youtube_description": "Explain advisory analysis versus consensus and user authorization."
+  },
+  {
+    "id": "QC-SH-049",
+    "title": "Why a backup needs authentication",
+    "script": "Explain how encryption and authenticated manifests complement hashes.",
+    "hashtags": [
+      "#Technology",
+      "#Blockchain"
+    ],
+    "telegram": "Why a backup needs authentication",
+    "x": "Why a backup needs authentication #Blockchain",
+    "youtube_description": "Explain how encryption and authenticated manifests complement hashes."
+  },
+  {
+    "id": "QC-SH-050",
+    "title": "How an offline recovery rehearsal works",
+    "script": "Explain isolated restores before using recovered production data.",
+    "hashtags": [
+      "#Technology",
+      "#Blockchain"
+    ],
+    "telegram": "How an offline recovery rehearsal works",
+    "x": "How an offline recovery rehearsal works #Blockchain",
+    "youtube_description": "Explain isolated restores before using recovered production data."
+  },
+  {
+    "id": "QC-SH-051",
+    "title": "The hidden cost of unlimited API queries",
+    "script": "Explain pagination, bounds and resource budgets.",
+    "hashtags": [
+      "#Technology",
+      "#Blockchain"
+    ],
+    "telegram": "The hidden cost of unlimited API queries",
+    "x": "The hidden cost of unlimited API queries #Blockchain",
+    "youtube_description": "Explain pagination, bounds and resource budgets."
+  },
+  {
+    "id": "QC-SH-052",
+    "title": "AI narration should be labelled clearly",
+    "script": "Explain disclosure and distinguishing generated voices from human recordings.",
+    "hashtags": [
+      "#Technology",
+      "#Blockchain"
+    ],
+    "telegram": "AI narration should be labelled clearly",
+    "x": "AI narration should be labelled clearly #Blockchain",
+    "youtube_description": "Explain disclosure and distinguishing generated voices from human recordings."
+  },
+  {
+    "id": "QC-SH-053",
+    "title": "Token approval is not a token transfer",
+    "script": "Explain permissions, allowances and checking the spender.",
+    "hashtags": [
+      "#Technology",
+      "#Blockchain"
+    ],
+    "telegram": "Token approval is not a token transfer",
+    "x": "Token approval is not a token transfer #Blockchain",
+    "youtube_description": "Explain permissions, allowances and checking the spender."
+  },
+  {
+    "id": "QC-SH-054",
+    "title": "Why software needs a clear source of truth",
+    "script": "Explain configuration drift and generated documentation.",
+    "hashtags": [
+      "#Technology",
+      "#Blockchain"
+    ],
+    "telegram": "Why software needs a clear source of truth",
+    "x": "Why software needs a clear source of truth #Blockchain",
+    "youtube_description": "Explain configuration drift and generated documentation."
+  },
+  {
+    "id": "QC-SH-055",
+    "title": "A mining reward is not the same as a fee",
+    "script": "Explain subsidy versus transaction fees without current market claims.",
+    "hashtags": [
+      "#Technology",
+      "#Blockchain"
+    ],
+    "telegram": "A mining reward is not the same as a fee",
+    "x": "A mining reward is not the same as a fee #Blockchain",
+    "youtube_description": "Explain subsidy versus transaction fees without current market claims."
+  },
+  {
+    "id": "QC-SH-056",
+    "title": "What a seed phrase controls",
+    "script": "Explain custody and why sharing a seed exposes wallet authority.",
+    "hashtags": [
+      "#Technology",
+      "#Blockchain"
+    ],
+    "telegram": "What a seed phrase controls",
+    "x": "What a seed phrase controls #Blockchain",
+    "youtube_description": "Explain custody and why sharing a seed exposes wallet authority."
+  },
+  {
+    "id": "QC-SH-057",
+    "title": "A failed request may still have succeeded",
+    "script": "Explain the need to check receipts before retrying external actions.",
+    "hashtags": [
+      "#Technology",
+      "#Blockchain"
+    ],
+    "telegram": "A failed request may still have succeeded",
+    "x": "A failed request may still have succeeded #Blockchain",
+    "youtube_description": "Explain the need to check receipts before retrying external actions."
+  },
+  {
+    "id": "QC-SH-058",
+    "title": "Automation should stop safely when uncertain",
+    "script": "Explain fail-closed workflows and preserving evidence.",
+    "hashtags": [
+      "#Technology",
+      "#Blockchain"
+    ],
+    "telegram": "Automation should stop safely when uncertain",
+    "x": "Automation should stop safely when uncertain #Blockchain",
+    "youtube_description": "Explain fail-closed workflows and preserving evidence."
+  },
+  {
+    "id": "QC-SH-059",
+    "title": "Better science starts with reproducible tests",
+    "script": "Explain controlled experiments and repeatable software verification.",
+    "hashtags": [
+      "#Technology",
+      "#Blockchain"
+    ],
+    "telegram": "Better science starts with reproducible tests",
+    "x": "Better science starts with reproducible tests #Blockchain",
+    "youtube_description": "Explain controlled experiments and repeatable software verification."
+  },
+  {
+    "id": "QC-SH-060",
+    "title": "What quantum computing does and does not imply",
+    "script": "Explain why project names do not prove quantum hardware or post-quantum security.",
+    "hashtags": [
+      "#Technology",
+      "#Blockchain"
+    ],
+    "telegram": "What quantum computing does and does not imply",
+    "x": "What quantum computing does and does not imply #Blockchain",
+    "youtube_description": "Explain why project names do not prove quantum hardware or post-quantum security."
   }
 ]

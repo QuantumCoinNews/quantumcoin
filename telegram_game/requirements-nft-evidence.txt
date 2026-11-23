@@ -1,3 +1,2 @@
-# Optional verifiable NFT evidence runtime; install into the project venv.
-cryptography==46.0.3
-py-ecc==8.0.0
+# Compatibility alias. Install the canonical locked environment.
+-r requirements.txt

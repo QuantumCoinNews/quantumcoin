@@ -21,17 +21,17 @@ import (
 const registryFile = "token_registry.json"
 
 type Registry struct {
-	Tokens map[string]*Token `json:"tokens"` // key: symbol
+	tokens map[string]*Token // key: symbol; protected by mu
 	mu     sync.Mutex        `json:"-"`
 }
 
 func NewRegistry() *Registry {
-	return &Registry{Tokens: make(map[string]*Token)}
+	return &Registry{tokens: make(map[string]*Token)}
 }
 
 func (r *Registry) ensure() {
-	if r.Tokens == nil {
-		r.Tokens = make(map[string]*Token)
+	if r.tokens == nil {
+		r.tokens = make(map[string]*Token)
 	}
 }
 
@@ -53,11 +53,11 @@ func (r *Registry) Register(t *Token) error {
 			ErrInvalidTokenAddress,
 		)
 	}
-	if _, exists := r.Tokens[t.Symbol()]; exists {
+	if _, exists := r.tokens[t.Symbol()]; exists {
 		return errors.New("token registry: token already registered")
 	}
 
-	r.Tokens[t.Symbol()] = t
+	r.tokens[t.Symbol()] = t
 	return nil
 }
 
@@ -67,13 +67,19 @@ func (r *Registry) Get(symbol string) (*Token, bool) {
 
 	r.ensure()
 
-	t, ok := r.Tokens[symbol]
+	t, ok := r.tokens[symbol]
 	return t, ok
 }
 
 func (r *Registry) Save(dir string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	lock, err := lockMinerTokenLedgerV1(dir)
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
 
 	r.ensure()
 
@@ -85,7 +91,7 @@ func (r *Registry) Save(dir string) error {
 		path = filepath.Join(dir, registryFile)
 	}
 
-	data, err := json.MarshalIndent(r, "", "  ")
+	data, err := marshalRegistryWithLockedTokenV1(r, nil)
 	if err != nil {
 		return err
 	}
@@ -212,6 +218,9 @@ func validateLoadedRegistryTokenV1(
 
 	tok.mu.Lock()
 	defer tok.mu.Unlock()
+	if strings.TrimSpace(tok.name) == "" || strings.TrimSpace(tok.name) != tok.name {
+		return registryLoadIntegrityErrorV1("invalid token name for registry key %q", registryKey)
+	}
 
 	trimmedSymbol := strings.TrimSpace(
 		tok.symbol,
@@ -429,11 +438,11 @@ func (r *Registry) Load(dir string) (resultErr error) {
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		tokenCount = len(r.Tokens)
+		tokenCount = len(r.tokens)
 
 		if os.IsNotExist(err) {
 			r.ensure()
-			tokenCount = len(r.Tokens)
+			tokenCount = len(r.tokens)
 			outcome = "NOT_FOUND"
 			return nil
 		}
@@ -442,15 +451,9 @@ func (r *Registry) Load(dir string) (resultErr error) {
 		return err
 	}
 
-	var loaded struct {
-		Tokens registryTokenMapV1 `json:"tokens"`
-	}
-
-	if err := json.Unmarshal(
-		data,
-		&loaded,
-	); err != nil {
-		tokenCount = len(r.Tokens)
+	loadedTokens, err := decodeRegistryStateV1(data)
+	if err != nil {
+		tokenCount = len(r.tokens)
 
 		if errors.Is(
 			err,
@@ -478,15 +481,15 @@ func (r *Registry) Load(dir string) (resultErr error) {
 	}
 
 	validated, err := validateLoadedRegistryV1(
-		loaded.Tokens,
+		loadedTokens,
 	)
 	if err != nil {
-		tokenCount = len(r.Tokens)
+		tokenCount = len(r.tokens)
 		outcome = "INTEGRITY_REJECTED"
 		return err
 	}
 
-	r.Tokens = validated
+	r.tokens = validated
 	tokenCount = len(validated)
 	outcome = "LOADED"
 

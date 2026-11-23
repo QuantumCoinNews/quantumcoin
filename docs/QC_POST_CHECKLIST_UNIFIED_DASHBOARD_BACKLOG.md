@@ -1,6 +1,7 @@
 # QuantumCoin Post-Checklist Unified Dashboard Backlog
 
-Status: QC_UNIFIED_DASHBOARD_BACKLOG_V1
+Document ID: `QC_UNIFIED_DASHBOARD_BACKLOG_V1`\
+Evidence stage: **Design**. See [scope and release status](POLICY_EVIDENCE_REGISTER.md).
 
 Date: 20260618_220020
 

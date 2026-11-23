@@ -25,6 +25,14 @@ func (r *Runtime) ServeP2P(
 	}
 
 	r.mu.Lock()
+	if r.stopping {
+		r.mu.Unlock()
+		return ErrRuntimeShuttingDownV1
+	}
+	if r.APIReadOnly {
+		r.mu.Unlock()
+		return ErrRuntimeReadOnlyV1
+	}
 
 	if r.Blockchain == nil {
 		r.mu.Unlock()
@@ -54,6 +62,7 @@ func (r *Runtime) ServeP2P(
 	}
 
 	r.p2pServer = server
+	r.p2pChainPinned = true
 
 	r.mu.Unlock()
 
@@ -206,17 +215,6 @@ func (r *Runtime) ConnectPeer(
 		)
 	}
 
-	r.mu.RLock()
-	chain := r.Blockchain
-	r.mu.RUnlock()
-
-	if chain == nil {
-		return fmt.Errorf(
-			"%s: blockchain is unavailable",
-			P2PRuntimeVersionV1,
-		)
-	}
-
 	address = strings.TrimSpace(address)
 	if address == "" {
 		return fmt.Errorf(
@@ -224,6 +222,22 @@ func (r *Runtime) ConnectPeer(
 			P2PRuntimeVersionV1,
 		)
 	}
+	r.mu.Lock()
+	if r.APIReadOnly {
+		r.mu.Unlock()
+		return ErrRuntimeReadOnlyV1
+	}
+	chain := r.Blockchain
+	if r.stopping {
+		r.mu.Unlock()
+		return ErrRuntimeShuttingDownV1
+	}
+	if chain == nil {
+		r.mu.Unlock()
+		return fmt.Errorf("%s: blockchain is unavailable", P2PRuntimeVersionV1)
+	}
+	r.p2pChainPinned = true
+	r.mu.Unlock()
 
 	r.EmitEvent(
 		NodeEvent{
@@ -259,7 +273,7 @@ func (r *Runtime) PeerSecurityAvailable() bool {
 func (r *Runtime) PeerReputationSnapshot() map[string]any {
 	if r == nil ||
 		p2p.DefaultPeerSecurity == nil {
-		return map[string]any{}
+		return map[string]any{"overallRisk": "UNKNOWN", "status": "NO_PEER_SECURITY", "peers": map[string]any{}, "peerCount": 0, "scope": "local-peer-reputation"}
 	}
 
 	return p2p.DefaultPeerSecurity.ReputationSnapshot()

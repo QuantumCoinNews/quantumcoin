@@ -1,4 +1,6 @@
 {
-  "address": "QCTESTFAUCET111111111111111111111111111",
+  "enabled": false,
+  "status": "QC_TESTNET_FAUCET_DISABLED_UNTIL_APPROVAL",
+  "address": "__DISABLED_UNTIL_QC20_APPROVAL__",
   "privateKeyHex": "REDACTED_FOR_LOCAL_ONLY"
 }

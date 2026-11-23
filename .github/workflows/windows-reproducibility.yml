@@ -1,0 +1,42 @@
+name: Windows build reproducibility
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main, master]
+
+concurrency:
+  group: windows-verification-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  reproduce:
+    runs-on: windows-2022
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - name: Read the Windows toolchain lock
+        id: versions
+        shell: pwsh
+        run: |
+          $lock = Get-Content configs/windows-build-toolchain.json -Raw | ConvertFrom-Json
+          "python=$($lock.python.version)" | Out-File $env:GITHUB_OUTPUT -Append
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ steps.versions.outputs.python }}
+      - name: Verify the clean stack and compare two clean release builds
+        shell: pwsh
+        run: ./scripts/build_windows_release_ci.ps1 -Commit $env:GITHUB_SHA -EvidenceDirectory (Join-Path $env:RUNNER_TEMP 'qc-build-evidence')
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          # Keep a failed stack receipt available for diagnosis.
+          name: qc-windows-build-evidence
+          path: ${{ runner.temp }}/qc-build-evidence/
+          if-no-files-found: error
+        if: always()

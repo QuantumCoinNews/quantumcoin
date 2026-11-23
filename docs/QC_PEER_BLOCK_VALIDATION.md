@@ -1,6 +1,7 @@
 # QuantumCoin Peer Block Validation
 
-Status: QC_PEER_BLOCK_VALIDATION_V2
+Document ID: `QC_PEER_BLOCK_VALIDATION_V2`\
+Evidence stage: **Runtime wired**. See [scope and release status](POLICY_EVIDENCE_REGISTER.md).
 
 Date: 20260617_185947
 
