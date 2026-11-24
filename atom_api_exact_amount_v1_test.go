@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	qnode "quantumcoin/node"
 	"testing"
+	"time"
 
 	"quantumcoin/blockchain"
 	qconsensus "quantumcoin/consensus"
@@ -142,7 +144,23 @@ func TestActualMuxAtomExactOneAtomSendV1(
 	}
 	var roundTrip SendRequest
 	if err := json.Unmarshal(payload, &roundTrip); err != nil || roundTrip.Transaction == nil || !chain.VerifyTransaction(roundTrip.Transaction) {
-		t.Fatalf("JSON round-trip invalidated chain signature: err=%v txPresent=%v", err, roundTrip.Transaction != nil)
+		var beforeContent, afterContent []byte
+		if localTx != nil {
+			beforeContent, _ = blockchain.TransactionContentV2(localTx)
+		}
+		if roundTrip.Transaction != nil {
+			afterContent, _ = blockchain.TransactionContentV2(roundTrip.Transaction)
+		}
+		var decodedTimestamp string
+		if roundTrip.Transaction != nil {
+			decodedTimestamp = roundTrip.Transaction.Timestamp.Format(time.RFC3339Nano)
+		}
+		t.Fatalf("JSON round-trip invalidated chain signature: err=%v txPresent=%v idSame=%v contentSame=%v signatureSame=%v pubkeySame=%v timestamp=%q amountBits=%x/%x", err, roundTrip.Transaction != nil, roundTrip.Transaction != nil && bytes.Equal(localTx.ID, roundTrip.Transaction.ID), bytes.Equal(beforeContent, afterContent), roundTrip.Transaction != nil && bytes.Equal(localTx.Inputs[0].Signature, roundTrip.Transaction.Inputs[0].Signature), roundTrip.Transaction != nil && bytes.Equal(localTx.Inputs[0].PubKey, roundTrip.Transaction.Inputs[0].PubKey), decodedTimestamp, math.Float64bits(localTx.Amount), func() uint64 {
+			if roundTrip.Transaction == nil {
+				return 0
+			}
+			return math.Float64bits(roundTrip.Transaction.Amount)
+		}())
 	}
 
 	handler := newActualMuxTestHandlerV1(t)
