@@ -63,16 +63,47 @@ func (bc *Blockchain) validateNextBlockTimestampV1(block *Block) error {
 }
 
 func (bc *Blockchain) nextMiningTimeV1(now time.Time) (time.Time, error) {
-	if !bc.usesMedianBlockTimeV2() || len(bc.Blocks) == 0 {
+	if bc == nil || len(bc.Blocks) == 0 {
 		return now, nil
 	}
-	last := len(bc.Blocks) - 1
-	minimum := max(medianBlockTimeV2(bc.Blocks, last), bc.Blocks[last].Timestamp) + 1
-	if minimum > now.Add(MaxFutureDrift).Unix() {
+	wallNow := now
+	if bc.usesMedianBlockTimeV2() {
+		last := len(bc.Blocks) - 1
+		minimum := max(medianBlockTimeV2(bc.Blocks, last), bc.Blocks[last].Timestamp) + 1
+		if minimum > wallNow.Add(MaxFutureDrift).Unix() {
+			return time.Time{}, fmt.Errorf("median time past exceeds the allowed mining time")
+		}
+		if minimum > now.Unix() {
+			now = time.Unix(minimum, 0).UTC()
+		}
+	}
+
+	// Legacy transaction IDs include the full coinbase timestamp. Keep local
+	// coinbase timestamps strictly increasing so a repeated or coarse system
+	// clock cannot recreate a confirmed coinbase ID, especially for zero-fee
+	// blocks after emission ends.
+	if previous, ok := lastCoinbaseTimestampV1(bc.Blocks); ok && !now.After(previous) {
+		now = previous.Add(time.Nanosecond)
+	}
+	if bc.usesMedianBlockTimeV2() && now.After(wallNow.Add(MaxFutureDrift)) {
 		return time.Time{}, fmt.Errorf("median time past exceeds the allowed mining time")
 	}
-	if minimum > now.Unix() {
-		return time.Unix(minimum, 0).UTC(), nil
-	}
 	return now, nil
+}
+
+func lastCoinbaseTimestampV1(blocks []*Block) (time.Time, bool) {
+	for blockIndex := len(blocks) - 1; blockIndex >= 0; blockIndex-- {
+		block := blocks[blockIndex]
+		if block == nil {
+			continue
+		}
+		for txIndex := len(block.Transactions) - 1; txIndex >= 0; txIndex-- {
+			tx := block.Transactions[txIndex]
+			if tx == nil || !tx.IsCoinbase() || tx.Timestamp.IsZero() {
+				continue
+			}
+			return tx.Timestamp.UTC(), true
+		}
+	}
+	return time.Time{}, false
 }

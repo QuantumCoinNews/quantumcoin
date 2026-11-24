@@ -29,6 +29,23 @@ func TestNetworkV3MedianRetargetIgnoresSingleOutlierAndLocalOverride(t *testing.
 	}
 }
 
+func TestNextMiningTimeAdvancesPastRepeatedCoinbaseClockV1(t *testing.T) {
+	chain := NewBlockchain(50, 0)
+	previous := time.Date(2026, time.November, 24, 3, 0, 0, 123_456_789, time.UTC)
+	coinbase := chain.Blocks[0].Transactions[0]
+	coinbase.Timestamp = previous
+	coinbase.ID = coinbase.Hash()
+	chain.Blocks[0].Timestamp = previous.Unix()
+
+	got, err := chain.nextMiningTimeV1(previous)
+	if err != nil {
+		t.Fatal("advance repeated coinbase clock:", err)
+	}
+	if want := previous.Add(time.Nanosecond); !got.Equal(want) {
+		t.Fatalf("next mining timestamp=%s want=%s", got.Format(time.RFC3339Nano), want.Format(time.RFC3339Nano))
+	}
+}
+
 func TestNetworkV3MedianTimeAppliesToPeerReplayAndMining(t *testing.T) {
 	cfg := config.Default()
 	cfg.GenesisProfile = config.NetworkGenesisProfileV3
