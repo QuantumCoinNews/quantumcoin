@@ -169,7 +169,20 @@ token therefore refreshes at 1 hour 55 minutes. Each rotated token is saved to
 the Windows DPAPI store before its access token is used. If persistence fails,
 the publisher stops and requires credential recovery. The actual X app ID,
 owner consent and live posting acceptance remain account-owner setup steps;
-the local source tree cannot create them.
+the local source tree cannot create them. For local consent, register the exact
+loopback callback `http://127.0.0.1:8765/callback` in the X app settings, then
+run this command from `autopublisher` after supplying the public Client ID:
+
+```powershell
+node -- publisher.mjs x-oauth2-authorize --client-id "$clientId" --redirect-uri "http://127.0.0.1:8765/callback" --secret-file "$store" --settings-file publisher.settings
+```
+
+The command opens a loopback-only callback listener, verifies OAuth `state`,
+uses PKCE S256, requires all three scopes and a refresh token, exchanges the
+one-time code, and stores the token set in DPAPI without printing it. It does
+not publish. The account owner must open the printed authorization URL and
+approve the account access. The post-authentication X API write/billing check
+is a separate live platform acceptance step.
 
 DPAPI recovery requires the relevant Windows user/profile and machine key
 material. It is not a portable cross-machine backup format by itself. Preserve

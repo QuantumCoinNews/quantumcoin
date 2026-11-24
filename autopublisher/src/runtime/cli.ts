@@ -13,12 +13,14 @@ import { selectPool } from './pool.js';
 import { providers } from '../platforms/registry.js';
 import { PublisherError, Mode } from './types.js';
 import { scheduleDaily } from '../scheduler.js';
+import { createServer } from 'node:http';
+import { createXOAuth2AuthorizationRequest, exchangeXOAuth2AuthorizationCode, readXOAuth2Callback } from './xOAuth2Authorization.js';
 
 export async function main(args:string[]):Promise<number>{
  try{
-  const {values,positionals}=parseArgs({args,allowPositionals:true,options:{scheduler:{type:'string'},apply:{type:'boolean'},publish:{type:'boolean'},'render-only':{type:'boolean'},slot:{type:'string'},date:{type:'string'},'state-dir':{type:'string'},'env-file':{type:'string'},'secret-file':{type:'string'},'settings-file':{type:'string'},platforms:{type:'string'},'start-date':{type:'string'},'next-index':{type:'string'},job:{type:'string'},help:{type:'boolean'}}});
-  if(values.help){console.log('autopublisher doctor | run [--slot 1|2] [--render-only | --publish] | schedule [--publish] | init --start-date YYYY-MM-DD | abandon --job YYYY-MM-DD.slot1\nUse --env-file for explicit credentials, --state-dir for an absolute state path. Default run is dry-run; no automatic .env load.');return 0;}
-  const command=positionals[0]||'doctor';if(positionals.length>1 || !['doctor','run','schedule','init','abandon','secrets-import','secrets-update','auth-health','maintenance','media-register'].includes(command))throw new PublisherError('INVALID_COMMAND');
+  const {values,positionals}=parseArgs({args,allowPositionals:true,options:{scheduler:{type:'string'},apply:{type:'boolean'},publish:{type:'boolean'},'render-only':{type:'boolean'},slot:{type:'string'},date:{type:'string'},'state-dir':{type:'string'},'env-file':{type:'string'},'secret-file':{type:'string'},'settings-file':{type:'string'},platforms:{type:'string'},'start-date':{type:'string'},'next-index':{type:'string'},job:{type:'string'},'client-id':{type:'string'},'redirect-uri':{type:'string'},help:{type:'boolean'}}});
+  if(values.help){console.log('autopublisher doctor | run [--slot 1|2] [--render-only | --publish] | schedule [--publish] | init --start-date YYYY-MM-DD | abandon --job YYYY-MM-DD.slot1 | x-oauth2-authorize --client-id ID --redirect-uri http://127.0.0.1:8765/callback --secret-file PATH\nUse --env-file for explicit credentials, --state-dir for an absolute state path. Default run is dry-run; no automatic .env load.');return 0;}
+  const command=positionals[0]||'doctor';if(positionals.length>1 || !['doctor','run','schedule','init','abandon','secrets-import','secrets-update','auth-health','maintenance','media-register','x-oauth2-authorize'].includes(command))throw new PublisherError('INVALID_COMMAND');
   if(values.publish && values['render-only'])throw new PublisherError('CONFLICTING_RUN_MODES');
   if(!['secrets-import','secrets-update'].includes(command)&&values['env-file']&&values['secret-file'])throw new PublisherError('CONFLICTING_CREDENTIAL_SOURCES');
   if(values.publish&&(values['env-file']||process.execArgv.some(arg=>arg==='--env-file'||arg.startsWith('--env-file='))))throw new PublisherError('PLAINTEXT_PUBLICATION_CREDENTIALS_RETIRED');
@@ -47,6 +49,41 @@ export async function main(args:string[]):Promise<number>{
   if(command==='media-register'){console.log(JSON.stringify(await registerMedia(c)));return 0;}
   if(command==='maintenance'){console.log(JSON.stringify(await maintain(c.stateDir,Boolean(values.apply))));return 0;}
   if(command==='auth-health'){const lease=await acquireLock(c.stateDir);try{console.log(JSON.stringify(await credentialHealth(env)));return 0;}finally{await lease.release();}}
+  if(command==='x-oauth2-authorize'){
+   const clientId=values['client-id']||'';const redirectUri=values['redirect-uri']||'';const secretFile=values['secret-file'];
+   if(!clientId||!redirectUri||!secretFile||!env.QC_PUBLISHER_SECRET_FILE)throw new PublisherError('EXPLICIT_X_OAUTH2_SETUP_REQUIRED');
+   const lease=await acquireLock(c.stateDir);
+   try{
+    const request=createXOAuth2AuthorizationRequest(clientId,redirectUri);
+    const callback=await new Promise<string>((resolve,reject)=>{
+     const server=createServer((incoming,response)=>{
+      if(incoming.method!=='GET'||incoming.url===undefined){response.writeHead(405,{'content-type':'text/plain'});response.end('Authorization callback rejected.');return;}
+      try{
+       const callbackUrl=new URL(incoming.url,request.redirectUri).toString();
+       const code=readXOAuth2Callback(callbackUrl,request);
+       response.writeHead(200,{'content-type':'text/html; charset=utf-8','cache-control':'no-store','referrer-policy':'no-referrer'});
+       response.end('<!doctype html><meta charset="utf-8"><title>QuantumCoin X authorization</title><p>Authorization received. You may close this tab.</p>');
+       clearTimeout(timeout);server.close();resolve(code);
+      }catch(error){
+       response.writeHead(400,{'content-type':'text/plain','cache-control':'no-store','referrer-policy':'no-referrer'});
+       response.end('Authorization was not accepted. Return to the local setup command.');
+       clearTimeout(timeout);server.close();reject(error);
+      }
+     });
+     server.on('error',()=>reject(new PublisherError('PROVIDER_AUTHORIZATION_LISTENER_FAILED')));
+     server.listen(Number(new URL(request.redirectUri).port),'127.0.0.1',()=>console.log(JSON.stringify({status:'awaiting-local-x-consent',authorizationUrl:request.authorizationUrl,redirectUri:request.redirectUri,tokenPrinted:false})));
+     const timeout=setTimeout(()=>{server.close();reject(new PublisherError('PROVIDER_AUTHORIZATION_TIMED_OUT'));},10*60*1000);
+     timeout.unref();
+    });
+    const tokens=await exchangeXOAuth2AuthorizationCode(clientId,callback,request);
+    const existing=await loadSecrets(secretFile);
+    lease.assert();
+    await saveSecrets(secretFile,{...existing,X_OAUTH2_CLIENT_ID:clientId,X_OAUTH2_TOKEN_JSON:JSON.stringify(tokens)});
+    Object.assign(env,{X_OAUTH2_CLIENT_ID:clientId,X_OAUTH2_TOKEN_JSON:JSON.stringify(tokens)});
+    console.log(JSON.stringify({status:'x-oauth2-authorized-and-encrypted',expiresAt:new Date(tokens.expires_at).toISOString(),refreshAt:new Date(tokens.expires_at-Math.min(300000,Math.max(30000,Math.floor(tokens.expires_in*100)))) .toISOString(),tokenPrinted:false,published:false}));
+    return 0;
+   }finally{await lease.release();}
+  }
   if(command==='doctor'){
    let poolReady=true;let poolError:string|undefined;try{await selectPool(c,Number(values['next-index']||1));}catch(error){poolReady=false;poolError=error instanceof PublisherError?error.code:'POOL_UNAVAILABLE';}
    console.log(JSON.stringify({runtime:'typescript-canonical-v1',defaultMode:'dry-run',timezone:c.timezone,cron:c.cron,poolReady,poolError,platforms:Object.fromEntries(c.platforms.map(p=>[p,{implemented:!['instagram','tiktok'].includes(p),configuration:providers[p].readiness(c.env)||'present',liveCheckPerformed:false}])),liveAcceptance:'not-assessed-by-doctor; inspect production receipts',cutover:'init --start-date is required before publish'}));return 0;
