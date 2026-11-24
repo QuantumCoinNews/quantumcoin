@@ -157,9 +157,19 @@ YouTube's canonical credential service preserves refresh tokens omitted by
 refresh responses and saves new tokens into the encrypted store. Read-only
 health probes classify reauthorization, quota, billing and rate-limit failures
 without printing provider response bodies. Authentication does not prove write
-permission, quota or successful publication. X uses OAuth1 on this runtime;
-legacy OAuth2 setup scripts are retired. Reauthorization is an external account
-operation, not a fabricated local success.
+permission, quota or successful publication.
+
+X supports the legacy OAuth 1.0a credential quartet and renewable OAuth 2.0
+user authorization. For the renewable path, configure an X Developer App with
+OAuth 2.0 and the `tweet.write`, `users.read` and `offline.access` scopes, then
+obtain owner consent locally. X access tokens normally last two hours; with
+`offline.access`, a refresh token is issued. The publisher refreshes at
+`expires_at - min(5 minutes, max(30 seconds, 10% of expires_in))`. A two-hour
+token therefore refreshes at 1 hour 55 minutes. Each rotated token is saved to
+the Windows DPAPI store before its access token is used. If persistence fails,
+the publisher stops and requires credential recovery. The actual X app ID,
+owner consent and live posting acceptance remain account-owner setup steps;
+the local source tree cannot create them.
 
 DPAPI recovery requires the relevant Windows user/profile and machine key
 material. It is not a portable cross-machine backup format by itself. Preserve
