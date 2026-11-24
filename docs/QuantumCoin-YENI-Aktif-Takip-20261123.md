@@ -1,37 +1,79 @@
-# QuantumCoin — YENİ aktif takip listesi (2026-11-24)
+# QuantumCoin — Aktif QMA takip listesi
 
-**13 aktif kayıt: 3 açık · 10 kısmen açık · 0 doğrulama bekliyor**
+**Son güncelleme:** 24 Kasım 2026  
+**13 aktif kayıt:** 3 açık · 10 kısmen açık
 
-Tek ana liste. Her maddeye başlamadan önce kullanıcıya amaçlanan davranış sorulur; açıklamasına göre uygulanır ve kanıtla kapatılır.
+Bu dosya yalnızca çözülmemiş maddeleri içerir. Her maddede mevcut durum, kalan risk ve kapanış için gereken kanıt yer alır. Testnet ve mainnet aşamalarına ait kararlar birbirinden ayrılmıştır.
 
-Sarı uyarı kontrolü geçmişte işlenen ve sonraki bütün maddeleri kapsar. Giderilenler kanıtla aktif kayıttan çıkarılır; kalanlar korunur. Denetimler kapatılmaz.
+**Son doğrulanan kapanış (aktif sayıya dahil değil): QMA-0005.** `go test ./token -count=1` geçti. İlk TOKEN/QC721 tahsisinden sonra mint kapalı; imza alanı network magic, genesis hash ve kalıcı token instance kimliğine bağlı. Token Factory node runtime/consensus özelliği değildir.
 
-Yeni VS Code takip kopyasıdır. Önceki Downloads listesi ve matrisi arşiv olarak korunmuştur.
+## Testnet öncesi — 6 madde
 
-## Testnet öncesi — 6
+### 55 · QMA-0003 — Kaynak ve runtime ayrımı
+**Durum:** Kısmen açık  
+**Açıklama:** Ana `C:\Projects\quantumcoin` üzerinde metadata-only envanter 1.575 kaynak yolu gösterdi. Indexte dışlanmış yol yok; mevcut HEAD’de 166 dışlanması gereken tarihsel yol ve çalışma alanında 87 dışlanmış kayıt var: 29 runtime, 21 arşiv, 24 üretilmiş, 8 secret ve 5 karışık custody incelemesi. İçerikler okunmadı; dosya taşınmadı veya silinmedi.  
+**Kapanış için:** Runtime/custody verilerini kaybetmeden kaynak ağacından ayırmak, karışık klasörleri incelemek ve yetkili ana tarihçe geçişini tamamlamak. QMA-0224 ve QMA-0250 ile çaprazdır.
 
-| Sıra | Madde | Durum | İş |
-| ---: | --- | --- | --- |
-| 55 | QMA-0003 | Kısmen açık | 2026-11-24 ana `C:\Projects\quantumcoin` envanteri metadata-only: 1.575 source path; index dışlama=0 ama HEAD dışlama=166; çalışma alanında 87 dışlanmış kayıt (29 runtime, 21 archive, 24 generated, 8 secret, 5 mixed-custody-review). İçerik okunmadı, dosya taşınmadı/silinmedi. İzole feature dalı source-only gate temiz; fiziksel runtime/custody ayrımı, 166 tarihsel yol ve yetkili ana tarihçe geçişi açık. QMA-0224/0250 ile çapraz. |
-| 56 | QMA-0224 | Kısmen açık | 2026-11-24: Git privacy helper large/binary blob taramasıyla güncellendi; test_git_privacy: 12/12 geçti (synthetic >2 MiB binary-path regression dahil). r6 steril mirror sabit reflerden dışarıda oluşturuldu: 128 commit/10.692 blob ön-auditinde 6 metin örüntüsü ve 36 binary/büyük blob vardı; raw scan 36 blob/84.896.874 bayt taradı, bir `.exe~` historical backup path eşleşmesi yalnız adaydan çıkarıldı. Adayda 127 commit/2.426 blob, 2.391 metin blobu; 0 metin bulgusu, 0 dışlanmış path; kalan 35 binary/büyük blob raw-scanned, 0 configured-pattern eşleşmesi; 17/18 ref (tek Codex operational capture hariç); fsck unreachable=0 ve pathAndPatternClean=true. Kaynak refleri değişmedi, push/secret rotasyonu yapılmadı. 35 binary asset için manuel içerik/kullanım onayı, secret/provider rotasyonu, remote/cache/fork temizliği ve yetkili GitHub ana tarihçe geçişi açık. Aday snapshot commit: e1dac68. Aday: `%LOCALAPPDATA%/Temp/qc-history-candidate-qma0224-20261124-r6`.
-| 57 | QMA-0250 | Kısmen açık | 2026-11-24 ana çalışma alanı cleanup planı salt-okunur: 170 index/HEAD kaydı; 166 tarihsel dışlama (59 archive, 21 generated, 43 manual-review, 42 runtime, 1 secret) ve ayrıca index+HEAD içinde 4 release-source-review kaydı. Layout envanterindeki 87 dışlanmış çalışma kaydı ayrı kapsamdır; dosya içeriği okunmadı, hiçbir şey silinmedi/taşınmadı. test_git_privacy: 12/12 geçti. Ana indexte dışlanan yol yok; main HEADde 166 dışlanmış yol var. 4 release girdisinin call/build/provenance değerlendirmesi, physical runtime/custody separation, karışık release dizinleri ve yetkili tarihçe geçişi açık. QMA-0003/0224 ile çapraz. |
-| 58 | QMA-0170 | Açık | 2026-11-24 değer göstermeyen denetim: çalışma ağacındaki `.env` içinde 1 env-secret örüntüsü; erişilebilir geçmişte eski sohbet dışa aktarımında OpenAI-key/env-secret örüntüsü bulundu. Rapor değerleri içermiyor; kullanıcı daha önce rotasyon yapılmadığını bildirdi. Provider panellerinde iptal/yenileme ve doğrulama, ayrıca eski tarihçe geçişi açık. X OAuth2 için yenilenebilir token altyapısı testli; gerçek app `client_id`/consent/token mevcut değil. |
-| 61 | QMA-0206 | Kısmen açık | 2026-11-24 `go test -count=1 ./backuprestore/... ./cmd/recovery ./policyexamples` geçti (`backuprestore`, `backuprestore/offline` 104.147s, `cmd/recovery`, `policyexamples`); snapshot/rollback, SQLite WAL, corruption rejection ve CLI wallet recovery testleri yenilendi. Hiçbir gerçek backup üretilmedi veya restore edilmedi. Off-host bağımsız kopya ve ikinci cihazda gerçek adres doğrulamalı wallet kurtarma tatbikatı hâlâ operatör eylemi. |
-| 63 | QMA-0192 | Kısmen açık | 2026-11-24 kilitli Go 1.26.11 ve MinGW 15.1.0 ile `tools/test_qc_release.py -v` 8/8 geçti (ilk araç çağrısındaki compiler mismatch, kilitli PATH ile giderildi); iki temiz fixture derlemesi aynı çıktıyı üretti ve geçici test imzası doğrulandı. `tools/test_release_signer.py` 3/3 geçti. Üretim signer/owner-controlled key, güvenilir public-key kabulü ve hosted imzalı release doğrulaması açık. Test anahtarı yalnız geçici fixture olarak üretildi. İlk testnet hardfork kapalı; quorum ilk hardfork öncesi belirlenecek. |
+### 56 · QMA-0224 — Git geçmişi ve hassas veri temizliği
+**Durum:** Kısmen açık  
+**Açıklama:** `test_git_privacy` 12/12 geçti; büyük/ikili blob taraması ve sentetik regresyon testi eklendi. r6 steril geçmiş adayı dışarıda üretildi. Ön denetimde 128 commit, 10.692 blob, 6 metin örüntüsü ve 36 ikili/büyük blob bulundu. Adayda 127 commit, 2.426 blob ve 2.391 taranmış metin blobu var; metin bulgusu yok. Kalan 35 ikili/büyük blob ham-byte örüntü taramasından geçti ve eşleşme vermedi. Tek `.exe~` yedek yolu yalnızca aday geçmişten çıkarıldı. Asıl refler değiştirilmedi ve GitHub ana geçmişi yeniden yazılmadı. Aday `e1dac68` kaynak ref anlık görüntüsüne aittir; bu bir yayın veya GitHub geçmiş temizliği değildir.  
+**Kapanış için:** 35 ikili varlığın manuel sınıflandırılması, sağlayıcı sırlarının rotasyonu, GitHub cache/fork/remote etkilerinin ele alınması ve yetkili ana tarihçe geçişi. Aday: `%LOCALAPPDATA%/Temp/qc-history-candidate-qma0224-20261124-r6`.
 
-## Mainnet öncesi — 4
+### 57 · QMA-0250 — Çalışma alanı ve geçmiş temizliği
+**Durum:** Kısmen açık  
+**Açıklama:** Ana çalışma alanı için salt-okunur cleanup planı 170 index/HEAD kaydı buldu: 166 dışlanması gereken tarihsel kayıt (59 arşiv, 21 üretilmiş, 43 manuel inceleme, 42 runtime, 1 secret) ve index ile HEAD’de bulunan 4 release-source-review kaydı. 87 çalışma alanı kaydı ayrı envanterdir. Hiçbir içerik okunmadı; silme veya taşıma yapılmadı.  
+**Kapanış için:** Dört release girdisinin kaynak/build/provenance incelemesi, runtime/custody ayrımı ve yalnız doğrulanmış dosyalarda güvenli temizlik. QMA-0003 ve QMA-0224 ile çaprazdır.
 
-| Sıra | Madde | Durum | İş |
-| ---: | --- | --- | --- |
-| 66 | QMA-0071 | Açık | Final NFT artwork/metadata henüz oluşturulmadı; placeholder plan var. Kullanıcı final aşamaya kadar bu varlıkları beklemede bırakmamızı istedi; mainnet mint kapısı kapalı. |
-| 67 | QMA-0107 | Açık | 2026-11-24 dört yerel test geçti: tgwt_bsc_claim_safety_v1_test.py, tgwt_bsc_claim_config_v1_test.py, tgwt_claim_settlement_precheck_v1_test.py, tgwt_claim_settlement_admin_approval_v1_test.py. Testler claim varsayılan kapalı, BSC chain ID/network eşleşmesi, mainnet için açık manuel onay, private key/backend transferi yasak, admin onayı transfer değil ve kullanıcı BNB gas öder kurallarını doğruluyor. Gerçek token/claim contract adresleri, wallet-signature/claim UI kabulü ve BSC mainnet zincirinde gerçek claim doğrulaması yok; kullanıcının talimatıyla canlı ödeme/transfer en son mainnet aşamasında. Açık. |
-| 69 | QMA-0266 | Kısmen açık | 2026-11-24 yeniden doğrulandı: policy 25.5M cap içinde founder %5 (1.275M: %1/255k liquid + %4/1.02M vested) ve %95 non-founder mining payını tanımlıyor; ayrı QC bonus/NFT reserve issuance yok. `go test ./config -run FounderAddressPolicy -count=1 -v` 5/5 geçti: testnet hidden-prefund rejection, mainnet missing/same/invalid founder address rejection, distinct valid addresses acceptance ve unbound local-release acceptance. Final mainnet founder addresses and approved genesis fingerprint/initial allocation are not supplied, so mainnet genesis cannot be finalized. |
-| 71 | QMA-0272 | Kısmen açık | 2026-11-24 yeniden doğrulandı: `go test ./consensus ./networkfee -count=1` ve AtomV3 signed-admission/mining/restart, one-atom reward ve UTXO testleri geçti. Kullanıcı tam QC ödül serisini korumayı seçti; 5.79982325 QC fractional subsidy uygulanmıyor. Kanonik ölçek 1,000,000 atom/QC; 1–10 atom ücret temsil edilebilir. Fresh V4 mainnet/testnet AtomV3 mikro-fee consensus'ını açmıyor; ücret tabanı ve protokol aktivasyonu yetkili hardfork/release kararı öncesinde açık kalıyor. |
+### 58 · QMA-0170 — Secret rotasyonu ve Git geçmişi
+**Durum:** Açık  
+**Açıklama:** Değer göstermeyen tarama `.env` içinde secret biçimli kayıt ve erişilebilir geçmişte eski bir sohbet dışa aktarımında API-key biçimli kayıt buldu. Kullanıcı henüz anahtarları iptal edip yenilemediğini bildirdi. X OAuth 2.0 yenileme kodu hazır; uygulama `client_id`, kullanıcı yetkisi ve token mevcut değil.  
+**Kapanış için:** Etkilenen servis anahtarlarını sağlayıcı panellerinde iptal edip yenilemek, yeni değerleri güvenli yerel saklamaya almak ve eski geçmiş/cache etkilerini ayrıca doğrulamak. Değerler rapora yazılmaz.
 
-## Özellik açılmadan önce — 3
+### 61 · QMA-0206 — Bağımsız yedek ve kurtarma
+**Durum:** Kısmen açık  
+**Açıklama:** `backuprestore`, `cmd/recovery` ve `policyexamples` testleri geçti; snapshot/rollback, SQLite WAL, bozulmuş yedek reddi ve CLI wallet recovery senaryoları kapsandı. Gerçek yedek oluşturulmadı veya geri yüklenmedi.  
+**Kapanış için:** Off-host bağımsız yedek ve ikinci cihazda cüzdan kurtarma tatbikatı; geri yüklenen adresin beklenen adresle eşleştiğinin doğrulanması.
 
-| Sıra | Madde | Durum | İş |
-| ---: | --- | --- | --- |
-| 72 | QMA-0098 | Kısmen açık | 2026-11-24 social claim verification and TGWT pool policy standalone tests passed; exact locked Telegram suite passed 77/77. Existing policy keeps 3,000,000 TGWT total pool and 1 TGWT per separately verified task; testnet activation remains off and BSC claim is user-paid with BNB, mainnet-only/deferred (QMA-0107). No live X/YouTube/Telegram API authorization or account verification was performed. Live provider credentials, owner consent, and mainnet account acceptance remain open. |
-| 73 | QMA-0164 | Kısmen açık | 2026-11-24: yenilenebilir OAuth 2.0 refresh döngüsü ve yerel ilk-yetkilendirme akışı hazır. `npm run check` geçti; `npm test` 142/142 geçti. PKCE S256, CSRF `state`, loopback-only callback, minimum `tweet.write users.read offline.access` kapsamı, auth code exchange ve tokenı yazdırmadan DPAPI’ye kaydetme testli. Yenileme sağlayıcının `expires_in` değerinden `expires_at - min(5 dk, max(30 sn, ömrün %10'u))` olarak hesaplanıyor; 2 saatlik token 1 sa 55 dk sonra yenileniyor; yenilenmiş refresh token önce DPAPI’ye yazılıyor. Windows kasasında legacy OAuth 1.0a alanları var; OAuth 2.0 client ID/token yok. Gerçek token alınamadı: X Developer App'in OAuth 2.0 ayarı/client ID'si ve hesap sahibinin yerel izni gerekiyor. Mevcut X yayın yolu ayrıca HTTP 402 billing-required nedeniyle duraklatılmış; hesap onayı, token ve canlı yayın kabulü açık. README ve secret-rotation runbook güncellendi. |
-| 74 | QMA-0165 | Kısmen açık | 2026-11-24: Autopublisher `npm run check` geçti; `npm test` 142/142 geçti. Fixture’larla İngilizce structured-output, kaynak/iddia doğrulama, tekrar başlık reddi, ses/görsel üretimi ve gerçek FFmpeg teslim hattı doğrulandı. Windows DPAPI kasasında OpenAI anahtarı bulunmadı; `QC_PUBLISHER_AI_ENABLED=0`, bu nedenle canlı/ücretli üretim kapalı. `QC_PUBLISHER_AI_VISUALS=1` tek başına üretim başlatmıyor, ana AI anahtarı kapalıyken etkisiz. Kullanıcı sohbetinde paylaşılmış anahtar rotasyonu QMA-0170’de hâlâ bekliyor; yeni anahtar olmadan canlı sağlayıcı kabulü yok. Canlı X de HTTP 402 billing-required nedeniyle kapalı. |
+### 63 · QMA-0192 — İmzalı release ve provenance
+**Durum:** Kısmen açık  
+**Açıklama:** Kilitli Go 1.26.11/MinGW 15.1.0 ortamında release testleri 8/8, signer testleri 3/3 geçti; iki temiz fixture derlemesi eşleşti ve geçici test imzası doğrulandı. Üretim imza anahtarı veya güvenilir public-key kabulü kullanılmadı. İlk testnet sürümünde hardfork aktivasyonu kapalı tutulacak.  
+**Kapanış için:** Sahip kontrollü üretim signer’ı, güvenilir anahtarın dağıtımı ve CI’da gerçek imzalı release doğrulaması. Hardfork quorum’u ilk hardfork öncesinde belirlenecek.
+
+## Mainnet öncesi — 4 madde
+
+### 66 · QMA-0071 — Nihai NFT varlıkları ve onayları
+**Durum:** Açık  
+**Açıklama:** Final artwork ve metadata henüz oluşturulmadı; mevcut plan placeholder niteliğinde. Kullanıcının kararıyla NFT mint kapısı mainnet aşamasına kadar kapalı.  
+**Kapanış için:** Nihai varlıklar, metadata/hash doğrulaması ve gerekli AI/admin onayları hazır olmalı; mainnet mint kabulü ayrıca doğrulanmalı.
+
+### 67 · QMA-0107 — BSC ödeme/claim doğrulaması
+**Durum:** Açık  
+**Açıklama:** Yerel güvenlik/config/precheck testleri geçti. Claim testnet’te kapalı; BSC mainnet kullanımı ve gerçek ödeme doğrulaması son mainnet aşamasına ertelendi. Gerçek contract adresleri ve uçtan uca wallet-signature/claim UI kabulü henüz yok. Gas ücretini kullanıcı BNB ile ödeyecek.  
+**Kapanış için:** Mainnet contract ve ağ kimliklerinin doğrulanması, kullanıcı imza akışının kabulü ve gerçek zincirde claim sonucunun kanıtlanması.
+
+### 69 · QMA-0266 — Genesis tahsisi ve rezervler
+**Durum:** Kısmen açık  
+**Açıklama:** Policy 25,5 milyon QC cap içinde founder payını %5 (1,275 milyon QC: %1 likit, %4 vesting) ve kalan %95’i mining payı olarak tanımlıyor. Ayrı QC bonus/NFT rezervi için genesis tahsisi yok; policy testleri geçti.  
+**Kapanış için:** Mainnet founder adresleri, başlangıç tahsisi ve onaylanmış genesis fingerprint’i kesinleştirilmeli. Bunlar olmadan mainnet genesis finalize edilemez.
+
+### 71 · QMA-0272 — Denomination ve ekonomi son kabulü
+**Durum:** Kısmen açık  
+**Açıklama:** Kanonik ölçek 1 QC = 1.000.000 atom; atom ücret ve UTXO testleri geçti. Kullanıcı mevcut tam QC ödül serisinin korunmasını seçti; kesirli 5,79982325 QC subsidy uygulanmıyor. Fresh V4 ağlarda AtomV3 mikro-fee consensus’i etkin değil.  
+**Kapanış için:** Ücret tabanı ve atomik işlem politikasının yetkili hardfork/release kararıyla etkinleştirilmesi ve fresh testnet üzerinde doğrulanması.
+
+## Özellik açılmadan önce — 3 madde
+
+### 72 · QMA-0098 — Canlı sosyal görev doğrulaması ve TGWT dağıtımı
+**Durum:** Kısmen açık  
+**Açıklama:** Kural ve testler 3.000.000 TGWT toplam havuzunu ve ayrı ayrı doğrulanmış görev başına 1 TGWT’yi koruyor. Telegram, YouTube ve X görevleri testnet’te kapalı; claim mainnet/BSC aşamasına ertelendi. Canlı sağlayıcı yetkilendirmesi ve hesap doğrulaması yapılmadı.  
+**Kapanış için:** Her platformun gerçek takip/beğeni kanıtını doğrulayan yetkili entegrasyon, kullanıcı hesabı kabulü ve mainnet claim/BNB gas akışının uçtan uca kanıtı.
+
+### 73 · QMA-0164 — Platform yayın kabulü
+**Durum:** Kısmen açık  
+**Açıklama:** X için OAuth 2.0 PKCE, CSRF state, loopback callback ve DPAPI saklama/yenileme altyapısı testli; publisher testleri 142/142 geçti. Gerçek X OAuth 2.0 `client_id`/token alınmadı; yayın yolu HTTP 402 billing-required ile duraklatılmış.  
+**Kapanış için:** X Developer App ayarı ve hesap yetkisi, uygun API erişimi ve gerçek yayın/teslim doğrulaması. Diğer platformlarda da canlı gönderim kanıtı gerekir.
+
+### 74 · QMA-0165 — Canlı AI içerik kabulü
+**Durum:** Kısmen açık  
+**Açıklama:** İngilizce içerik, kaynak/iddia kontrolleri, medya üretimi ve FFmpeg teslim hattı fixture’larla testli; publisher testleri 142/142 geçti. Windows DPAPI kasasında kullanılabilir OpenAI anahtarı yok; canlı/ücretli üretim kapalı. Sohbette paylaşılmış eski anahtarın rotasyonu QMA-0170’de açık.  
+**Kapanış için:** Döndürülmüş anahtarın güvenli depoya alınması, canlı sağlayıcı üretim/iddia kontrollerinin ve yayın önizlemesinin doğrulanması.
