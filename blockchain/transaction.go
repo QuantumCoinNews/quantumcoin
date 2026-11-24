@@ -342,7 +342,9 @@ func newTransactionAtHeightLockedV1(
 		ID:        nil,
 		Inputs:    inputs,
 		Outputs:   outputs,
-		Timestamp: time.Now(),
+		// Legacy V1 signatures Gob-encode time.Time. UTC avoids a zero-offset
+		// Local value encoding differently from its JSON-decoded UTC value.
+		Timestamp: time.Now().UTC(),
 		Sender:    from,
 		Amount:    float64(amountUnits),
 	}

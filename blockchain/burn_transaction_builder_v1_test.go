@@ -3,6 +3,7 @@ package blockchain
 import (
 	"bytes"
 	"testing"
+	"time"
 
 	"quantumcoin/wallet"
 )
@@ -25,6 +26,9 @@ func TestCanonicalBurnTransactionBuilderAtomV3V1(t *testing.T) {
 
 	if tx == nil {
 		t.Fatal("canonical burn transaction is nil")
+	}
+	if tx.Timestamp.Location() != time.UTC {
+		t.Fatalf("burn timestamp location=%q want UTC", tx.Timestamp.Location())
 	}
 
 	if len(tx.Inputs) == 0 {

@@ -132,7 +132,8 @@ func NewCanonicalBurnTransactionFromQCAmountV1(
 		ID:        nil,
 		Inputs:    inputs,
 		Outputs:   outputs,
-		Timestamp: time.Now(),
+		// Keep the Gob-backed legacy signature bytes stable across JSON clients.
+		Timestamp: time.Now().UTC(),
 		Sender:    from,
 		Amount:    float64(amountUnits),
 	}

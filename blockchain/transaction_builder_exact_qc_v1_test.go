@@ -2,6 +2,7 @@ package blockchain
 
 import (
 	"testing"
+	"time"
 
 	"quantumcoin/wallet"
 )
@@ -25,6 +26,9 @@ func TestExactQCTransactionBuilderLegacyOneQCV1(
 	)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if tx.Timestamp.Location() != time.UTC {
+		t.Fatalf("transaction timestamp location=%q want UTC", tx.Timestamp.Location())
 	}
 
 	if len(tx.Outputs) != 1 {
@@ -61,6 +65,9 @@ func TestExactQCTransactionBuilderAtomOneAtomV1(
 	)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if tx.Timestamp.Location() != time.UTC {
+		t.Fatalf("transaction timestamp location=%q want UTC", tx.Timestamp.Location())
 	}
 
 	if len(tx.Outputs) != 2 {
