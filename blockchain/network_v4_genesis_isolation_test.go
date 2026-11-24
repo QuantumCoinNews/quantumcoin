@@ -21,11 +21,27 @@ func TestNetworkV4FreshPublicGenesisIsolationAndRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	testnetReplica, err := NewNetworkBlockchainV4(cfg, config.QCNetworkProfileTestnetPublicV1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mainnetReplica, err := NewNetworkBlockchainV4(cfg, config.QCNetworkProfileMainnetV1)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	testnetIdentity := testnet.NetworkIdentitySnapshotV1()
 	mainnetIdentity := mainnet.NetworkIdentitySnapshotV1()
+	testnetReplicaIdentity := testnetReplica.NetworkIdentitySnapshotV1()
+	mainnetReplicaIdentity := mainnetReplica.NetworkIdentitySnapshotV1()
 	if testnetIdentity == nil || mainnetIdentity == nil ||
-		testnetIdentity.Network != "testnet" || mainnetIdentity.Network != "mainnet" ||
+		testnetReplicaIdentity == nil || mainnetReplicaIdentity == nil {
+		t.Fatal("fresh V4 network identity is missing")
+	}
+	if *testnetReplicaIdentity != *testnetIdentity || *mainnetReplicaIdentity != *mainnetIdentity {
+		t.Fatal("same V4 network profile did not reproduce its genesis identity")
+	}
+	if testnetIdentity.Network != "testnet" || mainnetIdentity.Network != "mainnet" ||
 		testnetIdentity.GenesisHash == mainnetIdentity.GenesisHash {
 		t.Fatal("fresh V4 public networks do not have distinct pinned identities")
 	}
