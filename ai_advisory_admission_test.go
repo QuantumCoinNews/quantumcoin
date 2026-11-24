@@ -98,7 +98,7 @@ func TestLargeSignedTransfersIgnoreAdvisoryState(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if err = tx.Sign(owner.PrivateKey); err != nil {
+				if err = chain.SignTransaction(tx, owner.PrivateKey); err != nil {
 					t.Fatal(err)
 				}
 				switch ingress {

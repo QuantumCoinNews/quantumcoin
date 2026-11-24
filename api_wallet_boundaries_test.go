@@ -235,7 +235,7 @@ func TestWalletLocalSigningCLIOnlyReturnsPublicEnvelope(t *testing.T) {
 	for _, line := range strings.Split(string(raw), "\n") {
 		if strings.HasPrefix(line, "SIGNED_TRANSACTION_V1=") {
 			var envelope SendRequest
-			if json.Unmarshal([]byte(strings.TrimPrefix(line, "SIGNED_TRANSACTION_V1=")), &envelope) != nil || envelope.Transaction == nil || !envelope.Transaction.Verify() {
+			if json.Unmarshal([]byte(strings.TrimPrefix(line, "SIGNED_TRANSACTION_V1=")), &envelope) != nil || envelope.Transaction == nil || !chain.VerifyTransaction(envelope.Transaction) {
 				t.Fatal("invalid local signature")
 			}
 			found = true

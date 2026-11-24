@@ -127,7 +127,7 @@ func TestActualMuxAtomExactOneAtomSendV1(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := localTx.Sign(owner.PrivateKey); err != nil {
+	if err := chain.SignTransaction(localTx, owner.PrivateKey); err != nil {
 		t.Fatal(err)
 	}
 	payload, err := json.Marshal(SendRequest{Transaction: localTx})

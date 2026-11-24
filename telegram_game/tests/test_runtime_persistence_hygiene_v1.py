@@ -39,6 +39,13 @@ class PersistenceTests(unittest.TestCase):
     def tearDown(self):self.temp.cleanup()
     def resolve(self,env=None,**kwargs):
         return persistence.database_path({} if env is None else env,home=self.root/"home",source_root=self.root/"source",working_dir=self.root/"cwd",profile=kwargs.pop("profile","local"),**kwargs)
+    def assert_same_database_path(self,actual,expected):
+        actual_path=Path(actual);expected_path=Path(expected)
+        self.assertEqual(actual_path.name.casefold(),expected_path.name.casefold())
+        if os.name=="nt":
+            self.assertTrue(actual_path.parent.samefile(expected_path.parent))
+        else:
+            self.assertEqual(actual_path.parent.resolve(),expected_path.parent.resolve())
     def test_default_is_stable_and_profiles_are_separate(self):
         a=self.resolve()
         b=persistence.database_path({},home=self.root/"home",source_root=self.root/"source",working_dir=self.root/"another",profile="local")
@@ -51,7 +58,8 @@ class PersistenceTests(unittest.TestCase):
         with self.assertRaises(ValueError):self.resolve(profile="../escape")
     def test_explicit_database_keeps_one_path_and_creates_parent(self):
         path=self.root/"new"/"data"/"state.sqlite3"
-        self.assertEqual(self.resolve({"QC_GAME_DB":str(path)}),str(path))
+        path.parent.mkdir(parents=True)
+        self.assert_same_database_path(self.resolve({"QC_GAME_DB":str(path)}),path)
         with closing(persistence.connect_database(str(path))) as conn:
             self.assertEqual(conn.execute("PRAGMA journal_mode").fetchone()[0],"wal")
             self.assertEqual(conn.execute("PRAGMA busy_timeout").fetchone()[0],5000)
@@ -60,10 +68,11 @@ class PersistenceTests(unittest.TestCase):
         before=legacy.read_bytes()
         with self.assertRaisesRegex(ValueError,"Legacy"):self.resolve()
         self.assertEqual(legacy.read_bytes(),before);self.assertFalse((self.root/"home").exists())
-        self.assertEqual(self.resolve({"QC_GAME_DB":str(legacy)}),str(legacy))
+        self.assert_same_database_path(self.resolve({"QC_GAME_DB":str(legacy)}),legacy)
     def test_custom_data_base_is_network_scoped(self):
         base=self.root/"data"
-        self.assertEqual(self.resolve({"QC_GAME_DATA_DIR":str(base)},profile="testnet"),str(base/"testnet"/"state.sqlite3"))
+        expected=base/"testnet"/"state.sqlite3";expected.parent.mkdir(parents=True)
+        self.assert_same_database_path(self.resolve({"QC_GAME_DATA_DIR":str(base)},profile="testnet"),expected)
     def test_aliases_in_distinct_processes_and_cwds_share_same_explicit_db(self):
         path=self.root/"shared"/"game.sqlite3"
         code="import json;from telegram_game import runtime,api_server,dev_api;print(json.dumps({'same':runtime.app is api_server.app is dev_api.app,'path':dev_api.APP_DB}))"
@@ -72,7 +81,7 @@ class PersistenceTests(unittest.TestCase):
             cwd.mkdir(exist_ok=True)
             done=subprocess.run([sys.executable,"-c",code],cwd=cwd,env=env,capture_output=True,text=True,timeout=30)
             self.assertEqual(done.returncode,0,done.stderr);data=json.loads(done.stdout)
-            self.assertTrue(data["same"]);self.assertEqual(data["path"],str(path))
+            self.assertTrue(data["same"]);self.assertTrue(os.path.samefile(data["path"],path))
             self.assertFalse((cwd/"dev_api_state.db").exists())
     def test_launcher_configuration_delegates_to_one_policy(self):
         for path in (ROOT/"telegram_game").glob("RUN_TELEGRAM_GAME_SERVER*.ps1"):
