@@ -1,12 +1,18 @@
 # Network genesis and emission
 
-The existing height-based subsidy uses whole QC with a one-QC floor. At a
-30-second target interval and a 25.5 million QC cap, a genesis issuing
-1,275,050 QC leaves 24,224,950 QC for mining. Subsidy ends at height 484,499,
-about 168.23 target days after genesis. The first halving would be at height
-2,102,401. The runtime policy snapshot exposes the projected last subsidy
-height and target elapsed time for its configured genesis. Actual elapsed time
-depends on block production.
+The existing height-based subsidy uses whole QC with a one-QC floor, a 25.5M
+cap, a 30-second target and halvings every 2,102,400 blocks. On 2026-11-24 the
+user confirmed that these rules remain and the cap takes precedence over the
+illustrative 10-year target. The target is not a guaranteed emission duration.
+
+For the legacy projection fixture, 1,275,050 QC initial/genesis issuance leaves
+24,224,950 QC for mining. Subsidy ends at height 484,499, about 168.23 target
+days after genesis. A fresh V4 launch with the 1,275,000 QC founder allocation
+and no legacy 50 QC issuance projects 484,500 50-QC reward blocks, also about
+168.23 target days. Both precede the first halving at height 2,102,401. These
+are target-time estimates; actual elapsed time depends on block production.
+At the cap, subsidy is zero and the chain can continue with fees or zero-payout
+blocks under QMA-0267.
 
 The active policy sends the subsidy and verified fees to the miner. Historical
 500,000 QC bonus / 100,000 QC NFT reserve proposals are not funded pools in the

@@ -1,6 +1,6 @@
 # QuantumCoin — YENİ aktif takip listesi (2026-11-24)
 
-**15 aktif kayıt: 3 açık · 12 kısmen açık · 0 doğrulama bekliyor**
+**14 aktif kayıt: 3 açık · 11 kısmen açık · 0 doğrulama bekliyor**
 
 Tek ana liste. Her maddeye başlamadan önce kullanıcıya amaçlanan davranış sorulur; açıklamasına göre uygulanır ve kanıtla kapatılır.
 
@@ -20,13 +20,12 @@ Yeni VS Code takip kopyasıdır. Önceki Downloads listesi ve matrisi arşiv ola
 | 61 | QMA-0206 | Kısmen açık | 2026-11-24 `go test -count=1 ./backuprestore/... ./cmd/recovery ./policyexamples` geçti (`backuprestore`, `backuprestore/offline`, `cmd/recovery`, `policyexamples`); snapshot/rollback, SQLite WAL, corruption rejection ve CLI wallet recovery kanıtı yenilendi. Off-host bağımsız kopya ve ikinci cihazda gerçek adres doğrulamalı kurtarma tatbikatı hâlâ operatör eylemi. |
 | 63 | QMA-0192 | Kısmen açık | 2026-11-24 kilitli Windows ortamında `tools/test_qc_release.py -v` 8/8 geçti; `tools/test_release_signer.py` 3/3 ve clean-stack release-trust 8/8 geçti. İki temiz checkout eşleşen imzasız aday üretti. Production signer/owner-controlled key, yetkili public-key kabulü ve hosted CI imzalı release doğrulaması açık. Test anahtarı yalnız geçici fixture olarak üretildi. İlk testnet hardfork kapalı; quorum ilk hardfork öncesi belirlenecek. |
 
-## Mainnet öncesi — 5
+## Mainnet öncesi — 4
 
 | Sıra | Madde | Durum | İş |
 | ---: | --- | --- | --- |
 | 66 | QMA-0071 | Açık | Final NFT artwork/metadata henüz oluşturulmadı; placeholder plan var. Kullanıcı final aşamaya kadar bu varlıkları beklemede bırakmamızı istedi; mainnet mint kapısı kapalı. |
 | 67 | QMA-0107 | Açık | 2026-11-24 dört yerel test geçti: tgwt_bsc_claim_safety_v1_test.py, tgwt_bsc_claim_config_v1_test.py, tgwt_claim_settlement_precheck_v1_test.py, tgwt_claim_settlement_admin_approval_v1_test.py. Testler claim varsayılan kapalı, BSC chain ID/network eşleşmesi, mainnet için açık manuel onay, private key/backend transferi yasak, admin onayı transfer değil ve kullanıcı BNB gas öder kurallarını doğruluyor. Gerçek token/claim contract adresleri, wallet-signature/claim UI kabulü ve BSC mainnet zincirinde gerçek claim doğrulaması yok; kullanıcının talimatıyla canlı ödeme/transfer en son mainnet aşamasında. Açık. |
-| 68 | QMA-0265 | Kısmen açık | 2026-11-24 `TestCanonicalEmissionProjectionV1` test fixture including 1.275M founder + 50 legacy-genesis QC reaches cap at height 484,499; fresh V4 genesis with founder allocation only (zero-value network marker) implies 484,500 reward blocks. Both are about 168.23 target days, before first halving at height 2,102,401. This conflicts with the 10-year target framing. No consensus values changed; clarification is pending. |
 | 69 | QMA-0266 | Kısmen açık | 2026-11-24: policy 25.5M cap içinde founder %5 (1.275M: %1/255k liquid + %4/1.02M vested) ve %95 non-founder mining payını tanımlıyor; ayrı QC bonus/NFT reserve issuance yok. config testleri geçti: testnet gizli prefund reddi, mainnet eksik/aynı/geçersiz founder adreslerinin reddi ve distinct valid address kabulü. Final mainnet founder adresleri ve onaylı genesis fingerprint/başlangıç allocationı verilmediği için mainnet genesis hâlâ finalize edilemez. |
 | 71 | QMA-0272 | Kısmen açık | 2026-11-24 decision confirmed: keep whole-QC rewards/halving (no 5.79982325 QC fractional subsidy); canonical scale is 1,000,000 atoms/QC for six-decimal fees. Consensus denomination/parser, networkfee, signed admission/mining/restart and AtomV3 one-atom fee tests passed; 1–10 atom fees are representable. Fresh V4 profile does not activate AtomV3/micro-fee consensus, and mainnet fee floor/protocol activation remains tied to the authorized hardfork/release decision. |
 

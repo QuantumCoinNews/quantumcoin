@@ -8,7 +8,7 @@ Updated: 2026-11-05
 
 ## Purpose
 
-This step defines the 10-year primary mining period, the 2-year halving schedule, and the correct continuation rule if all QC is not mined within 10 years.
+This step defines the illustrative 10-year mining horizon, the 2-year block-height halving schedule, and continuation if supply remains after that horizon. The fixed supply cap can end subsidy before the 10-year horizon.
 
 This step does not mint, mine, distribute remaining coins, or start/stop mining.
 
@@ -20,6 +20,10 @@ illustrative at the target block interval; wall-clock time does not choose rewar
 The minimum subsidy is 1 QC while issuance remains, capped by remaining supply.
 Go visibility derives amounts from consensus.LegacySubsidyAtHeight. This document
 supersedes the former fractional examples without changing consensus or history.
+On 2026-11-24 the user confirmed that the current rules remain and the cap takes
+precedence over the illustrative 10-year target. The default 50-QC projection
+can exhaust the mining budget in about 168.23 target days, before the first
+halving; elapsed wall-clock time depends on actual block production.
 
 ## Primary reward schedule
 
@@ -47,10 +51,12 @@ If all QC is not mined within the 10-year primary mining period:
 - Node fee-only mode is not forced while supply remains.
 - Node/fee mode becomes the continuation model only after emission is complete.
 
-## If all QC is mined within 10 years
+## If the cap is reached before or within the illustrative 10-year horizon
 
-- Normal emission is complete.
-- Network continues through node/fee mode.
+- Subsidy ends immediately when the cap is reached; the ten-year horizon does
+  not delay or extend issuance.
+- Network continues with fee-only or zero-payout blocks as specified under
+  QMA-0267.
 
 ## Supply rule
 
