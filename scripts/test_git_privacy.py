@@ -171,9 +171,16 @@ class GitPrivacyTests(unittest.TestCase):
         git(self.repo, "-c", "user.name=Privacy fixture", "-c", "user.email=fixture@example.invalid",
             "tag", "-a", "privacy-fixture", "-m", "synthetic tag")
         git(self.repo, "update-ref", "refs/codex/fixture/base", tree)
+        self.write("legacy.exe~", b"\0" + b"X" * (2 * 1024 * 1024) +
+                   b" C:\\Users\\private-user\\fixture " + b"Y" * 32)
+        self.commit()
+        head = git(self.repo, "rev-parse", "HEAD")
         source = (self.repo/"main.go").read_bytes()
         result = prepare_mirror(self.repo, self.base/"history", Path(sys.executable))
         self.assertTrue(result["after"]["pathAndPatternClean"])
+        self.assertNotIn("legacy.exe~", git(Path(result["mirror"]), "ls-tree", "-r", "--name-only", "HEAD").decode())
+        self.assertEqual(result["rawBinaryPatternScan"]["beforeSensitivePathCount"], 1)
+        self.assertEqual(result["rawBinaryPatternScan"]["afterSensitivePathCount"], 0)
         self.assertEqual(git(self.repo, "rev-parse", "HEAD"), head)
         self.assertEqual(git(Path(result["mirror"]), "show", "HEAD:main.go"), source)
         self.assertTrue((self.repo/".wallet").exists())

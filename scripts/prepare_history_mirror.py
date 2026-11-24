@@ -6,7 +6,34 @@ from pathlib import Path
 import subprocess
 import sys
 
-from git_privacy import ROOT, audit_history, git, git_environment
+from git_privacy import ROOT, audit_history, detect, git, git_environment
+
+
+def uninspected_sensitive_paths(repo, rows):
+    """Drop uninspectable binary/large blobs when raw-byte secret patterns match."""
+    paths = set()
+    process = subprocess.Popen(["git", "cat-file", "--batch"], cwd=repo,
+                               env=git_environment(), stdin=subprocess.PIPE,
+                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    try:
+        for row in rows:
+            process.stdin.write((row["oid"] + "\n").encode("ascii"))
+            process.stdin.flush()
+            header = process.stdout.readline().split()
+            if len(header) != 3 or header[1] != b"blob":
+                raise ValueError("Unexpected object in uninspected blob scan")
+            size = int(header[2])
+            data = process.stdout.read(size)
+            if len(data) != size or process.stdout.read(1) != b"\n":
+                raise ValueError("Truncated uninspected blob scan")
+            if detect(data):
+                paths.update(row["paths"])
+    finally:
+        process.stdin.close()
+        process.stdout.close()
+    if process.wait(timeout=30):
+        raise ValueError("Uninspected blob reader failed")
+    return paths
 
 
 def ref_inventory(repo):
@@ -38,7 +65,8 @@ def prepare_mirror(repo, output, tool_python):
     git(repo, "clone", "--mirror", "--no-local", "--", str(repo), str(mirror))
     before = audit_history(mirror)
     (output/"before.json").write_text(json.dumps(before,indent=2)+"\n",encoding="utf-8")
-    paths = before["excludedPaths"]
+    sensitive_binary_paths = uninspected_sensitive_paths(mirror, before["uninspectedRetainedBlobs"])
+    paths = sorted(set(before["excludedPaths"]) | sensitive_binary_paths)
     if any("\n" in path or "\r" in path or "==>" in path for path in paths):
         raise ValueError("Unsupported historical filename; manual review required")
     pathfile = output/"remove-paths.txt"
@@ -105,6 +133,13 @@ def prepare_mirror(repo, output, tool_python):
         if exported not in mapped or mapped[exported] != [source_refs[name]["oid"], value["oid"]]:
             raise ValueError("Rewritten ref does not match the audited ref map")
     after = audit_history(mirror)
+    after_sensitive_binary_paths = uninspected_sensitive_paths(mirror, after["uninspectedRetainedBlobs"])
+    after["rawBinaryPatternScan"] = {
+        "blobsScanned": len(after["uninspectedRetainedBlobs"]),
+        "sensitivePathCount": len(after_sensitive_binary_paths),
+        "valuesIncluded": False,
+    }
+    after["pathAndPatternClean"] = after["pathAndPatternClean"] and not after_sensitive_binary_paths
     if any(hashlib.sha256(path.read_bytes()).hexdigest() != policy_hashes[str(path)] for path in policies):
         raise ValueError("Privacy policy changed during rewrite; do not publish the mirror")
     unchanged = git(repo, "show-ref") == original_refs
@@ -112,7 +147,13 @@ def prepare_mirror(repo, output, tool_python):
                "originalRefsUnchanged":unchanged,"pushPerformed":False,"providerRotationPerformed":False,
                "policyHashes":policy_hashes,"refsBefore":source_refs,"refsAfter":final_refs,
                "excludedOperationalRefs":operational_refs,
-               "droppedEmptyRefs":dropped_refs,"before":before,"after":after}
+               "droppedEmptyRefs":dropped_refs,
+               "rawBinaryPatternScan":{"beforeBlobsScanned":len(before["uninspectedRetainedBlobs"]),
+                   "beforeSensitivePathCount":len(sensitive_binary_paths),
+                   "afterBlobsScanned":after["rawBinaryPatternScan"]["blobsScanned"],
+                   "afterSensitivePathCount":len(after_sensitive_binary_paths),
+                   "valuesIncluded":False},
+               "before":before,"after":after}
     (output/"receipt.json").write_text(json.dumps(receipt,indent=2)+"\n",encoding="utf-8")
     if not unchanged:
         raise ValueError("Original refs changed concurrently; do not publish the mirror")
