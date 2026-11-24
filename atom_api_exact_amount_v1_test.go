@@ -130,12 +130,19 @@ func TestActualMuxAtomExactOneAtomSendV1(
 	if err := chain.SignTransaction(localTx, owner.PrivateKey); err != nil {
 		t.Fatal(err)
 	}
+	if !chain.VerifyTransaction(localTx) {
+		t.Fatal("chain rejected transaction immediately after local signing")
+	}
 	payload, err := json.Marshal(SendRequest{Transaction: localTx})
 	if err != nil {
 		t.Fatalf(
 			"marshal send payload: %v",
 			err,
 		)
+	}
+	var roundTrip SendRequest
+	if err := json.Unmarshal(payload, &roundTrip); err != nil || roundTrip.Transaction == nil || !chain.VerifyTransaction(roundTrip.Transaction) {
+		t.Fatalf("JSON round-trip invalidated chain signature: err=%v txPresent=%v", err, roundTrip.Transaction != nil)
 	}
 
 	handler := newActualMuxTestHandlerV1(t)

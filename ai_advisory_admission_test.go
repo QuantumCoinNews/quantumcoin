@@ -101,6 +101,9 @@ func TestLargeSignedTransfersIgnoreAdvisoryState(t *testing.T) {
 				if err = chain.SignTransaction(tx, owner.PrivateKey); err != nil {
 					t.Fatal(err)
 				}
+				if !chain.VerifyTransaction(tx) {
+					t.Fatal("chain rejected transaction immediately after local signing")
+				}
 				switch ingress {
 				case "api":
 					previous := nodeRuntime
@@ -108,11 +111,14 @@ func TestLargeSignedTransfersIgnoreAdvisoryState(t *testing.T) {
 					cfg, apiReadOnlyMode = c, false
 					nodeRuntime = qnode.NewRuntime(chain, c)
 					defer func() { nodeRuntime, cfg, apiReadOnlyMode = previous, previousConfig, previousReadOnly }()
+					if runtimeChain, _ := nodeRuntime.Snapshot(); runtimeChain != chain || !runtimeChain.VerifyTransaction(tx) {
+						t.Fatal("runtime chain does not verify just-signed transaction")
+					}
 					body, _ := json.Marshal(SendRequest{Transaction: tx})
 					w := httptest.NewRecorder()
 					handleSendTx(w, httptest.NewRequest("POST", "/api/tx/send", strings.NewReader(string(body))))
 					if w.Code != 200 {
-						t.Fatal(w.Code, w.Body.String())
+						t.Fatalf("HTTP rejected valid transaction: status=%d body=%s sourceVerify=%t runtimeVerify=%t", w.Code, w.Body.String(), chain.VerifyTransaction(tx), func() bool { runtimeChain, _ := nodeRuntime.Snapshot(); return runtimeChain.VerifyTransaction(tx) }())
 					}
 					telemetry := httptest.NewRecorder()
 					handleTelemetry(telemetry, httptest.NewRequest("GET", "/api/telemetry", nil))

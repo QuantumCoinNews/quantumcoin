@@ -48,6 +48,9 @@ func TestWalletHTTPRejectsRawKeysAndAcceptsOnlyLocallySignedTransactions(t *test
 	if len(chain.PendingTransactionsSnapshot()) != 0 {
 		t.Fatal("local signing submitted transaction")
 	}
+	if runtimeChain, _ := nodeRuntime.Snapshot(); runtimeChain != chain || !runtimeChain.VerifyTransaction(tx) {
+		t.Fatal("runtime chain does not verify local wallet signature before HTTP submission")
+	}
 	legacy := `{"from":"` + owner.GetAddress() + `","to":"` + to.GetAddress() + `","amount":"2","priv_hex":"[REDACTED_SECRET]"}`
 	w := webRequest(h, "POST", "/api/tx/send", legacy)
 	if w.Code != 400 || strings.Contains(w.Body.String(), owner.ExportPrivateKeyHex()) || len(chain.PendingTransactionsSnapshot()) != 0 {
@@ -236,7 +239,7 @@ func TestWalletLocalSigningCLIOnlyReturnsPublicEnvelope(t *testing.T) {
 		if strings.HasPrefix(line, "SIGNED_TRANSACTION_V1=") {
 			var envelope SendRequest
 			if json.Unmarshal([]byte(strings.TrimPrefix(line, "SIGNED_TRANSACTION_V1=")), &envelope) != nil || envelope.Transaction == nil || !chain.VerifyTransaction(envelope.Transaction) {
-				t.Fatal("invalid local signature")
+				t.Fatalf("invalid local signature: txPresent=%t legacyVerify=%t chainVerify=%t identity=%+v", envelope.Transaction != nil, envelope.Transaction != nil && envelope.Transaction.Verify(), envelope.Transaction != nil && chain.VerifyTransaction(envelope.Transaction), chain.NetworkIdentitySnapshotV1())
 			}
 			found = true
 		}
